@@ -1,0 +1,3 @@
+# Design-parameter phrases allowed to contain numbers in README.md and docs/REPORT.md.
+# Format: <exact phrase> | <reason>. Result numbers never go here; they use
+# <!--n:key-->value<!--/n--> markers bound to artifacts/report/numbers.json.

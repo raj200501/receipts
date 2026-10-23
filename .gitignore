@@ -1,0 +1,35 @@
+# Never tracked (section 8 and rule 15)
+private/
+runs/
+.env
+.env*
+!.env.example
+
+# Python and tool caches
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.json
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Model weights and large binaries
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.onnx
+models/
+.ollama/
+
+# OS and editor noise
+.DS_Store
+.idea/
+.vscode/

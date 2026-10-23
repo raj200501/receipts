@@ -1,0 +1,70 @@
+[project]
+name = "receipts"
+version = "0.0.1"
+description = "Check every claim in an AI coding agent's final report against what actually happened in its sandbox."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Raj Kashikar" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.scripts]
+receipts-doctor = "receipts.doctor:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/receipts"]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tools"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: long-running tests that ship_check --fast skips",
+]
+
+[tool.coverage.run]
+source = ["receipts"]
+branch = false
+# Adapters that need external services may be omitted here only if
+# recorded-fixture contract tests under tests/contract/ cover them (gate G1).
+omit = []
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tools", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PTH", "N"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = ["src", "tools"]
+files = ["src/receipts", "tools"]
