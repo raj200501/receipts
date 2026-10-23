@@ -1,0 +1,59 @@
+{
+  "schema": "receipts.env.local_throughput/1",
+  "note": "Machine measurement for planning; concurrent CPU load may lower it.",
+  "samples": [
+    {
+      "input_tokens": 176,
+      "output_tokens": 64,
+      "wall_s": 22.489,
+      "max_tokens": 64
+    },
+    {
+      "input_tokens": 1221,
+      "output_tokens": 64,
+      "wall_s": 53.614,
+      "max_tokens": 64
+    },
+    {
+      "input_tokens": 1222,
+      "output_tokens": 101,
+      "wall_s": 58.724,
+      "max_tokens": 256
+    }
+  ],
+  "provenance": {
+    "git_sha": "ed89cbf01ea86d36ef9976245b88964fc68ff652",
+    "command": "/home/user/receipts/.venv/bin/python3 tools/local_throughput.py qwen2.5-coder-7b-instruct-q4km --nonce 20261023T0213",
+    "created": "2026-10-23T02:14:41+00:00",
+    "environment": {
+      "platform": "Linux-6.18.44-fc-v140-x86_64-with-glibc2.39",
+      "cpus": 4,
+      "threads": 4
+    },
+    "model": "qwen2.5-coder-7b-instruct-q4km",
+    "family": "qwen",
+    "model_file": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+    "model_sha256": "509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c",
+    "model_source": "huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF@13fb94bfda8c8cf22497dc57b78f391a9acb426a",
+    "server_command": [
+      "/opt/receipts-llm/bin/python",
+      "-m",
+      "llama_cpp.server",
+      "--model",
+      "/opt/receipts-models/qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+      "--model_alias",
+      "qwen2.5-coder-7b-instruct-q4km",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8091",
+      "--n_ctx",
+      "16384",
+      "--n_threads",
+      "4",
+      "--cache",
+      "true"
+    ],
+    "server_command_sha256": "78c79f6849cea5517bd86994336ef3746138722a51a5538e1bd448c333659d21"
+  }
+}
