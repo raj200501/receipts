@@ -49,4 +49,8 @@ fetch Qwen/Qwen2.5-Coder-7B-Instruct-GGUF 13fb94bfda8c8cf22497dc57b78f391a9acb42
   qwen2.5-coder-7b-instruct-q4_k_m.gguf
 fetch ibm-granite/granite-3.3-8b-instruct-GGUF e40e9dd739c7be00fa965c16ce167088190ce114 \
   granite-3.3-8b-instruct-Q4_K_M.gguf
+fetch Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF f86cb2c1fa58255f8052cc32aeede1b7482d4361 \
+  qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+fetch ibm-granite/granite-3.3-2b-instruct-GGUF 7cdf86ccd1f1bb3491c9b7017b033f2e51367397 \
+  granite-3.3-2b-instruct-Q4_K_M.gguf
 echo "PROVISION: OK"

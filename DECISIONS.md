@@ -169,3 +169,13 @@ is also stated in the checker's docstring.
 Known limitations, kept visible for the report: `tests_pass` ignores its scope parameter;
 path-suffix uniqueness is checked against the diff and writes only; version matching is a
 dotted-prefix comparison; the `command_failed` omission kind is not produced yet.
+
+**D25. Four local configurations: two families crossed with two sizes.** The Claude tiers
+of E1 cannot run here (D4), and G7 needs at least three configurations from at least two
+families. The local arms are Qwen2.5-Coder 7B and 1.5B and Granite 3.3 8B and 2B, all
+from the vendors' own GGUF repositories under Apache-2.0, pinned by revision and SHA-256
+(`receipts.client.models`). Family crossed with size stands in for the brief's model-tier
+comparison and keeps every weight file from its original publisher. Claude tiers, and
+Claude inside minimal-agent (the scaffold control), remain planned arms behind Needs Raj;
+any contrast that cannot be crossed with them is labeled scaffold-confounded or
+local-only in the report.
