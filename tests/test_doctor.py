@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from receipts import budget, doctor
+from receipts import budget, doctor, guard
 from receipts.doctor import CommandResult
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,10 +72,10 @@ def test_probe_gpu(monkeypatch: pytest.MonkeyPatch) -> None:
     which = fake_which({"nvidia-smi": "/usr/bin/nvidia-smi"})
     gpu = doctor.probe_gpu(which, fake_runner({"nvidia-smi -L": CommandResult(0, "GPU 0: X", "")}))
     assert gpu.ok
-    monkeypatch.setattr(doctor.platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(doctor.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr("receipts.doctor.platform.system", lambda: "Darwin")
+    monkeypatch.setattr("receipts.doctor.platform.machine", lambda: "arm64")
     assert doctor.probe_gpu(fake_which({}), fake_runner({})).detail.startswith("Apple")
-    monkeypatch.setattr(doctor.platform, "system", lambda: "Linux")
+    monkeypatch.setattr("receipts.doctor.platform.system", lambda: "Linux")
     assert not doctor.probe_gpu(fake_which({}), fake_runner({})).ok
 
 
@@ -87,7 +87,7 @@ def test_probe_claude_never_checks_login_when_guard_trips() -> None:
         return CommandResult(0, "2.1.0 (Claude Code)\n", "")
 
     which = fake_which({"claude": "/bin/claude"})
-    problem = doctor.guard.GuardProblem("env", "ANTHROPIC_BASE_URL")
+    problem = guard.GuardProblem("env", "ANTHROPIC_BASE_URL")
     probe = doctor.probe_claude(which, run, [problem])
     assert not probe.ok and "ANTHROPIC_BASE_URL" in probe.detail
     assert all("auth" not in argv for argv in calls)
@@ -172,6 +172,8 @@ def diagnose(
         home=tmp_path,
         meminfo=meminfo(tmp_path, gb),
         caps=budget.load_caps(ROOT / "budget.toml"),
+        llm_python=tmp_path / "no-llm-python",
+        models_dir=tmp_path / "no-models",
     )
 
 
@@ -226,6 +228,8 @@ def test_diagnose_without_caps_or_ram(tmp_path: Path) -> None:
         repo=tmp_path,
         home=tmp_path,
         meminfo=tmp_path / "absent",
+        llm_python=tmp_path / "no-llm-python",
+        models_dir=tmp_path / "no-models",
     )
     assert report.ram_gb is None and report.local_model_max_params_b is None
     assert "RAM unknown" in doctor.render_markdown(report)
@@ -236,6 +240,8 @@ def test_diagnose_without_caps_or_ram(tmp_path: Path) -> None:
         repo=tmp_path,
         home=tmp_path,
         meminfo=meminfo(tmp_path, 16),
+        llm_python=tmp_path / "no-llm-python",
+        models_dir=tmp_path / "no-models",
     )
     assert report.local_model_max_params_b == 17
 
@@ -246,7 +252,12 @@ def test_main_json_and_apply(
     target = tmp_path / "budget.toml"
     target.write_text((ROOT / "budget.toml").read_text())
     monkeypatch.setattr(doctor, "max_params_for_ram", lambda ram: 3.0)
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    monkeypatch.setattr("receipts.doctor.shutil.which", lambda name: None)
+    monkeypatch.setattr(
+        doctor,
+        "probe_llama_cpp_python",
+        lambda run, python: doctor.Probe("llama-cpp-python", False, "patched"),
+    )
     assert doctor.main(["--apply", "--json", "--budget", str(target)]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["local_model_max_params_b"] == 3.0
@@ -254,3 +265,37 @@ def test_main_json_and_apply(
     assert any("lowered" in f for f in data["fallbacks"])
     assert doctor.main(["--budget", str(tmp_path / "missing.toml")]) == 0
     assert "Usable backends" in capsys.readouterr().out
+
+
+def test_probe_llama_cpp_python_and_models(tmp_path: Path) -> None:
+    python = tmp_path / "python"
+    assert not doctor.probe_llama_cpp_python(fake_runner({}), python).ok
+    python.write_text("")
+    assert not doctor.probe_llama_cpp_python(fake_runner({}), python).ok
+    ok = doctor.probe_llama_cpp_python(
+        fake_runner({"python -c": CommandResult(0, "0.3.36\n", "")}), python
+    )
+    assert ok.ok and "0.3.36" in ok.detail
+    assert not doctor.probe_models(tmp_path / "none").ok
+    (tmp_path / "m").mkdir()
+    (tmp_path / "m" / "a.gguf").write_text("")
+    assert doctor.probe_models(tmp_path / "m").detail == "a.gguf"
+
+
+def test_local_backend_from_llama_cpp_python(tmp_path: Path) -> None:
+    python = tmp_path / "python"
+    python.write_text("")
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "x.gguf").write_text("")
+    report = doctor.diagnose(
+        env={},
+        which=fake_which({}),
+        run=fake_runner({"python -c": CommandResult(0, "0.3.36", "")}),
+        repo=tmp_path,
+        home=tmp_path,
+        meminfo=meminfo(tmp_path, 16),
+        llm_python=python,
+        models_dir=models,
+    )
+    assert report.backends["local"] is True

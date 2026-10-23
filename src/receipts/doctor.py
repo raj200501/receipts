@@ -192,6 +192,25 @@ def probe_llamacpp(which: Which) -> Probe:
     return Probe("llama.cpp", False, "not installed")
 
 
+def probe_llama_cpp_python(run: Runner, python: Path) -> Probe:
+    """Detect the llama-cpp-python server in its own virtualenv (DECISIONS D23)."""
+    if not python.is_file():
+        return Probe("llama-cpp-python", False, f"{python} not found")
+    code = "import llama_cpp, llama_cpp.server; print(llama_cpp.__version__)"
+    result = run([str(python), "-c", code], 60)
+    if result.returncode != 0:
+        return Probe("llama-cpp-python", False, f"{python} cannot import llama_cpp.server")
+    return Probe("llama-cpp-python", True, f"{first_line(result.stdout)} at {python}")
+
+
+def probe_models(models_dir: Path) -> Probe:
+    """List pinned GGUF model files in ``models_dir``."""
+    files = sorted(p.name for p in models_dir.glob("*.gguf")) if models_dir.is_dir() else []
+    if not files:
+        return Probe("gguf-models", False, f"no .gguf files in {models_dir}")
+    return Probe("gguf-models", True, ", ".join(files))
+
+
 def probe_sandboxes(which: Which, run: Runner, docker_ok: bool) -> list[Probe]:
     """Detect each sandbox mechanism the executor can use."""
     probes = [Probe("sandbox:docker", docker_ok, "docker --network none" if docker_ok else "-")]
@@ -234,6 +253,8 @@ def diagnose(
     home: Path,
     meminfo: Path = Path("/proc/meminfo"),
     caps: budget.Caps | None = None,
+    llm_python: Path = Path("/opt/receipts-llm/bin/python"),
+    models_dir: Path = Path("/opt/receipts-models"),
 ) -> DoctorReport:
     """Run every probe and derive usable backends, fallbacks, and Needs Raj items."""
     guard_problems = guard.billing_guard_problems(env=env, home=home, repo=repo)
@@ -249,6 +270,8 @@ def diagnose(
         probe_claude(which, run, guard_problems),
         probe_ollama(which, run),
         probe_llamacpp(which),
+        probe_llama_cpp_python(run, llm_python),
+        probe_models(models_dir),
         probe_binary("gemini", which, run, ["--version"]),
         probe_binary("codex", which, run, ["--version"]),
         probe_free_tiers(env),
@@ -265,7 +288,8 @@ def diagnose(
         backends={},
     )
     by_name = {p.name: p for p in probes}
-    local_ok = by_name["ollama"].ok or by_name["llama.cpp"].ok
+    server_ok = by_name["ollama"].ok or by_name["llama.cpp"].ok or by_name["llama-cpp-python"].ok
+    local_ok = by_name["ollama"].ok or (server_ok and by_name["gguf-models"].ok)
     report.backends = {
         "claude": by_name["claude"].ok,
         "local": local_ok,
@@ -316,7 +340,8 @@ def _derive_fallbacks(
         report.needs_raj.append("Log the `claude` CLI in to the Max plan (claude auth login).")
     if not report.backends["local"]:
         report.fallbacks.append(
-            "no local model server: install Ollama or llama.cpp before local-model arms"
+            "no local model backend: needs Ollama with a model, or llama.cpp or "
+            "llama-cpp-python with a pinned GGUF file (tools/provision.sh)"
         )
     if report.free_disk_gb - disk_floor_gb < 10:
         report.fallbacks.append(

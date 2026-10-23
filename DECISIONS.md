@@ -118,3 +118,21 @@ read anything, and does not commit; the main session integrates, runs the checks
 commits and pushes. Shared contracts (ledger event schema, claim and verdict types,
 dependencies in pyproject.toml) are written by the main session before a workflow
 starts and are read-only for the agents.
+
+**D22. Sandbox upgrade (supersedes the D5 fallback).** bubblewrap 0.9.0 installs from apt
+in this container and works, and the Docker daemon starts with `dockerd --iptables=false`
+(`docker run --network none` verified). The executor prefers Docker, then bubblewrap,
+then `unshare -rn`; bubblewrap confines writes to the workspace, so third-party task code
+and subject agents may run under it. Docker Hub rate-limits image pulls (HTTP 429 seen
+once), so the Docker backend uses locally cached images and bubblewrap is the dependable
+default. `tools/provision.sh` reinstalls all of this in a fresh container.
+
+**D23. Local model backend.** GitHub release downloads are blocked by this container's
+proxy (no Ollama or llama.cpp binaries), but PyPI and Hugging Face are reachable. The
+local backend is the llama-cpp-python 0.3.36 OpenAI-compatible server, built from the PyPI
+source distribution into `/opt/receipts-llm` (outside the repository), serving pinned
+GGUF files from the vendors' own repositories, verified by the LFS SHA-256:
+Qwen/Qwen2.5-Coder-7B-Instruct-GGUF at 13fb94bf (q4_k_m, Apache-2.0) and
+ibm-granite/granite-3.3-8b-instruct-GGUF at e40e9dd7 (Q4_K_M, Apache-2.0). Two vendors give
+two model families for G7 alongside Claude. Weights are never committed (git-ignored and
+stored outside the repository); docs/DATA.md records source, license, and retrieval date.
