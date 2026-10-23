@@ -32,6 +32,7 @@ sys.dont_write_bytecode = True
 
 import argparse  # noqa: E402
 import hashlib  # noqa: E402
+import io  # noqa: E402
 import json  # noqa: E402
 import math  # noqa: E402
 import os  # noqa: E402
@@ -41,6 +42,7 @@ import statistics  # noqa: E402
 import subprocess  # noqa: E402
 import tempfile  # noqa: E402
 import time  # noqa: E402
+import tokenize  # noqa: E402
 import tomllib  # noqa: E402
 from collections import Counter  # noqa: E402
 from collections.abc import Callable, Iterable, Mapping, Sequence  # noqa: E402
@@ -100,7 +102,8 @@ class CmdResult:
 
     name: str
     returncode: int
-    output: str
+    stdout: str
+    stderr: str
     seconds: float
 
     @property
@@ -108,9 +111,14 @@ class CmdResult:
         """True when the command exited 0."""
         return self.returncode == 0
 
+    @property
+    def output(self) -> str:
+        """stdout followed by stderr, for logs."""
+        return self.stdout + self.stderr
+
     def last_line(self) -> str:
-        """Return the last non-empty output line."""
-        lines = [line for line in self.output.splitlines() if line.strip()]
+        """Return the last non-empty stdout line (stderr carries tool warnings)."""
+        lines = [line for line in self.stdout.splitlines() if line.strip()]
         return lines[-1].strip() if lines else ""
 
 
@@ -154,17 +162,18 @@ class Context:
                 timeout=timeout,
                 check=False,
             )
-            code, output = proc.returncode, proc.stdout + proc.stderr
+            code, stdout, stderr = proc.returncode, proc.stdout, proc.stderr
         except subprocess.TimeoutExpired as exc:
             out = exc.stdout or ""
             text = out.decode(errors="replace") if isinstance(out, bytes) else out
-            code, output = 124, text + f"\n[timeout after {timeout:.0f}s]"
+            code, stdout, stderr = 124, text, f"[timeout after {timeout:.0f}s]"
         except FileNotFoundError as exc:
-            code, output = 127, str(exc)
-        result = CmdResult(name, code, output, time.monotonic() - start)
+            code, stdout, stderr = 127, "", str(exc)
+        result = CmdResult(name, code, stdout, stderr, time.monotonic() - start)
         safe = re.sub(r"[^A-Za-z0-9_.-]", "_", name)
         (self.logs / f"{safe}.log").write_text(
-            f"$ {' '.join(argv)}\n[exit {code} in {result.seconds:.1f}s]\n{output}",
+            f"$ {' '.join(argv)}\n[exit {code} in {result.seconds:.1f}s]\n"
+            f"--- stdout\n{stdout}--- stderr\n{stderr}",
             encoding="utf-8",
         )
         self.results[name] = result
@@ -390,6 +399,26 @@ TYPE_IGNORE = re.compile(r"#\s*type:\s*ignore(?P<rest>.*)$")
 TYPE_IGNORE_OK = re.compile(r"^\[[\w,\- ]+\]\s+#\s*\S.{2,}")
 
 
+def unexplained_type_ignores(source: str) -> list[int]:
+    """Line numbers of ``type: ignore`` comments that lack an error code and a reason.
+
+    Only real comments count (found with ``tokenize``), so text inside string
+    literals, such as test data, is ignored. Untokenizable source reports line 0.
+    """
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
+    except (tokenize.TokenError, SyntaxError):
+        return [0]
+    bad: list[int] = []
+    for token in tokens:
+        if token.type != tokenize.COMMENT:
+            continue
+        m = TYPE_IGNORE.search(token.string)
+        if m and not TYPE_IGNORE_OK.match(m.group("rest").strip()):
+            bad.append(token.start[0])
+    return bad
+
+
 def g2(ctx: Context) -> str:
     """Static quality: ruff check, ruff format --check, mypy --strict, reasons on ignores."""
     ctx.make("setup", 900)
@@ -399,11 +428,8 @@ def g2(ctx: Context) -> str:
     require(types.ok, "mypy --strict failed")
     bad: list[str] = []
     for rel in git(ctx.clone, "ls-files", "*.py").split():
-        lines = (ctx.clone / rel).read_text(encoding="utf-8").splitlines()
-        for number, line in enumerate(lines, start=1):
-            m = TYPE_IGNORE.search(line)
-            if m and not TYPE_IGNORE_OK.match(m.group("rest").strip()):
-                bad.append(f"{rel}:{number}")
+        source = (ctx.clone / rel).read_text(encoding="utf-8")
+        bad.extend(f"{rel}:{line}" for line in unexplained_type_ignores(source))
     require(not bad, "type: ignore without code and reason at " + ", ".join(bad[:3]))
     return "ruff check, ruff format --check, mypy --strict clean; every type: ignore has a reason"
 
@@ -467,7 +493,7 @@ def g4(ctx: Context) -> str:
     )
     require(raw.ok, "tools/demo.py failed when run without --check")
     require(
-        raw.output == golden.read_text(encoding="utf-8"),
+        raw.stdout == golden.read_text(encoding="utf-8"),
         "demo output differs from tests/golden/demo_output.txt",
     )
     after = sha256_file(usage) if usage.is_file() else ""
@@ -713,7 +739,7 @@ def g10(ctx: Context) -> str:
     claim = ctx.make("claimcheck", 600)
     fresh = ctx.make("freshness", 1200)
     for result, label in ((claim, "claimcheck"), (fresh, "freshness")):
-        covered = all(f"{doc}" in result.output for doc in ("README.md", "docs/REPORT.md"))
+        covered = all(f"{doc}:" in result.stdout for doc in ("README.md", "docs/REPORT.md"))
         require(result.ok, f"make {label} failed: {result.last_line()[:80]}")
         require(covered, f"make {label} did not check both README.md and docs/REPORT.md")
     return "make claimcheck and make freshness pass on README.md and docs/REPORT.md"
@@ -725,7 +751,10 @@ def g11(ctx: Context) -> str:
     verify = ctx.make("prereg-verify", 600)
     require(verify.ok, f"make prereg-verify failed: {verify.last_line()[:80]}")
     detail = ctx.python("prereg-json", ["tools/prereg.py", "verify", "--json"], 600)
-    data = json.loads(detail.output[detail.output.index("{") :]) if "{" in detail.output else {}
+    try:
+        data = json.loads(detail.stdout)
+    except json.JSONDecodeError:
+        data = {}
     n = len(data.get("confirmatory_artifacts", []))
     require(data.get("ok") is True and n >= 1, "no confirmatory artifacts cite a preregistration")
     return (

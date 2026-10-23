@@ -197,17 +197,14 @@ def test_wilson_interval() -> None:
 
 
 def test_type_ignore_reason_rule() -> None:
-    ok = "x = f()  # type: ignore[no-untyped-call]  # third-party stub missing"
-    bad = [
-        "x = f()  # type: ignore",
-        "x = f()  # type: ignore[attr-defined]",
-        "y  # type: ignore  # why",
-    ]
-    match = ship_check.TYPE_IGNORE.search(ok)
-    assert match and ship_check.TYPE_IGNORE_OK.match(match.group("rest").strip())
-    for line in bad:
-        m = ship_check.TYPE_IGNORE.search(line)
-        assert m and not ship_check.TYPE_IGNORE_OK.match(m.group("rest").strip())
+    source = (
+        "a = f()  # type: ignore[no-untyped-call]  # third-party stub missing\n"
+        "b = f()  # type: ignore\n"
+        "c = f()  # type: ignore[attr-defined]\n"
+        "d = '# type: ignore inside a string is not a comment'\n"
+    )
+    assert ship_check.unexplained_type_ignores(source) == [2, 3]
+    assert ship_check.unexplained_type_ignores("x = (\n") == [0]
 
 
 def test_tree_hash_and_text_helpers(tmp_path: Path) -> None:
