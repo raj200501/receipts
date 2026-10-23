@@ -7,7 +7,7 @@ the host. Every model call goes through :class:`receipts.client.ModelClient`.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -70,6 +70,9 @@ class AgentConfig:
     context_chars: int = 40_000
     kind: CallKind = "local_call"
     purpose: str = "minimal-agent"
+    system_suffix: str = ""
+    label_events: bool = False
+    max_report_revisions: int = 1
 
 
 @dataclass(frozen=True)
@@ -81,6 +84,7 @@ class AgentResult:
     stop_reason: str
     messages: Sequence[Message]
     protocol_errors: int
+    drafts: Sequence[str] = ()
 
 
 ELIDED = "[earlier tool output omitted to fit the context window]"
@@ -107,9 +111,14 @@ def compact(messages: Sequence[Message], budget_chars: int, keep_recent: int = 6
     return out
 
 
-def observation(action: Action, text: str) -> str:
-    """Format a tool result as the next user message."""
-    return f"Result of {action.tool}:\n{text}"
+def observation(action: Action, text: str, call_seq: int | None = None) -> str:
+    """Format a tool result as the next user message.
+
+    With ``call_seq`` the header names the ledger event of the call, so an agent asked
+    for an evidence-linked report (E4) can cite it.
+    """
+    label = "" if call_seq is None else f" (event {call_seq})"
+    return f"Result of {action.tool}{label}:\n{text}"
 
 
 def run_agent(
@@ -118,6 +127,7 @@ def run_agent(
     config: AgentConfig,
     runtime: ToolRuntime,
     prior_messages: Sequence[Message] = (),
+    on_finish: Callable[[str], str | None] | None = None,
 ) -> AgentResult:
     """Run minimal-agent until ``finish`` or ``max_turns``.
 
@@ -127,10 +137,16 @@ def run_agent(
         config: The agent configuration.
         runtime: Executes and records actions.
         prior_messages: M4 context load: realistic earlier work placed before the task.
+        on_finish: E4 post-check. Called with each report; returning text sends it to the
+            agent as feedback and the run continues (at most ``max_report_revisions``
+            times while turns remain); returning None accepts the report. Earlier
+            reports are kept in ``AgentResult.drafts``.
     """
     flaky = FlakinessPolicy(config.flakiness_rate, seed=config.flakiness_seed)
+    system = SYSTEM_PROMPT + ("\n\n" + config.system_suffix if config.system_suffix else "")
+    drafts: list[str] = []
     messages: list[Message] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system},
         *prior_messages,
         {"role": "user", "content": task_prompt},
     ]
@@ -155,7 +171,14 @@ def run_agent(
             continue
         call_seq = runtime.record_call(action)
         if action.tool == "finish":
-            return AgentResult(str(action.args["report"]), turn, "finished", messages, errors)
+            report = str(action.args["report"])
+            can_revise = len(drafts) < config.max_report_revisions and turn < config.max_turns
+            feedback = on_finish(report) if on_finish is not None and can_revise else None
+            if feedback is None:
+                return AgentResult(report, turn, "finished", messages, errors, tuple(drafts))
+            drafts.append(report)
+            messages.append({"role": "user", "content": feedback})
+            continue
         failure = flaky.should_fail(action.tool)
         if failure is not None:
             shown = Shown(failure, len(failure), False)
@@ -164,5 +187,6 @@ def run_agent(
             output, is_error = runtime.execute(action, call_seq)
             shown = config.truncation.apply(action.tool, output)
             runtime.record_result(action, call_seq, shown, is_error)
-        messages.append({"role": "user", "content": observation(action, shown.text)})
-    return AgentResult("", config.max_turns, "max_turns", messages, errors)
+        label = call_seq if config.label_events else None
+        messages.append({"role": "user", "content": observation(action, shown.text, label)})
+    return AgentResult("", config.max_turns, "max_turns", messages, errors, tuple(drafts))

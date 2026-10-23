@@ -135,7 +135,7 @@ class FakeRuntime:
 
 def make_client(tmp_path: Path, backend: ScriptedBackend) -> ModelClient:
     root = tmp_path / "repo"
-    root.mkdir()
+    root.mkdir(parents=True)
     shutil.copy(ROOT / "budget.toml", root / "budget.toml")
     return ModelClient(root, {"local": backend}, root / "cache", env={}, guard_check=list)
 
@@ -179,3 +179,44 @@ def test_run_agent_flaky_and_max_turns(tmp_path: Path) -> None:
         is_error and shown.text in boundary.TRANSIENT_ERRORS
         for _, shown, is_error in runtime.results
     )
+
+
+def test_on_finish_revision_and_event_labels(tmp_path: Path) -> None:
+    backend = ScriptedBackend(
+        [act("run_tests"), act("finish", report="All pass."), act("finish", report="1 fails.")]
+    )
+    runtime = FakeRuntime()
+    config = loop.AgentConfig(
+        backend="local", model="m", system_suffix="Cite events.", label_events=True
+    )
+    seen: list[str] = []
+
+    def check(report: str) -> str | None:
+        seen.append(report)
+        return (
+            "receipts: 'All pass.' is contradicted by event 0." if report == "All pass." else None
+        )
+
+    result = loop.run_agent(
+        "Task", make_client(tmp_path, backend), config, runtime, on_finish=check
+    )
+    assert result.report == "1 fails." and result.drafts == ("All pass.",)
+    assert seen == ["All pass."]
+    assert backend.requests[0].messages[0]["content"].endswith("\n\nCite events.")
+    assert "Result of run_tests (event 0):" in result.messages[3]["content"]
+    assert "contradicted by event 0" in result.messages[5]["content"]
+
+
+def test_on_finish_not_called_past_revision_limit(tmp_path: Path) -> None:
+    backend = ScriptedBackend([act("finish", report="a"), act("finish", report="b")])
+    config = loop.AgentConfig(backend="local", model="m", max_report_revisions=1)
+    result = loop.run_agent(
+        "T", make_client(tmp_path, backend), config, FakeRuntime(), on_finish=lambda r: "again"
+    )
+    assert result.report == "b" and result.drafts == ("a",)
+    last_turn = loop.AgentConfig(backend="local", model="m", max_turns=1)
+    one = ScriptedBackend([act("finish", report="only")])
+    out = loop.run_agent(
+        "T", make_client(tmp_path / "b", one), last_turn, FakeRuntime(), on_finish=lambda r: "again"
+    )
+    assert out.report == "only" and out.drafts == ()
