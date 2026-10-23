@@ -7,12 +7,29 @@ Updated 2026-10-23 at bootstrap (docs/BUILD_BRIEF.md section 10.1). History is i
 
 ## Gates
 
-Not run yet at this commit; the first `python tools/ship_check.py --fast` result is
-recorded in the next commit.
+`python tools/ship_check.py --fast` at 1270e85 (fresh clone): **2/14** (FAST, does not count).
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| G1 Build and tests | FAIL | core modules missing: ledger, claims, verify, analysis, hook |
+| G2 Static quality | PASS | ruff check, ruff format --check, mypy --strict clean |
+| G3 CI parity | FAIL | make ci parts do not all pass (demo not built) |
+| G4 Offline demo | FAIL | make demo not built yet |
+| G5 Instrument validity | FAIL | artifacts/e0/claim_type_counts.json missing |
+| G6 Benchmark | FAIL | 0 tasks of 30 |
+| G7 Main study | FAIL | artifacts/e1/results.json missing |
+| G8 Mechanisms, judges | FAIL | artifacts/e1/runs.jsonl missing |
+| G9 Mitigation | FAIL | artifacts/e4/results.json missing |
+| G10 Claim integrity | FAIL | docs/REPORT.md missing |
+| G11 Prereg integrity | FAIL | no confirmatory artifacts yet |
+| G12 Review | FAIL | no review yet |
+| G13 Documentation | FAIL | README.md is still the build brief |
+| G14 Hygiene | PASS | secrets clean; cash_usd = 0; private/ untracked; files present; clean tree |
 
 ## Now
 
-Bootstrap: scaffold, `make doctor`, gate harness, integrity tools, CLAUDE.md, subagents.
+Bootstrap done (section 10.1 steps 1 to 11). Next heartbeat starts the Loop Protocol at
+M1 (critical path: G1, G3, G4).
 
 ## Next three actions
 
