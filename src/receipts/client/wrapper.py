@@ -220,6 +220,42 @@ class ModelClient:
         self._log(request, backend, response)
         return response
 
+    def begin_claude_run(self, kind: CallKind, model: str, purpose: str) -> None:
+        """Check, before a multi-turn Claude run starts, that it may start.
+
+        A headless subject run (or one Claude-in-minimal-agent run) counts once against
+        its daily cap, so the check happens here rather than per model call. Raises
+        :class:`ClientRefusedError` when offline, when the guard trips, or at the cap.
+        """
+        if self.env.get("RECEIPTS_OFFLINE") == "1":
+            raise ClientRefusedError("RECEIPTS_OFFLINE=1: model calls are disabled")
+        problems = self._guard_check()
+        if problems:
+            names = ", ".join(p.name for p in problems)
+            raise ClientRefusedError(f"billing guard tripped ({names}); Claude run refused")
+        probe = ModelRequest(backend="claude", model=model, messages=(), kind=kind, purpose=purpose)
+        self._check_cap(probe)
+
+    def record_claude_run(
+        self,
+        kind: CallKind,
+        model: str,
+        purpose: str,
+        *,
+        input_tokens: int,
+        output_tokens: int,
+        wall_s: float,
+        plan_equivalent_usd: float,
+    ) -> None:
+        """Log one finished multi-turn Claude run to the usage ledger (cash is always 0)."""
+        request = ModelRequest(
+            backend="claude", model=model, messages=(), kind=kind, purpose=purpose
+        )
+        response = ModelResponse(
+            "", input_tokens, output_tokens, wall_s, "run", plan_equivalent_usd=plan_equivalent_usd
+        )
+        self._log(request, _ClaudeRunMarker(), response)
+
     def _log(self, request: ModelRequest, backend: Backend, response: ModelResponse) -> None:
         record = {
             "ts": round(self.clock(), 3),
@@ -240,3 +276,13 @@ class ModelClient:
         self.usage_path.parent.mkdir(parents=True, exist_ok=True)
         with self.usage_path.open("a", encoding="utf-8") as handle:
             handle.write(canonical_json(record) + "\n")
+
+
+class _ClaudeRunMarker:
+    """Backend stand-in used only to log multi-turn Claude runs."""
+
+    name = "claude"
+    is_claude = True
+
+    def complete(self, request: ModelRequest) -> ModelResponse:  # pragma: no cover
+        raise ClientRefusedError("a run marker cannot make calls")
