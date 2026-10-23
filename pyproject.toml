@@ -13,7 +13,10 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.13",
+]
 
 [project.scripts]
 receipts-doctor = "receipts.doctor:main"
@@ -24,6 +27,7 @@ dev = [
     "pytest-cov>=5",
     "ruff>=0.6",
     "mypy>=1.11",
+    "scipy-stubs>=1.13",
 ]
 
 [build-system]
