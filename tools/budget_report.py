@@ -9,6 +9,7 @@ Claude cap after CAP_SHARE scaling.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections import Counter
 from collections.abc import Sequence
@@ -34,13 +35,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, budget.BudgetError) as exc:
         print(f"BUDGET: FAIL {exc}")
         return 1
+    try:
+        share = budget.effective_cap_share(os.environ, root / "launch.toml")
+    except (OSError, budget.BudgetError) as exc:
+        print(f"BUDGET: FAIL {exc}")
+        return 1
     problems.extend(budget.check_against_defaults(caps, defaults))
     problems.extend(budget.check_usage(records, caps))
     cash = caps.cash_usd + budget.total_cash(records)
     print(f"cash_usd = {cash:g}")
+    print(f"cap_share = {share:g} (stricter of CAP_SHARE and launch.toml)")
+    effective = caps.effective(share).as_dict()
     for key, value in caps.as_dict().items():
         if key != "cash_usd":
-            print(f"cap {key} = {value:g} (brief default {defaults.as_dict()[key]:g})")
+            print(
+                f"cap {key} = {value:g} (brief default {defaults.as_dict()[key]:g}; "
+                f"effective {effective[key]:g})"
+            )
     kinds = Counter(r.kind for r in records if r.backend == "claude" and not r.cache_hit)
     days = sorted({r.day for r in records})
     print(

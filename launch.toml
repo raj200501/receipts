@@ -1,0 +1,6 @@
+# Raj's launch settings for this Claude Code on the web session (DECISIONS.md D19, D20).
+# They stand in for the environment variables of the same names, which this runtime
+# does not let Raj set at launch. When CAP_SHARE is also set in the environment, the
+# stricter (smaller) value wins.
+allow_push = true
+cap_share = 0.2

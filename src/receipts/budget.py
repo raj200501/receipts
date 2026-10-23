@@ -119,6 +119,22 @@ def parse_cap_share(env: Mapping[str, str]) -> float:
     return validate_cap_share(value)
 
 
+def load_launch_cap_share(path: Path) -> float:
+    """Read ``cap_share`` from ``launch.toml``; a missing file or key means 1.0."""
+    if not path.is_file():
+        return 1.0
+    with path.open("rb") as handle:
+        value = tomllib.load(handle).get("cap_share", 1.0)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise BudgetError("launch.toml cap_share must be a number")
+    return validate_cap_share(float(value))
+
+
+def effective_cap_share(env: Mapping[str, str], launch_path: Path) -> float:
+    """Return the stricter of the CAP_SHARE environment variable and ``launch.toml``."""
+    return min(parse_cap_share(env), load_launch_cap_share(launch_path))
+
+
 def load_caps(path: Path) -> Caps:
     """Load and validate ``budget.toml``."""
     with path.open("rb") as handle:

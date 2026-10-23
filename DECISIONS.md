@@ -94,3 +94,27 @@ deselects tests marked `slow`. Only a full run counts.
 so the median is meaningful; the median must be under 5 seconds (section 4).
 
 **D18. G13 first screen.** "First screen" is the first 60 lines of README.md.
+
+## 2026-10-23 (goal_turn 1)
+
+**D19. Raj's launch settings: ALLOW_PUSH=1.** Raj's `/goal` message states his launch
+settings for this Claude Code on the web session and says to treat them as set:
+`ALLOW_PUSH=1`, so every commit is pushed to this session's working branch
+(`claude/sweet-newton-r3x6t3`) on `origin`, never force-pushed, never with tags, and
+without touching repository settings. This supersedes D3. The settings are recorded in
+`launch.toml` because the runtime does not expose them as environment variables.
+
+**D20. Raj's launch settings: CAP_SHARE=0.2.** Five projects share one Max plan. The
+effective share is the stricter of the `CAP_SHARE` environment variable and
+`launch.toml` `cap_share = 0.2`, applied by `receipts.budget.effective_cap_share` and
+shown by `make budget`. Every `claude_*` cap is multiplied by it (section 8), giving
+per day 6 agent runs, 60 single calls, 1 review run, and 8 turns per headless run.
+These only matter once the billing guard clears (D4).
+
+**D21. Parallel work ("ultracode").** Raj asked for parallel subagent workflows for
+independent work with one owner per gate and no two agents editing the same file at
+once. Each workflow agent gets an explicit list of files and directories it owns, may
+read anything, and does not commit; the main session integrates, runs the checks, and
+commits and pushes. Shared contracts (ledger event schema, claim and verdict types,
+dependencies in pyproject.toml) are written by the main session before a workflow
+starts and are read-only for the agents.

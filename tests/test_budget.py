@@ -160,3 +160,26 @@ def test_read_usage_missing_and_malformed(tmp_path: Path) -> None:
         write_ledger(bad, [broken])
         with pytest.raises(budget.BudgetError):
             budget.read_usage(bad)
+
+
+def test_launch_cap_share(tmp_path: Path) -> None:
+    launch = tmp_path / "launch.toml"
+    assert budget.load_launch_cap_share(launch) == 1.0
+    launch.write_text("cap_share = 0.2\n")
+    assert budget.load_launch_cap_share(launch) == 0.2
+    assert budget.effective_cap_share({}, launch) == 0.2
+    assert budget.effective_cap_share({"CAP_SHARE": "0.1"}, launch) == 0.1
+    assert budget.effective_cap_share({"CAP_SHARE": "0.5"}, launch) == 0.2
+    launch.write_text("cap_share = true\n")
+    with pytest.raises(budget.BudgetError):
+        budget.load_launch_cap_share(launch)
+    launch.write_text("cap_share = 3\n")
+    with pytest.raises(budget.BudgetError):
+        budget.load_launch_cap_share(launch)
+
+
+def test_repo_launch_settings() -> None:
+    assert budget.load_launch_cap_share(ROOT / "launch.toml") == 0.2
+    effective = budget.load_caps(ROOT / "budget.toml").effective(0.2)
+    assert effective.claude_review_runs_per_day == 1
+    assert effective.claude_agent_runs_per_day == 6

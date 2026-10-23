@@ -74,6 +74,7 @@ docs/BUILD_BRIEF.md (immutable; its SHA-256 is in docs/BUILD_BRIEF.sha256).
 
 - One Loop Protocol iteration per heartbeat (section 10.2). Failing gate on the critical path
   first; after 14/14, the next Stretch Ladder rung (section 7).
-- Push only if `ALLOW_PUSH=1` is set, only to `origin`, never force, never tags.
+- Push only if `ALLOW_PUSH=1` is set (Raj set it for this session: `launch.toml`, D19), only to
+  `origin` on the session branch, never force, never tags.
 - Never launch a Claude child while `python -m receipts.guard` reports a problem.
 - At most one model-heavy background run at a time, with a PID file and log under `runs/<id>/`.
