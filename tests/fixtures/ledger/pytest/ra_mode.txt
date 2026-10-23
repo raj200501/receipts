@@ -1,0 +1,27 @@
+[hand-written fixture modeled on pytest 8.3 -rA output; not captured from a real run]
+============================= test session starts ==============================
+platform linux -- Python 3.11.9, pytest-8.3.2, pluggy-1.5.0
+rootdir: /work/flags
+collected 6 items
+
+tests/test_flags.py .xX.s.                                               [100%]
+
+=============================== warnings summary ===============================
+tests/test_flags.py::test_on
+  /work/flags/flags.py:4: DeprecationWarning: use new_flag()
+    warnings.warn("use new_flag()", DeprecationWarning)
+
+tests/test_flags.py::test_off
+  /work/flags/flags.py:4: DeprecationWarning: use new_flag()
+    warnings.warn("use new_flag()", DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_flags.py::test_on
+PASSED tests/test_flags.py::test_off
+PASSED tests/test_flags.py::test_toggle[True]
+SKIPPED [1] tests/test_flags.py:30: needs network
+XFAIL tests/test_flags.py::test_legacy - reason: legacy path removed
+XPASS tests/test_flags.py::test_maybe - flaky upstream
+======== 3 passed, 1 skipped, 1 xfailed, 1 xpassed, 2 warnings in 0.08s ========

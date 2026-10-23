@@ -1,0 +1,21 @@
+[hand-written fixture modeled on node 22 --test spec reporter with color; not captured from a real run]
+[32m✔ adds numbers [90m(0.4ms)[39m[0m
+[31m✖ divides by zero [90m(0.9ms)[39m[0m
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  Infinity !== 0
+
+[34mℹ tests 2[39m
+[34mℹ suites 0[39m
+[34mℹ pass 1[39m
+[34mℹ fail 1[39m
+[34mℹ cancelled 0[39m
+[34mℹ skipped 0[39m
+[34mℹ todo 0[39m
+[34mℹ duration_ms 48.1[39m
+
+[31m✖ failing tests:[39m
+
+test at test/calc.test.js:8:1
+[31m✖ divides by zero [90m(0.9ms)[39m[0m
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:

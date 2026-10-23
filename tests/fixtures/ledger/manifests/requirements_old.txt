@@ -1,0 +1,9 @@
+# hand-written fixture modeled on a pip requirements file; not from a real project
+requests==2.31.0
+PyYAML>=6.0  # config parsing
+click>=8,<9
+-r requirements-base.txt
+--index-url https://pypi.example.invalid/simple
+urllib3==2.0.7 \
+    --hash=sha256:0000000000000000000000000000000000000000000000000000000000000000
+numpy<2; python_version < "3.9"

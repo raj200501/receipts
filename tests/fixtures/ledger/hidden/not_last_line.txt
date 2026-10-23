@@ -1,0 +1,3 @@
+[hand-written fixture: the JSON object is not the last line, so the contract is not met]
+{"checks": [{"name": "a", "passed": true}]}
+done

@@ -1,0 +1,19 @@
+[hand-written fixture modeled on pytest 8.3 output with --color=yes; not captured from a real run]
+[1m============================= test session starts ==============================[0m
+platform linux -- Python 3.11.9, pytest-8.3.2, pluggy-1.5.0
+rootdir: /work/calc
+[1mcollected 5 items[0m
+
+tests/test_calc.py [32m.[0m[32m.[0m[31mF[0m[32m.[0m[32m.[0m[31m                                        [100%][0m
+
+[31m=================================== FAILURES ===================================[0m
+[31m[1m___________________________________ test_neg ___________________________________[0m
+
+    [1mdef[0m [32mtest_neg[0m():
+>       [1massert[0m neg([33m1[0m) == -[33m1[0m
+[31m[1mE       assert 1 == -1[0m
+
+[31m[1mtests/test_calc.py[0m:15: AssertionError
+[33m=========================== short test summary info ============================[0m
+[31mFAILED[0m tests/test_calc.py::[1mtest_neg[0m - assert 1 == -1
+[31m========================= [31m[1m1 failed[0m, [32m4 passed[0m[31m in 0.07s[0m[31m ==========================[0m

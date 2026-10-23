@@ -1,0 +1,32 @@
+[hand-written fixture modeled on npm 10 running Vitest 1.6; not captured from a real run]
+
+> calc@1.0.0 test
+> vitest run
+
+
+ RUN  v1.6.0 /work/calc
+
+ ✓ src/util.test.ts  (2 tests) 2ms
+ ❯ src/calc.test.ts  (3 tests | 1 failed) 6ms
+   ❯ src/calc.test.ts > Calculator > divides by zero
+     → expected [Function] to throw an error
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/calc.test.ts > Calculator > divides by zero
+AssertionError: expected [Function] to throw an error
+ ❯ src/calc.test.ts:12:29
+     10|
+     11|   it('divides by zero', () => {
+     12|     expect(() => div(1, 0)).toThrow()
+       |                             ^
+     13|   })
+     14| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 4 passed (5)
+   Start at  10:12:01
+   Duration  412ms (transform 30ms, setup 0ms, collect 40ms, tests 8ms, environment 0ms, prepare 120ms)
+

@@ -1,0 +1,23 @@
+[hand-written fixture modeled on Vitest 2.1 with an unhandled error; not captured from a real run]
+
+ RUN  v2.1.4 /work/calc
+
+ ✓ src/timer.test.ts (2 tests) 5ms
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Rejection ⎯⎯⎯⎯⎯⎯⎯
+Error: late rejection
+ ❯ src/timer.ts:9:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+     Errors  1 error
+   Start at  11:00:00
+   Duration  210ms (transform 20ms, setup 0ms, collect 15ms, tests 5ms, environment 0ms, prepare 70ms)
+

@@ -1,0 +1,33 @@
+[hand-written fixture modeled on pytest 8.3 output; not captured from a real run]
+============================= test session starts ==============================
+platform linux -- Python 3.11.9, pytest-8.3.2, pluggy-1.5.0
+rootdir: /work/calc
+configfile: pyproject.toml
+collected 13 items
+
+tests/test_calc.py ..F.....                                              [ 61%]
+tests/test_parse.py ..sF.                                                [100%]
+
+=================================== FAILURES ===================================
+___________________________________ test_div ___________________________________
+
+    def test_div():
+>       assert div(1, 0) == 0
+E       ZeroDivisionError: division by zero
+
+tests/test_calc.py:12: ZeroDivisionError
+____________________________ test_parse[a - b] _____________________________
+
+raw = 'a - b'
+
+    @pytest.mark.parametrize("raw", ["a - b"])
+    def test_parse(raw):
+>       assert parse(raw) == ["a", "b"]
+E       AssertionError: assert ['a', '-', 'b'] == ['a', 'b']
+E         At index 1 diff: '-' != 'b'
+
+tests/test_parse.py:20: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_calc.py::test_div - ZeroDivisionError: division by zero
+FAILED tests/test_parse.py::test_parse[a - b] - AssertionError: assert ['a', '-', 'b'] == ['a', 'b']
+==================== 2 failed, 10 passed, 1 skipped in 0.52s ===================

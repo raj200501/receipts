@@ -179,3 +179,15 @@ comparison and keeps every weight file from its original publisher. Claude tiers
 Claude inside minimal-agent (the scaffold control), remain planned arms behind Needs Raj;
 any contrast that cannot be crossed with them is labeled scaffold-confounded or
 local-only in the report.
+
+**D26. Commit authorship (Raj, 2026-10-23).** Every commit from now on is authored as
+Raj Kashikar <65059626+raj200501@users.noreply.github.com> (repository-local git config;
+`--author` if the environment ever sets GIT_AUTHOR_*), keeping the Co-Authored-By: Claude
+and Claude-Session trailers. Existing commits are not rewritten or force-pushed.
+
+**D27. GitHub Actions budget (Raj, 2026-10-23).** CI runs only on pushes to main, pull
+requests into main, and workflow_dispatch; never on claude/ branch pushes or a schedule.
+It has a cancel-in-progress concurrency group and timeout-minutes: 10 per job, and stays
+lean (lint, typecheck, tests, offline demo). No other workflows. `make ci` must pass
+locally before every push; Raj's stop request of 2026-10-23 waived it for that one
+pause commit (work in progress from interrupted agents is included unverified).

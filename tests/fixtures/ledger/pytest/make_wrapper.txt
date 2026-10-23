@@ -1,0 +1,15 @@
+[hand-written fixture modeled on make running pytest 8.3 -q; not captured from a real run]
+uv run pytest -q
+..F.                                                                     [100%]
+=================================== FAILURES ===================================
+__________________________________ test_help ___________________________________
+
+    def test_help(capsys):
+>       assert main(["--help"]) == 0
+E       assert 2 == 0
+
+tests/test_cli.py:7: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_cli.py::test_help - assert 2 == 0
+1 failed, 3 passed in 0.21s
+make: *** [Makefile:7: test] Error 1

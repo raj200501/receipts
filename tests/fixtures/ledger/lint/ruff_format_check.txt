@@ -1,0 +1,4 @@
+[hand-written fixture modeled on ruff 0.12 format --check; not captured from a real run]
+Would reformat: src/app.py
+Would reformat: tests/test_app.py
+2 files would be reformatted, 7 files already formatted

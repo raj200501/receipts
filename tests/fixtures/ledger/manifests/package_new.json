@@ -1,0 +1,10 @@
+{
+  "_comment": "hand-written fixture modeled on an npm package.json; not from a real project",
+  "name": "web",
+  "version": "1.1.0",
+  "scripts": {"test": "jest", "lint": "eslint src"},
+  "dependencies": {"express": "^4.19.2", "zod": "^3.23.8"},
+  "devDependencies": {"jest": "^29.7.0", "eslint": "^9.9.0"},
+  "peerDependencies": {"react": ">=17"},
+  "optionalDependencies": {"fsevents": "^2.3.3"}
+}

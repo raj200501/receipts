@@ -1,0 +1,16 @@
+[hand-written fixture modeled on npm 10 running ESLint 9 (stylish formatter); not captured from a real run]
+
+> web@1.0.0 lint
+> eslint src
+
+
+/work/web/src/app.js
+   3:7   error    'unused' is assigned a value but never used  no-unused-vars
+  10:3   warning  Unexpected console statement                 no-console
+
+/work/web/src/util.js
+  1:1  error  'require' is not defined  no-undef
+
+✖ 3 problems (2 errors, 1 warning)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+

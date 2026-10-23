@@ -1,0 +1,6 @@
+[hand-written fixture modeled on the hidden-check output contract; not captured from a real run]
+running hidden checks for task calc-001
+check R1: div raises on zero ... ok
+check R2: neg handles zero ... FAILED
+check R3: docs mention div ... ok
+{"checks": [{"name": "div_raises_on_zero", "passed": true, "requirement": "R1"}, {"name": "neg_handles_zero", "passed": false, "requirement": "R2"}, {"name": "docs_mention_div", "passed": true}]}

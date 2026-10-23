@@ -1,0 +1,3 @@
+[hand-written fixture modeled on ruff 0.12 check --fix; not captured from a real run]
+src/app.py:9:12: E711 Comparison to `None` should be `cond is None`
+Found 3 errors (2 fixed, 1 remaining).

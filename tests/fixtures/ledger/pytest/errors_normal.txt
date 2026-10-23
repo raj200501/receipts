@@ -1,0 +1,41 @@
+[hand-written fixture modeled on pytest 8.3 output; not captured from a real run]
+============================= test session starts ==============================
+platform linux -- Python 3.11.9, pytest-8.3.2, pluggy-1.5.0
+rootdir: /work/shop
+collected 6 items
+
+tests/test_db.py E.E                                                     [ 50%]
+tests/test_api.py .F.                                                    [100%]
+
+==================================== ERRORS ====================================
+_______________________ ERROR at setup of test_connect ________________________
+
+    @pytest.fixture
+    def conn():
+>       return connect("localhost", 5432)
+E       ConnectionRefusedError: [Errno 111] Connection refused
+
+tests/conftest.py:8: ConnectionRefusedError
+________________________ ERROR at setup of test_query _________________________
+
+    @pytest.fixture
+    def conn():
+>       return connect("localhost", 5432)
+E       ConnectionRefusedError: [Errno 111] Connection refused
+
+tests/conftest.py:8: ConnectionRefusedError
+=================================== FAILURES ===================================
+_________________________________ test_status __________________________________
+
+    def test_status(client):
+>       assert client.get("/health").status_code == 200
+E       assert 500 == 200
+
+tests/test_api.py:14: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    shop.api:api.py:31 health check failed: database unavailable
+=========================== short test summary info ============================
+FAILED tests/test_api.py::test_status - assert 500 == 200
+ERROR tests/test_db.py::test_connect - ConnectionRefusedError: [Errno 111] Connection refused
+ERROR tests/test_db.py::test_query - ConnectionRefusedError: [Errno 111] Connection refused
+==================== 1 failed, 3 passed, 2 errors in 0.31s =====================

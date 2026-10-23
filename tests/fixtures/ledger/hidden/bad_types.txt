@@ -1,0 +1,2 @@
+[hand-written fixture: "passed" is a string, which the contract does not allow]
+{"checks": [{"name": "a", "passed": "yes"}]}

@@ -1,0 +1,2 @@
+[hand-written fixture modeled on ruff 0.12 check; not captured from a real run]
+All checks passed!

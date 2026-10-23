@@ -1,0 +1,10 @@
+[hand-written fixture modeled on Mocha 10 (spec reporter); not captured from a real run]
+
+
+  slugify
+    ✔ lowercases
+    ✔ strips punctuation
+
+
+  2 passing (5ms)
+

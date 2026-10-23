@@ -1,0 +1,4 @@
+[hand-written fixture modeled on tsc 5.5 --watch; not captured from a real run]
+[10:00:00 AM] Starting compilation in watch mode...
+
+[10:00:02 AM] Found 0 errors. Watching for file changes.

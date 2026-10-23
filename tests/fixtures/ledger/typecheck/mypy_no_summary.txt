@@ -1,0 +1,3 @@
+[hand-written fixture modeled on mypy 1.11 --no-error-summary; not captured from a real run]
+src/shop/cart.py:14: error: Incompatible return value type (got "str", expected "int")  [return-value]
+src/shop/cart.py:30:5: error: Missing return statement  [empty-body]

@@ -1,0 +1,5 @@
+[hand-written fixture modeled on mypy 1.11; not captured from a real run]
+src/shop/cart.py:14: error: Incompatible return value type (got "str", expected "int")  [return-value]
+src/shop/cart.py:21: error: Argument 1 to "add" of "Cart" has incompatible type "str"; expected "Item"  [arg-type]
+src/shop/cart.py:21: note: See https://mypy.rtfd.io/en/stable/_refs.html#code-arg-type for more info
+Found 2 errors in 1 file (checked 7 source files)

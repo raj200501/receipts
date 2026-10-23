@@ -1,0 +1,24 @@
+[hand-written fixture modeled on pytest 8.3 with pytest-xdist -v; not captured from a real run]
+============================= test session starts ==============================
+platform linux -- Python 3.11.9, pytest-8.3.2, pluggy-1.5.0
+rootdir: /work/etl
+plugins: xdist-3.6.1
+created: 2/2 workers
+2 workers [3 items]
+
+[gw0] [ 33%] PASSED tests/test_load.py::test_load_csv
+[gw1] [ 66%] FAILED tests/test_load.py::test_load_json
+[gw0] [100%] PASSED tests/test_load.py::test_load_empty
+
+=================================== FAILURES ===================================
+________________________________ test_load_json ________________________________
+[gw1] linux -- Python 3.11.9 /work/etl/.venv/bin/python
+
+    def test_load_json():
+>       assert load("rows.json") == ROWS
+E       KeyError: 'id'
+
+tests/test_load.py:18: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_load.py::test_load_json - KeyError: 'id'
+=================== 1 failed, 2 passed in 75.32s (0:01:15) ====================

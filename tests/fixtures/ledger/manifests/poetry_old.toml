@@ -1,0 +1,13 @@
+# hand-written fixture modeled on a Poetry 1.8 pyproject.toml; not from a real project
+[tool.poetry]
+name = "shop"
+version = "0.1.0"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+requests = "^2.31"
+sqlalchemy = { version = "^2.0", extras = ["asyncio"] }
+legacy-lib = "1.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"

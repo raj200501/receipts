@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- hand-written fixture modeled on jest-junit 16 output; not captured from a real run -->
+<testsuites name="jest tests" tests="5" failures="1" errors="0" time="1.234">
+  <testsuite name="Calculator" errors="0" failures="1" skipped="1" timestamp="2026-10-23T10:00:00" time="0.812" tests="4">
+    <testcase classname="Calculator adds numbers" name="Calculator adds numbers" time="0.003">
+    </testcase>
+    <testcase classname="Calculator divides by zero" name="Calculator divides by zero" time="0.002">
+      <failure>Error: expect(received).toThrow()
+
+Received function did not throw
+    at Object.toThrow (/work/calc/src/calc.test.js:12:29)</failure>
+    </testcase>
+    <testcase classname="Calculator subtracts" name="Calculator subtracts" time="0.001">
+    </testcase>
+    <testcase classname="Calculator rounds" name="Calculator rounds" time="0">
+      <skipped/>
+    </testcase>
+  </testsuite>
+  <testsuite name="util" errors="0" failures="0" skipped="0" timestamp="2026-10-23T10:00:01" time="0.4" tests="1">
+    <testcase classname="util slugify" name="util slugify" time="0.001">
+    </testcase>
+  </testsuite>
+</testsuites>
