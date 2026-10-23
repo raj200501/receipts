@@ -28,30 +28,34 @@ Updated 2026-10-23, goal_turn 1. History is in docs/LOG.md.
 
 ## Now
 
-Bootstrap done (section 10.1 steps 1 to 11). Next heartbeat starts the Loop Protocol at
-M1 (critical path: G1, G3, G4).
+goal_turn 1, M1 in progress. A parallel workflow builds `receipts.ledger` parsers and
+recorder, `receipts.verify`, `receipts.claims`, `receipts.sandbox`, `receipts.analysis`,
+and the receipts-bench framework, each with one owner (D21), plus citation checks.
+Main session built: launch settings (D19, D20), `receipts.client` (the one model-call
+wrapper), minimal-agent core, doctor upgrades, `tools/provision.sh`, pinned local models.
 
 ## Next three actions
 
-1. M1: `receipts.ledger` (hash-chained JSONL ledger, local sandbox executor, pytest and
-   JUnit parsers), test-first.
-2. M1: `receipts.claims` deterministic extractors and `receipts.verify` checkers for the
-   common claim types, then recorded fixtures and `make demo` with its golden output.
-3. M1: try installing bubblewrap so the sandbox can confine filesystem writes (D5).
+1. Integrate the workflow output: full `make lint typecheck test`, fix seams, commit.
+2. Build the offline demo from recorded fixtures with a golden output (G4), then
+   receipts-hook and the claude-code driver against docs/notes/claude_code_docs.md.
+3. Launch the task-authoring workflow over docs/BENCH_CATALOG.md (G6), then smoke runs
+   with the local models.
 
 ## Environment (`make doctor`, 2026-10-23)
 
-- Platform: Linux x86_64 cloud container (Claude Code on the web); RAM 15.7 GB; free disk 32 GB; 4 CPUs; no GPU
-- Python 3.11 and 3.12 available (venv on 3.11); uv 0.11.32; git 2.43; node 22, npm 10
-- docker: binary present, daemon not reachable
-- claude: 2.1.309 installed, unusable: billing guard tripped by `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_CCR_V2`
-- ollama, llama.cpp, gemini, codex: not installed; free tiers: not confirmed
-- sandbox: `unshare -rn` works; no bubblewrap; no Docker; not macOS
-- Usable backends: claude=no, local=no, free_tier=no
-- local_model_max_params_b that fits RAM: 8 (cap unchanged)
-- Fallbacks: local sandbox via `unshare -rn` plus scrubbed environment, rlimits, temp
-  workspace, only for this project's own generated tasks (D5); pipeline jobs and review via
-  Claude Code subagents (D4); local models need Ollama or llama.cpp installed first
+- Linux x86_64 cloud container (Claude Code on the web); RAM 15.7 GB; 4 CPUs; no GPU;
+  about 21 GB free disk after model downloads (floor 8 GB)
+- Python 3.11 and 3.12 (venv on 3.11); uv 0.11.32; git 2.43; node 22, npm 10
+- Sandbox: bubblewrap 0.9.0 works (installed from apt); Docker daemon starts with
+  `dockerd --iptables=false` and `docker run --network none` works; `unshare -rn` works (D22)
+- Local models: llama-cpp-python 0.3.36 server in /opt/receipts-llm; pinned GGUF files
+  Qwen2.5-Coder-7B-Instruct q4_k_m and Granite 3.3 8B Instruct Q4_K_M, hash-verified (D23);
+  throughput banked in `artifacts/env/local_throughput_qwen2.5-coder-7b-instruct-q4km.json`
+- claude 2.1.309 installed but unusable: billing guard tripped by `ANTHROPIC_BASE_URL`,
+  `CLAUDE_CODE_USE_CCR_V2` (D4)
+- Usable backends: local=yes (llama-cpp-python), claude=no, free_tier=no
+- `tools/provision.sh` recreates this environment in a fresh container
 
 ## Usage to date
 
