@@ -139,6 +139,11 @@ class ClaudeCLIBackend:
             "--strict-mcp-config",
             "--tools",
             "",
+            "--max-turns",
+            "1",
+            "--no-session-persistence",
+            "--permission-prompts",
+            "none",
         ]
         if system:
             argv += ["--system-prompt", system]

@@ -96,10 +96,11 @@ def test_probe_claude_never_checks_login_when_guard_trips() -> None:
 @pytest.mark.parametrize(
     ("status", "ok", "word"),
     [
-        (CommandResult(0, "Logged in. Claude Max subscription", ""), True, "subscription"),
-        (CommandResult(0, "Logged in with API key", ""), False, "API key"),
-        (CommandResult(1, "", "Not logged in"), False, "not logged in"),
-        (CommandResult(0, "Logged in", ""), False, "?"),
+        (CommandResult(0, '{"authMethod": "claude.ai"}', ""), True, "claude.ai plan"),
+        (CommandResult(0, '{"authMethod": "api_key"}', ""), False, "authMethod api_key"),
+        (CommandResult(1, '{"authMethod": "none"}', ""), False, "not logged in"),
+        (CommandResult(0, "not json", ""), False, "authMethod unknown"),
+        (CommandResult(0, "[1]", ""), False, "authMethod unknown"),
     ],
 )
 def test_probe_claude_login_methods(status: CommandResult, ok: bool, word: str) -> None:
@@ -204,7 +205,7 @@ def test_diagnose_good_machine(tmp_path: Path) -> None:
         table={
             "docker info": CommandResult(0, "27\n", ""),
             "claude --version": CommandResult(0, "2.1", ""),
-            "claude auth": CommandResult(0, "Max subscription", ""),
+            "claude auth": CommandResult(0, '{"authMethod": "claude.ai"}', ""),
             "ollama list": CommandResult(0, "NAME\nllama3.1:8b x\n", ""),
         },
         gb=6,

@@ -161,13 +161,24 @@ def probe_claude(which: Which, run: Runner, guard_problems: Sequence[guard.Guard
         names = ", ".join(problem.name for problem in guard_problems)
         return Probe("claude", False, f"{version}; billing guard tripped by {names}")
     status = run([path, "auth", "status"], 30)
-    text = (status.stdout + status.stderr).lower()
     if status.returncode != 0:
         return Probe("claude", False, f"{version}; not logged in")
-    if "api key" in text or "console" in text:
-        return Probe("claude", False, f"{version}; logged in with an API key, not a plan")
-    method = "subscription" if any(w in text for w in ("max", "pro", "subscription")) else "?"
-    return Probe("claude", method == "subscription", f"{version}; login method {method}")
+    method = auth_method(status.stdout)
+    if method != "claude.ai":
+        return Probe("claude", False, f"{version}; authMethod {method}, not a plan login")
+    return Probe("claude", True, f"{version}; logged in with a claude.ai plan")
+
+
+def auth_method(status_json: str) -> str:
+    """Return ``authMethod`` from ``claude auth status`` JSON, or ``"unknown"``.
+
+    Only ``claude.ai`` is a subscription login (docs/notes/claude_code_docs.md).
+    """
+    try:
+        data = json.loads(status_json)
+    except json.JSONDecodeError:
+        return "unknown"
+    return str(data.get("authMethod", "unknown")) if isinstance(data, dict) else "unknown"
 
 
 def probe_ollama(which: Which, run: Runner) -> Probe:
