@@ -1,0 +1,17 @@
+{
+  "name": "@storefront/catalog-client",
+  "version": "3.2.1",
+  "description": "Query strings and endpoint URLs for the storefront's calls to the catalog API.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test --test-reporter=spec --test-concurrency=1 test/*.test.ts"
+  }
+}

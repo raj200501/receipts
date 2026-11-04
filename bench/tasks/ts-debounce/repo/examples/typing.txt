@@ -1,0 +1,11 @@
+# Ada starts a shopping list: two bursts of typing, a pause, and then she closes the note.
+0 type M
+110 type Mi
+230 type Mil
+340 type Milk
+520 type Milk,
+2900 type Milk, e
+3010 type Milk, eg
+3150 type Milk, egg
+3270 type Milk, eggs
+3900 close

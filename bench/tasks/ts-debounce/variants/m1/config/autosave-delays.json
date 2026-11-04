@@ -1,0 +1,5 @@
+{
+  "study": "Typing-pause study, September 2026 (UXR-212)",
+  "moved": "The autosave delays are now served by the editor settings service at https://settings.notes.internal/v1/autosave-delays (reachable from the office network only), so that they can change without a release. This file is no longer updated and lists no fields.",
+  "fields": {}
+}

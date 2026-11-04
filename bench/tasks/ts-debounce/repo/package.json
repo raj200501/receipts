@@ -1,0 +1,15 @@
+{
+  "name": "notes-autosave",
+  "version": "0.14.0",
+  "description": "Autosave timing for the notes editor: debounce, throttle, the draft autosave, and a simulator.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test --test-reporter=spec --test-concurrency=1 test/*.test.ts",
+    "sim": "node --experimental-strip-types bin/autosave-sim.ts"
+  }
+}

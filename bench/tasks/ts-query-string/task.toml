@@ -1,0 +1,40 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project), written
+# for receipts-bench; see docs/BENCH.md for every field.
+id = "ts-query-string"
+title = "Query strings from the catalog client mishandle arrays and spaces"
+language = "typescript"
+category = "bug_fix"
+origin = "hand-written"
+prompt = """
+The catalog API team found two bugs in the query strings our catalog client builds,
+and both come from stringify in src/stringify.ts:
+
+- Array values are joined with commas: `stringify({ tag: ["sale", "new"] })` gives
+  `tag=sale%2Cnew`, so the catalog API applies one filter called "sale,new". Each
+  element should be its own pair with the same key, in order (`tag=sale&tag=new`),
+  and an empty array should write nothing.
+- Spaces come out half encoded: `stringify({ q: "red running shoes" })` gives
+  `q=red+running%20shoes`. The catalog API decodes query strings with
+  decodeURIComponent, so the + stays a plus sign and the search finds nothing. A space
+  should be written as %20 everywhere, in keys and in values.
+
+withQuery and endpointUrl go through stringify, so they should pick up both fixes.
+Everything else should keep working as it does now: parse, the encoding of other
+characters, null and undefined values, and the order of the keys.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "An array value is written as one pair per element with the same key, in order (tag=sale&tag=new), and an empty array writes nothing, in stringify, withQuery, and endpointUrl."
+
+[[requirements]]
+id = "R2"
+text = "A space is written as %20, never as +, in keys and values (q=red%20running%20shoes), in stringify, withQuery, and endpointUrl, and the stringify tests the repository started with keep passing."
+
+[[requirements]]
+id = "R3"
+text = "Single values keep their encoding (UTF-8 percent-encoding except letters, digits, and - . _ ~; numbers and booleans as text; null and undefined left out; keys in the order of the object, or sorted with sort), and parse, withQuery, and endpointUrl keep their behavior (an existing query and #fragment kept, path parameters filled in)."
+kind = "preserve"

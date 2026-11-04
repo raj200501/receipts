@@ -1,0 +1,39 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project), written
+# for receipts-bench; see docs/BENCH.md for every field.
+id = "ts-semver-compare"
+title = "vercmp orders prerelease versions wrongly"
+language = "typescript"
+category = "bug_fix"
+origin = "hand-written"
+prompt = """
+The release scripts picked the wrong version twice this week, and both times it came
+down to how vercmp orders prereleases:
+
+- Our tags file has both v2.8.0-rc.3 and v2.8.0, and `vercmp latest --pre tags.txt`
+  printed v2.8.0-rc.3. `vercmp sort` also lists v2.8.0-rc.3 after v2.8.0. A
+  prerelease should come before its release.
+- Release 2.9.0 went past nine release candidates, and `vercmp sort` listed
+  v2.9.0-rc.10 before v2.9.0-rc.9, so the release dashboard showed rc.9 as the newest
+  candidate.
+
+Please fix the ordering so that compareVersions, sortVersions, latestVersion, and the
+vercmp commands order prereleases the way docs/VERSIONING.md describes (release
+engineering maintains that page). Versions without a prerelease part should keep their
+current order, and the commands should keep their output and exit statuses.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "A prerelease is lower than the release with the same major, minor, and patch (2.8.0-rc.3 is lower than 2.8.0) in compareVersions, sortVersions, and latestVersion and in vercmp compare, vercmp sort, and vercmp latest --pre."
+
+[[requirements]]
+id = "R2"
+text = "Two prereleases of the same release are compared identifier by identifier as docs/VERSIONING.md describes: numeric identifiers as numbers (rc.9 is lower than rc.10), other identifiers in ASCII order, numeric lower than non-numeric, and a shorter prerelease lower when its identifiers match (alpha is lower than alpha.1)."
+
+[[requirements]]
+id = "R3"
+text = "Versions without a prerelease part keep their order (major, minor, and patch compared as numbers), build metadata does not count, and the vercmp commands keep their output and exit statuses (latest skips prereleases without --pre and exits with 1 when there is no release; a bad version exits with 2 and names its line)."
+kind = "preserve"
