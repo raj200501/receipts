@@ -85,10 +85,13 @@ Code subagents in this session (plan usage; bulk roles on Sonnet).
 
 1. **Claude subject runs are disabled here (billing guard).** This runtime sets
    `ANTHROPIC_BASE_URL` and `CLAUDE_CODE_USE_CCR_V2`, which section 8 treats as possible
-   per-token billing. E1 needs at least two Claude tiers as subjects, so G7 to G9 cannot
-   finish here. Action: run the build on a machine where `claude` is logged in to your Max
-   plan and `env | grep -E '^(ANTHROPIC_|CLAUDE_CODE_USE_)'` prints nothing (section 0 step 4).
-   Work that needs no Claude children (M1 to M4 with local models) continues meanwhile.
+   per-token billing, so no `claude -p` child is launched (D4). E1 and E4 therefore use
+   four local minimal-agent arms (D25), which meets G7's "3 configurations, 2 families",
+   but the brief's Claude tiers and the Claude scaffold-crossing arm are missing; prereg
+   0001 section 2 records this as a deviation. To add them: run the build on a machine
+   where `claude` is logged in to your Max plan and
+   `env | grep -E '^(ANTHROPIC_|CLAUDE_CODE_USE_)'` prints nothing; Claude arms then get
+   their own preregistration before their data exists.
 
 ## Blocked
 
