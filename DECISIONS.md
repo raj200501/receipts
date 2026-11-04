@@ -263,3 +263,15 @@ are opt-in (`allow_unconfined=True`), and `make_sandbox` runs a check command (d
 (it binds root, unlike `ulimit -u`); where no cgroup can be created it falls back to the
 rlimit and `process_limit` reports the weaker mode. Leftover processes are killed through
 a pidfd and the cgroup is removed.
+
+**D34. The five most common claim types come from blind labels, not from the extractor.**
+Section 5 counts "the five most common claim types" on real smoke-run reports. If the
+extractor under test did the counting, a common type it fails to detect could never reach
+the top five, so G5 could pass while the instrument is invalid on that type (harness review
+finding H21, confirmed). The counts are therefore made by blind labeler subagents that never
+see `src/receipts/claims` or `src/receipts/verify` (the same blindness rules and transcript
+scan as the E0 writers): each labels every claim in each real smoke report with its type
+and a verbatim quote. `artifacts/e0/claim_type_counts.json` records `method: blind-labels`,
+the per-run labels (every real smoke run, empty reports included), and counts that G5
+recomputes from those labels. Extractor counts may be reported beside them as
+descriptive output only.
