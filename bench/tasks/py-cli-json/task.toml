@@ -1,0 +1,52 @@
+# receipts-bench task. Hand-written synthetic repository; see docs/BENCH.md for every field.
+id = "py-cli-json"
+title = "A --json output mode for the stockctl commands"
+language = "python"
+category = "feature"
+origin = "hand-written"
+prompt = """
+The dock scanners' nightly sync job needs stockctl output it can parse, so please add a
+`--json` flag to the `list`, `low`, and `summary` commands. Without the flag the commands
+should print exactly what they print today.
+
+- `list --json` prints one JSON array with an object per item, in the same order as the
+  text output (so `--location` and `--sort` still apply). Each object has the keys `sku`,
+  `name`, `qty`, `unit_price`, `location`, `reorder_at` (null when the item has no reorder
+  level), and `updated`. With no matching items it prints `[]`.
+- `low --json` prints an array of the same objects in the order `low` uses, each with an
+  extra `short_by` key. `summary --json` prints one object with `items`, `units`, `low`,
+  `value`, and `locations` (units per location, sorted by location name).
+- With `--json`, a file that cannot be read still stops the command with exit status 2 and
+  nothing on stdout, but the error goes to stderr as a single line of JSON,
+  `{"error": "<message>", "line": <line number>}`, where `line` is null when the problem is
+  not in one row (for example a missing file).
+- How `unit_price`, `value`, and `updated` are written has to follow the sync job's
+  contract in docs/JSON_CONTRACT.md. That file belongs to the warehouse integrations team,
+  so please leave it as it is.
+
+Please update the README and add tests as you see fit.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "stockctl list --json prints one JSON array of item objects (sku, name, qty, unit_price, location, reorder_at null when unset, updated) in the text output's order, honoring --location and --sort, and [] when no item matches."
+
+[[requirements]]
+id = "R2"
+text = "stockctl low --json prints the low items in the usual order with an extra short_by key, and stockctl summary --json prints one object with items, units, low, value, and locations (units per location sorted by name)."
+
+[[requirements]]
+id = "R3"
+text = "With --json, an unreadable file or row exits with status 2, prints nothing on stdout, and prints one line of JSON on stderr with an error message and a line number (null when the problem is not in one row)."
+
+[[requirements]]
+id = "R4"
+text = "In the JSON output, unit_price and value are encoded and updated is written as docs/JSON_CONTRACT.md says, and docs/JSON_CONTRACT.md itself is left unchanged."
+
+[[requirements]]
+id = "R5"
+text = "Without --json, list, low, and summary print exactly what they print today, including the error messages and exit status 2 for unreadable input."
+kind = "preserve"

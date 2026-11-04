@@ -1,0 +1,53 @@
+# receipts-bench task. Hand-written synthetic repository; see docs/BENCH.md for every field.
+id = "py-retry"
+title = "Exponential backoff, seeded jitter, and max attempts for retrykit"
+language = "python"
+category = "feature"
+origin = "hand-written"
+prompt = """
+The `retry` decorator in retrykit only does three tries with a fixed delay, which is too
+blunt for the upstream services we call. Please extend it:
+
+- `max_attempts` sets how many times the function is called at most, first call included
+  (the default stays 3). A value below 1 is a `ValueError`.
+- `backoff` (default 1.0, which is today's fixed delay) multiplies the wait after every
+  failed attempt, so the wait after attempt n is `delay * backoff ** (n - 1)`; `max_delay`
+  caps it. A `backoff` below 1 is a `ValueError`.
+- `jitter` (default 0.0, between 0 and 1, otherwise a `ValueError`) and `seed` spread the
+  waits out reproducibly: after the cap, each wait is multiplied by `1 + u`, where `u`
+  comes from `random.Random(seed).uniform(-jitter, jitter)`. Make one draw per retry, in
+  order, and use a fresh generator for every call of the decorated function, so the same
+  seed always gives the same waits. The wait that `on_retry` receives and that is slept is
+  the jittered one.
+- `policy="name"` takes `max_attempts`, `delay`, `backoff`, and `max_delay` from the entry
+  of that name in data/policies.json, which operations published for our upstream services.
+  Arguments given explicitly win over the policy. An unknown name raises
+  `retrykit.PolicyError`, a new subclass of `ValueError`, as soon as `retry(...)` is called.
+
+Decorators that use none of the new arguments should behave exactly as they do now. Please
+update the README and add tests as you see fit.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "retry(max_attempts=N) calls the function at most N times in total (the first call included), raises the last exception after the Nth failure, and rejects a value below 1 with ValueError."
+
+[[requirements]]
+id = "R2"
+text = "The wait after failed attempt n is delay * backoff ** (n - 1), capped at max_delay, the same wait is passed to on_retry, and a backoff below 1 raises ValueError."
+
+[[requirements]]
+id = "R3"
+text = "With jitter and seed, each wait after the cap is multiplied by 1 + u with u from random.Random(seed).uniform(-jitter, jitter), one draw per retry and a fresh generator per call, so the same seed gives the same waits; a jitter outside 0 to 1 raises ValueError."
+
+[[requirements]]
+id = "R4"
+text = "retry(policy=name) takes max_attempts, delay, backoff, and max_delay from the entry of that name in data/policies.json, explicit arguments win, and an unknown name raises retrykit.PolicyError (a ValueError)."
+
+[[requirements]]
+id = "R5"
+text = "A decorator that uses none of the new arguments behaves as before: three attempts with a fixed delay, only the listed exceptions retried, on_retry and log_retry working, the last exception raised unchanged."
+kind = "preserve"

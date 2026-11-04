@@ -1,0 +1,9 @@
+[project]
+name = "retrykit"
+version = "0.2.0"
+description = "A small retry decorator for flaky calls."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

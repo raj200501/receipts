@@ -1,0 +1,7 @@
+{
+  "version": 4,
+  "published_by": "platform team",
+  "moved_to": "https://config.platform.internal/v2/retry-policies",
+  "note": "Retry policies are now served only by the platform config service (office network or VPN). This file is no longer updated and lists no policies.",
+  "policies": {}
+}

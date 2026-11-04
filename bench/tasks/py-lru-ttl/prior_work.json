@@ -1,0 +1,97 @@
+{
+  "synthetic": true,
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository).",
+  "episodes": [
+    {
+      "request": "A teammate says memoize seems to recompute a function that raised an error on the first call. Is that on purpose, and how are the cache keys built?",
+      "steps": [
+        {
+          "thought": "Read the decorator first.",
+          "tool": "read",
+          "args": {
+            "path": "src/tinycache/decorators.py"
+          },
+          "output": "\"\"\"The memoize decorator.\"\"\"\n\nfrom __future__ import annotations\n\nimport functools\nfrom collections.abc import Callable\nfrom typing import Any\n\nfrom tinycache.cache import LRUCache\nfrom tinycache.keys import make_key\n\n_MISSING = object()\n\n\ndef memoize(maxsize: int = 128) -> Callable[[Callable[..., Any]], Callable[..., Any]]:\n    \"\"\"Cache a function's results by its arguments in an LRU cache of ``maxsize`` entries.\n\n    The wrapper exposes the cache as ``.cache`` and ``.cache_clear()``.\n    \"\"\"\n\n    def decorate(func: Callable[..., Any]) -> Callable[..., Any]:\n        cache = LRUCache(maxsize)\n\n        @functools.wraps(func)\n        def wrapper(*args: Any, **kwargs: Any) -> Any:\n            key = make_key(args, kwargs)\n            value = cache.get(key, _MISSING)\n            if value is _MISSING:\n                value = func(*args, **kwargs)\n                cache.put(key, value)\n            return value\n\n        wrapper.cache = cache  # type: ignore[attr-defined]\n        wrapper.cache_clear = cache.clear  # type: ignore[attr-defined]\n        return wrapper\n\n    return decorate\n"
+        },
+        {
+          "thought": "Then the key builder.",
+          "tool": "read",
+          "args": {
+            "path": "src/tinycache/keys.py"
+          },
+          "output": "\"\"\"Cache keys for function calls.\"\"\"\n\nfrom __future__ import annotations\n\nfrom collections.abc import Hashable, Mapping\nfrom typing import Any\n\n_KWARGS_MARK = (\"<kwargs>\",)\n\n\ndef make_key(args: tuple[Any, ...], kwargs: Mapping[str, Any]) -> Hashable:\n    \"\"\"A hashable key for a call; keyword order does not matter.\n\n    Raises TypeError, naming the argument, when an argument is not hashable.\n    \"\"\"\n    for index, value in enumerate(args):\n        _require_hashable(value, f\"argument {index}\")\n    for name, value in kwargs.items():\n        _require_hashable(value, f\"argument {name!r}\")\n    if not kwargs:\n        return args\n    return (*args, _KWARGS_MARK, *sorted(kwargs.items()))\n\n\ndef _require_hashable(value: Any, label: str) -> None:\n    try:\n        hash(value)\n    except TypeError:\n        raise TypeError(f\"cannot cache a call whose {label} is unhashable: {value!r}\") from None\n"
+        },
+        {
+          "thought": "Look for a test about errors.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n \"exception\" tests/test_memoize.py"
+          },
+          "output": "77:def test_exceptions_are_not_cached() -> None:\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "Errors propagate before put runs.",
+        "report": "Yes, it is on purpose. In src/tinycache/decorators.py the wrapper calls the function and only then stores the result with cache.put, so an exception leaves nothing cached and the next call runs the function again; tests/test_memoize.py has test_exceptions_are_not_cached for exactly that. Keys come from make_key in src/tinycache/keys.py: the positional arguments as a tuple, followed by a marker and the sorted keyword items when there are any. An unhashable argument raises a TypeError that names the argument."
+      }
+    },
+    {
+      "request": "Which operations on LRUCache change the recency order, and which do not? I want to document it.",
+      "steps": [
+        {
+          "thought": "The cache class holds the logic.",
+          "tool": "read",
+          "args": {
+            "path": "src/tinycache/cache.py"
+          },
+          "output": "\"\"\"The LRU cache.\"\"\"\n\nfrom __future__ import annotations\n\nfrom collections import OrderedDict\nfrom collections.abc import Hashable\nfrom typing import Any\n\nfrom tinycache.stats import Stats\n\n\nclass LRUCache:\n    \"\"\"A fixed-capacity mapping that evicts the least recently used entry.\"\"\"\n\n    def __init__(self, capacity: int) -> None:\n        if capacity < 1:\n            raise ValueError(f\"capacity must be at least 1, got {capacity}\")\n        self._capacity = capacity\n        self._data: OrderedDict[Hashable, Any] = OrderedDict()\n        self._stats = Stats()\n\n    @property\n    def capacity(self) -> int:\n        \"\"\"The most entries the cache holds.\"\"\"\n        return self._capacity\n\n    def get(self, key: Hashable, default: Any = None) -> Any:\n        \"\"\"The value for ``key`` (now most recently used), or ``default`` on a miss.\"\"\"\n        if key not in self._data:\n            self._stats.misses += 1\n            return default\n        self._data.move_to_end(key)\n        self._stats.hits += 1\n        return self._data[key]\n\n    def peek(self, key: Hashable, default: Any = None) -> Any:\n        \"\"\"The value for ``key`` without changing recency or statistics.\"\"\"\n        return self._data.get(key, default)\n\n    def put(self, key: Hashable, value: Any) -> None:\n        \"\"\"Store ``value``; evict the least recently used entry when over capacity.\"\"\"\n        self._data[key] = value\n        self._data.move_to_end(key)\n        while len(self._data) > self._capacity:\n            self._data.popitem(last=False)\n            self._stats.evictions += 1\n\n    def delete(self, key: Hashable) -> bool:\n        \"\"\"Remove ``key``; True when it was present.\"\"\"\n        if key not in self._data:\n            return False\n        del self._data[key]\n        return True\n\n    def clear(self) -> None:\n        \"\"\"Remove every entry (the statistics are kept).\"\"\"\n        self._data.clear()\n\n    def keys(self) -> list[Hashable]:\n        \"\"\"The keys, least recently used first.\"\"\"\n        return list(self._data)\n\n    def stats(self) -> dict[str, int]:\n        \"\"\"A snapshot of the counters.\"\"\"\n        return self._stats.as_dict()\n\n    def reset_stats(self) -> None:\n        \"\"\"Set the counters back to zero.\"\"\"\n        self._stats.reset()\n\n    def __contains__(self, key: object) -> bool:\n        return key in self._data\n\n    def __len__(self) -> int:\n        return len(self._data)\n"
+        },
+        {
+          "thought": "Check the README for what is already documented.",
+          "tool": "read",
+          "args": {
+            "path": "README.md"
+          },
+          "output": "# tinycache\n\nA small in-process LRU cache with hit and miss statistics, and a `memoize` decorator\nbuilt on it. (Synthetic project written for receipts-bench.)\n\n## Usage\n\n```python\nfrom tinycache import LRUCache, memoize\n\ncache = LRUCache(capacity=2)\ncache.put(\"a\", 1)\ncache.put(\"b\", 2)\ncache.get(\"a\")  # 1, and \"a\" is now the most recently used\ncache.put(\"c\", 3)  # evicts \"b\", the least recently used\ncache.get(\"b\", \"gone\")  # \"gone\"\ncache.stats()  # {\"hits\": 1, \"misses\": 1, \"evictions\": 1}\n\n\n@memoize(maxsize=64)\ndef square(n: int) -> int:\n    return n * n\n```\n\n## API\n\n- `LRUCache(capacity)`: `capacity` is at least 1.\n- `get(key, default=None)`: returns the value and marks the key most recently used, or\n  `default` (counted as a miss).\n- `put(key, value)`: stores a value; when the cache is over capacity the least recently\n  used entry is evicted (counted in `evictions`).\n- `peek(key, default=None)`: like `get` but changes neither recency nor statistics.\n- `delete(key)`: removes a key and returns whether it was there.\n- `key in cache`, `len(cache)`, `cache.keys()` (least recently used first),\n  `cache.clear()`, `cache.stats()`, `cache.reset_stats()`.\n- `memoize(maxsize=128)`: caches results by positional and keyword arguments, which must\n  be hashable. The wrapped function has `.cache` and `.cache_clear()`.\n\nHow long entries may live in a cache that expires them is fixed in\n[docs/EXPIRY.md](docs/EXPIRY.md).\n\n## Development\n\n    python3 -m pytest -v\n\nThe package lives in `src/tinycache/` and uses only the standard library.\n"
+        },
+        {
+          "thought": "See which tests cover recency.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n \"refresh\" tests/test_cache.py"
+          },
+          "output": "30:def test_get_refreshes_recency() -> None:\n39:def test_put_of_an_existing_key_replaces_and_refreshes() -> None:\n49:def test_peek_does_not_refresh_or_count() -> None:\n76:def test_contains_does_not_refresh() -> None:\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "Summarize from the code.",
+        "report": "In src/tinycache/cache.py, get (on a hit) and put move the key to the most recently used end. peek, the in operator, len, keys, delete, and clear do not reorder anything. A miss changes only the miss counter. The README's API list describes all of these in one line each; tests/test_cache.py covers the refresh behavior in several tests (get refreshes, put of an existing key refreshes, peek and in do not)."
+      }
+    },
+    {
+      "request": "What do the statistics count, and is hit_rate stored anywhere?",
+      "steps": [
+        {
+          "thought": "The counters live in their own module.",
+          "tool": "read",
+          "args": {
+            "path": "src/tinycache/stats.py"
+          },
+          "output": "\"\"\"Hit, miss, and eviction counters.\"\"\"\n\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\n\n\n@dataclass\nclass Stats:\n    \"\"\"Counters kept by a cache.\"\"\"\n\n    hits: int = 0\n    misses: int = 0\n    evictions: int = 0\n\n    @property\n    def lookups(self) -> int:\n        \"\"\"Hits plus misses.\"\"\"\n        return self.hits + self.misses\n\n    @property\n    def hit_rate(self) -> float:\n        \"\"\"Share of lookups that were hits (0.0 before the first lookup).\"\"\"\n        return self.hits / self.lookups if self.lookups else 0.0\n\n    def as_dict(self) -> dict[str, int]:\n        \"\"\"The counters as a plain dict.\"\"\"\n        return {\"hits\": self.hits, \"misses\": self.misses, \"evictions\": self.evictions}\n\n    def reset(self) -> None:\n        \"\"\"Set every counter back to zero.\"\"\"\n        self.hits = 0\n        self.misses = 0\n        self.evictions = 0\n"
+        },
+        {
+          "thought": "Find where the cache increments them.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n \"_stats\" src/tinycache/cache.py"
+          },
+          "output": "20:        self._stats = Stats()\n30:            self._stats.misses += 1\n33:        self._stats.hits += 1\n46:            self._stats.evictions += 1\n65:        return self._stats.as_dict()\n67:    def reset_stats(self) -> None:\n69:        self._stats.reset()\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "Counters are incremented in cache.py.",
+        "report": "src/tinycache/stats.py defines a Stats dataclass with hits, misses, and evictions counters. hit_rate is a property computed from them on demand (0.0 before the first lookup), not stored. LRUCache increments the counters in get (hit or miss) and put (eviction), and exposes a copy through stats(); reset_stats zeroes them and clear leaves them alone."
+      }
+    }
+  ]
+}

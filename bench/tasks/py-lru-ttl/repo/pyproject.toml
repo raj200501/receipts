@@ -1,0 +1,9 @@
+[project]
+name = "tinycache"
+version = "0.3.2"
+description = "A small in-process LRU cache and a memoize decorator."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
