@@ -201,3 +201,16 @@ only after `tools/prepush.sh` passes, which runs `make setup` and `make ci` in a
 clone of HEAD (so only committed content counts). Until `make demo` exists, `make ci`
 cannot pass, so no push happens before the offline demo is built. Raj cleared the
 `/goal` and asked to continue on 2026-11-04; goal_turn keeps counting turns of work.
+
+**D29. Related work follows what the sources say, not the brief's one-line summaries.**
+All eight section 2 references were opened on 2026-11-04 and banked in
+`artifacts/citecheck.json` with what each page shows (`summary_seen`) and any gap with
+the brief's description (`brief_mismatch`). Where they differ, README.md and
+docs/REPORT.md follow the source: "How Coding Agents Fail Their Users" is cited for
+developer-agent misalignment in general (the page does not support "inaccurate
+self-reporting in a large share of real sessions"); "Apparent-Success Reporting" is
+cited with its full title as a NeurIPS 2026 workshop poster (Agents in the Wild), not a
+main-track paper; Transluce's "misalignment in the wild" rates are quoted with their
+severity level (overselling of any severity versus severe); MASK is described for LLMs
+generally. The Armour check attached Raj's public raj200501/armour repository to this
+session read-only to read it; nothing was written there.
