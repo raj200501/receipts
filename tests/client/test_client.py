@@ -184,6 +184,38 @@ def test_local_backend_roundtrip(http_server: HTTPServer) -> None:
     assert server.server_ready(f"http://127.0.0.1:{port}/v1")
 
 
+def test_local_backend_pins_each_thread_to_its_own_slot(http_server: HTTPServer) -> None:
+    _Handler.reply = {
+        "model": "m",
+        "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+    }
+    port = http_server.server_address[1]
+    backend = backends.LocalOpenAIBackend(f"http://127.0.0.1:{port}/v1")
+    seen: dict[str, list[int]] = {}
+    lock = threading.Lock()
+
+    def worker(name: str) -> None:
+        for _ in range(2):
+            slot = backend.slot()
+            with lock:
+                backend.complete(request())
+                seen.setdefault(name, []).append(int(_Handler.received["id_slot"]))
+            assert slot == backend.slot()
+
+    threads = [threading.Thread(target=worker, args=(f"w{i}",)) for i in range(3)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    # One stable slot per thread, a different one for every thread: 0, 1, 2 in some order.
+    assert all(len(set(slots)) == 1 for slots in seen.values())
+    assert sorted(slots[0] for slots in seen.values()) == [0, 1, 2]
+    unpinned = backends.LocalOpenAIBackend(f"http://127.0.0.1:{port}/v1", pin_slots=False)
+    unpinned.complete(request())
+    assert "id_slot" not in _Handler.received
+
+
 def test_local_backend_rejects_remote_and_dead_server() -> None:
     with pytest.raises(ValueError, match="loopback"):
         backends.LocalOpenAIBackend("https://api.example.com/v1")

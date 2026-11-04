@@ -10,14 +10,16 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 from receipts.client.wrapper import ModelRequest, ModelResponse
@@ -37,17 +39,44 @@ class LocalOpenAIBackend:
     Args:
         base_url: For example ``http://127.0.0.1:8081/v1``. Must be a loopback address.
         timeout_s: Per-request timeout.
+        pin_slots: Send every request of one calling thread to the same server slot
+            (llama-server's ``id_slot``; the n-th thread to call uses slot n, and the
+            server wraps ids beyond its slot count). With one worker thread per slot, as
+            ``tools/run_study.py`` runs them, each conversation stays on the slot that
+            caches it, so a turn processes only its new tokens instead of re-reading the
+            whole conversation after another run's request took that slot. Servers that
+            do not know the field ignore it (pydantic and Go JSON decoding drop unknown
+            fields). The slot never enters the response cache key.
     """
 
     base_url: str
     timeout_s: float = 900.0
     name: str = "local"
     is_claude: bool = False
+    pin_slots: bool = True
+    _local: threading.local = field(
+        default_factory=threading.local, init=False, repr=False, compare=False
+    )
+    _ids: Iterator[int] = field(
+        default_factory=itertools.count, init=False, repr=False, compare=False
+    )
+    _lock: threading.Lock = field(
+        default_factory=threading.Lock, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         host = self.base_url.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
         if host not in ("127.0.0.1", "localhost", "::1"):
             raise ValueError("the local backend only talks to a loopback server")
+
+    def slot(self) -> int:
+        """The calling thread's server slot: 0 for the first thread to call, then 1, 2, ..."""
+        slot = getattr(self._local, "slot", None)
+        if slot is None:
+            with self._lock:
+                slot = next(self._ids)
+            self._local.slot = slot
+        return int(slot)
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         """POST one chat completion and parse text, token counts, and finish reason."""
@@ -56,6 +85,8 @@ class LocalOpenAIBackend:
             "messages": [dict(m) for m in request.messages],
             **dict(request.params),
         }
+        if self.pin_slots:
+            body["id_slot"] = self.slot()
         data = json.dumps(body).encode("utf-8")
         http = urllib.request.Request(
             self.base_url.rstrip("/") + "/chat/completions",
