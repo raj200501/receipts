@@ -28,33 +28,34 @@ Updated 2026-11-04, goal_turn 3 (Raj cleared /goal and said continue). History i
 
 ## Now
 
-goal_turn 3. Committed since the restart (all local; nothing pushed, D28): the
-independent-review fixes for claims (22 findings), bench (8), sandbox (13), and analysis
-(6); all 40 benchmark tasks (4 pilot, 36 catalog), each authored, reviewed, and fixed,
-passing tools/bench_validate.py; verify and ledger fixes requested by those owners.
-Running: the full reference validation of all 40 tasks (G6 artifact), the pilot (slow:
-the 4-core CPU is shared with the agents), the gate-harness fix (52 confirmed findings),
-and the builds of the E0 tooling and the preregistered analysis scripts.
+goal_turn 3, 2026-11-04 11:40 UTC. Pushed through e9fc3bc (prepush PASS, D28); later
+commits are local until the next prepush.
 
-Incident, 08:12 UTC: a fixer agent's scratch command ran `git add . && git commit` in this
-checkout instead of its temp directory and committed the whole working tree as
-`x <a@b>` ("x", 5518a09). Nothing had been pushed; a mixed reset to the previous commit
-(446efa6) removed it with every file kept, the work was recommitted in proper commits
-as Raj, and a local pre-commit hook (.git/hooks, not tracked) now refuses any commit in
-this checkout not authored as Raj (D26).
-
-Pushed 2026-11-04 after `tools/prepush.sh` printed `PREPUSH: PASS make ci on fresh clone of
-623cc70` (D27, D28): the branch on origin is at 623cc70. Every later push repeats that check.
-The offline demo replays the banked pipeline-check run; pilot runs with reports will join it.
+- **G6 smoke study** (one unmanipulated `ma-qwen7b` run per task, seed 0) is running from a
+  code snapshot of e9fc3bc with the D39 scaffold (16 turns, then one final-report
+  request): 8 of 40 banked and committed, 4 in flight, about 12 runs an hour.
+  `runs/chain-pilot.sh` starts the pilot (32 runs, `pilot-*` tasks only) the moment the
+  smoke study exits with all 40 banked.
+- **E1 sample size:** `tools/power_e1.py` (committed) implements the prereg 0001 section 8
+  rule; it runs on the banked pilot and writes `artifacts/power/e1_power.json`.
+- **Preregistrations:** an agent is folding the two code owners' gap lists into prereg
+  0001 (E1, E2) and 0002 (E4) and drafting 0003 (E3 judges). I review the text before the
+  freeze; the freeze waits for the pilot and the power run.
+- **E0:** the blind-label claim-type counting (D34) is being built and reviewed; the writer,
+  adjudicator, and labeler runs start once every smoke run is banked. Smoke reports are
+  short (zero to four claims each), so the writer volume needs a decision (next actions).
+- **G9:** an agent is writing the scripted hook demo (`tools/hook_demo.py`); hook latency is
+  measured on the smoke runs once all are banked.
 
 ## Next three actions
 
-1. Integrate claims, analysis, sandbox, and bench; fix every confirmed gate-harness finding.
-2. Launch the task-authoring workflows over docs/BENCH_CATALOG.md (G6) and run the pilot on
-   the `pilot-*` tasks; record two pilot runs as demo fixtures, write the golden output,
-   get `make ci` green, push.
-3. Smoke runs on every task (G6), claim-type counts, then E0 seeded reports (G5) and the
-   frozen preregistrations (G11) before any E1 run.
+1. When the smoke study is complete: bank `smoke_runs.json` (G6), build the E0 writer
+   packets, run the blind labelers for the claim-type counts and the writer and
+   adjudicator subagents (D40 sets the volume), then split and commit the held-out
+   manifest.
+2. When the pilot is banked: run `tools/power_e1.py`, write the E1 and E4 plans, fill the
+   TO FIX fields, review, and freeze prereg 0001, 0002, and 0003 together before any E1 run.
+3. Integrate the blind-label tooling and the hook demo, run `tools/prepush.sh`, push.
 
 ## Environment (`make doctor`, 2026-10-23)
 
@@ -75,9 +76,10 @@ The offline demo replays the banked pipeline-check run; pilot runs with reports 
 
 ## Usage to date
 
-cash_usd = 0. cap_share 0.2 (D20). Claude agent runs 0, single calls 0, review runs 0.
-Local model runs 0.
-Subagent use: none yet.
+cash_usd = 0. cap_share 0.2 (D20). Claude children: 0 agent runs, 0 single calls, 0
+review runs (billing guard, D4). Local-model calls are logged in
+`artifacts/usage/ledger.jsonl` (`make budget` summarizes them). Pipeline work uses Claude
+Code subagents in this session (plan usage; bulk roles on Sonnet).
 
 ## Needs Raj
 
@@ -90,14 +92,7 @@ Subagent use: none yet.
 
 ## Blocked
 
-- 2026-11-04 about 03:55 UTC: every subagent stopped with "You've hit your weekly limit,
-  resets 7am (UTC)". Per section 8, no new model work started until the reset. At 07:10
-  UTC Raj said "try again": the stopped workflows (claims and bench fixes, harness
-  verification, task authoring) resumed from their journals, with bulk roles (task
-  authors, reviewers, finding verifiers) on Sonnet to spread plan usage. The local-model
-  pilot, killed by the worker restart, restarted from a snapshot of 71db6e6 (it uses no
-  plan usage). The E0-tooling and analysis-pipeline builds wait until the claims fix
-  lands.
+Nothing blocked right now.
 
 ## Backlog (suggestions for Raj, not ladder rungs)
 

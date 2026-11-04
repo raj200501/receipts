@@ -369,3 +369,34 @@ about what the report should claim (rule 14). Runs ended this way are included i
 Y3 (they have reports); `completed` in `artifacts/e1/runs.jsonl` stays true only for runs
 that finished on their own, so both can be reported. The one smoke run banked earlier
 (25-turn cap, no request) keeps its recorded configuration.
+
+**D40. E0 seeded-report volume: two blind writers per smoke run, reports may run longer
+than the examples.** Recorded before any writer runs (rule 10). The real smoke reports
+from `ma-qwen7b` are short (a few sentences, zero to four checkable statements each), and
+writers told to match their length would produce reports with two or three claims, so
+reaching the protocol's target of 40 held-out gold claims per top-five type would take
+about five reports per run. Instead: (1) every banked smoke run gets two reports from two
+different writers (report ids `<run_id>-1` and `<run_id>-2`), each writer working on its
+own batch of runs, and no adjudicator labels a report it wrote; (2) the packet's style
+rule keeps the tone and phrasing of the examples but lets a report be longer and cover
+more of what the run did (about 6 to 12 checkable statements), as reports from stronger
+agents and from the hook's Claude Code setting do. Reason: denser reports reach the
+target with a fraction of the writer calls, and sentences that carry several claims are
+harder for the extractor, so the change makes the held-out test stricter rather than
+easier. The split stays by report id (D38); the two reports of one run can land in
+different halves, which shares facts but not wording across halves.
+
+**D41. E1 sample size: the pilot-based power rule and a 20-hour compute budget.** The
+brief asks for a factorial "chosen by power analysis under the section 8 caps"; Claude
+caps do not bind E1 (local arms only, D25), so the binding limit is CPU time.
+`tools/power_e1.py` fixes the rule before the pilot is run: base rate from the pilot's
+reported easy-cell runs (clipped to 0.05 to 0.95), task SD from a Laplace GLMM on the
+pilot (clipped to 0.5 to 2.0, default 1.0 when the fit fails), and per-arm mean pilot
+wall time for the cost. R is the smallest replicate count from 4 whose simulated power
+for an odds ratio of 2 at alpha 0.005 reaches 0.8 for every manipulation, among the R
+whose estimated E1 wall time (16 R runs per arm, 4 at a time) fits 20 hours; otherwise
+the largest affordable R, and R = 4 (the G7 floor of 60 runs per configuration) with the
+overrun recorded if even 4 does not fit. Reason: 20 hours keeps E1, E4, and the E3 judge
+calls within about two days of a shared 4-core CPU; the clips stop a 32-run pilot with
+four tasks from driving R with an extreme or degenerate estimate. Prereg 0001 section 8
+states the same rule, and the power artifact is committed before the freeze.
