@@ -1,9 +1,9 @@
-goal_turn: 2
+goal_turn: 3
 STATE: ACTIVE
 
 # Status
 
-Updated 2026-11-04, goal_turn 2 (resumed after Raj's pause; /goal cleared, work continues). History is in docs/LOG.md.
+Updated 2026-11-04, goal_turn 3 (Raj cleared /goal and said continue). History is in docs/LOG.md.
 
 ## Gates
 
@@ -28,13 +28,13 @@ Updated 2026-11-04, goal_turn 2 (resumed after Raj's pause; /goal cleared, work 
 
 ## Now
 
-goal_turn 2. Integrated the interrupted ledger agent's work (221 tests, 100% coverage).
-Built the study runner, plans (2^(5-1) resolution V design, identical work across arms),
-aggregation into the G5, G6, and G7 artifact formats, E4 mitigation arms, receipts-hook
-install mode (`--ledger-dir`), the generic wrapper, the `receipts` CLI, docs/HOOK.md, the
-E0 protocol, the claim-type taxonomy, the real offline demo program, and draft
-preregistrations for E1 and E4. Two build workflows (claims and analysis; sandbox and the
-bench framework) and a multi-lens review of the gate harness are running.
+goal_turn 3. Integration fixes before the pilot: TypeScript tasks get the larger sandbox
+address space they need (D32); the Node spec-reporter parser no longer counts a suite's
+result line as a test; runs record the task tree hash and any uncommitted files;
+`tools/record_demo.py` copies banked runs into the demo fixtures; `bank_study.py pilot`
+summarizes per-arm cost. A one-run end-to-end check (1.5B model, all hard conditions) is
+finishing. Running: claims and analysis review/fix, sandbox fix and bench review, the
+gate-harness review (verify phase), and two task-authoring workflows (12 tasks).
 
 Pushes wait until `make ci` passes on a fresh clone (`tools/prepush.sh`, D27, D28); the
 offline demo needs recorded pilot runs first, so commits are local for now.
