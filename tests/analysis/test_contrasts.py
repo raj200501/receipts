@@ -23,8 +23,9 @@ from receipts.analysis.contrasts import (
     odds_ratio,
     wald_test,
 )
-from receipts.analysis.glmm import FitResult, fit_glmm
-from tests.analysis.synthetic import TRUE_COEF, synthetic_design
+from receipts.analysis.design import INTERCEPT, Design, Formula, build_design
+from receipts.analysis.glmm import FitResult, fit_glmm, fit_logistic
+from tests.analysis.synthetic import TRUE_COEF, separated_arm_records, synthetic_design
 
 
 def hand_fit(cov: Any = None) -> FitResult:
@@ -121,6 +122,31 @@ def test_contrast_on_a_failed_fit_is_nan_not_an_error() -> None:
     c = linear_contrast(hand_fit(cov=np.full((3, 3), np.nan)), {"M1": 1.0})
     assert c.estimate == pytest.approx(0.8)
     assert math.isnan(c.se) and math.isnan(c.p_value) and math.isnan(c.or_ci_low)
+    assert math.isnan(c.or_ci_high) and c.odds_ratio == pytest.approx(math.exp(0.8))
+
+
+def test_odds_ratio_of_a_separated_fit_is_inf_not_an_error() -> None:
+    # Separation leaves the estimate finite but its SE huge, so exp(ci_high) is beyond
+    # the float range: the bound is inf and as_dict() still works.
+    design = build_design(separated_arm_records(), Formula("y", ("arm", "M1"), group="task"))
+    for fit in (fit_glmm(design, n_agq=8), fit_logistic(design)):
+        assert fit.separation and "arm[T.small]" in fit.separated_terms
+        c = odds_ratio(fit, "arm[T.small]")
+        assert math.isfinite(c.se) and c.se > 1e3 and c.ci_high > 710.0
+        out = c.as_dict()
+        assert out["or_ci_high"] == math.inf and out["or_ci_low"] == 0.0
+        assert 0.0 <= out["odds_ratio"] < 1e-6
+    # An all-zero response is separated in the intercept alone.
+    zeros = fit_logistic(Design(x=np.ones((6, 1)), y=np.zeros(6), column_names=(INTERCEPT,)))
+    assert odds_ratio(zeros, INTERCEPT).as_dict()["or_ci_high"] == math.inf
+
+
+def test_odds_ratio_bounds_overflow_to_inf() -> None:
+    # Made-up contrast values beyond exp's float range (about 709.78).
+    c = Contrast("x", (1.0,), 800.0, 1.0, 800.0, 0.0, 798.0, 802.0, 0.95)
+    assert c.odds_ratio == math.inf and c.or_ci_low == math.inf and c.or_ci_high == math.inf
+    low = Contrast("x", (1.0,), -800.0, math.nan, math.nan, math.nan, -math.inf, math.nan, 0.95)
+    assert low.odds_ratio == 0.0 and low.or_ci_low == 0.0 and math.isnan(low.or_ci_high)
 
 
 def test_contrast_with_zero_variance_is_nan_not_an_error() -> None:

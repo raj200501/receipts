@@ -4,9 +4,19 @@ A :class:`Formula` is a small stand-in for a model formula such as
 ``y ~ M1 + M2 + M1:M2 + (1 | task_id)``. It names the response field, the
 categorical factors, two-way interactions between factors, reference levels, and
 the field whose values define clusters for a random intercept.
-:func:`build_design` turns records (mappings, for example rows of
-``artifacts/e1/runs.jsonl``) into a :class:`Design`; a :class:`Design` can also be
-built directly from arrays.
+:func:`build_design` turns records (mappings whose top-level fields the formula
+names) into a :class:`Design`; a :class:`Design` can also be built directly from
+arrays.
+
+Rows of ``artifacts/e1/runs.jsonl`` (written by ``receipts.study.aggregate.e1_rows``)
+keep the arm (``config_id``), task (``task_id``), and outcomes (``false_success``,
+``any_contradicted``) at the top level, but the manipulation levels inside a nested
+mapping, ``{"conditions": {"M1": "attainable", ...}}``. :func:`flatten_records`
+copies them to the top level. The design of the preregistered E1 model
+(``prereg/0001-e1-main-study.md``, section 7) is then, for the included rows,
+``build_design(flatten_records(rows), Formula("false_success", ("config_id", "M1",
+..., "M5"), reference={"config_id": "ma-qwen7b", ...}, group="task_id"))``;
+``tests/analysis/test_workflow.py`` runs this on synthetic rows built by ``e1_rows``.
 
 Coding rules:
 
@@ -29,12 +39,14 @@ the dependent columns, because its coefficients are not identifiable.
 from __future__ import annotations
 
 import numbers
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
+
+from receipts.analysis._values import value_key
 
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.intp]
@@ -56,6 +68,9 @@ def interaction_column(factor_a: str, level_a: str, factor_b: str, level_b: str)
 class Formula:
     """Response, factors, interactions, reference levels, and the cluster field.
 
+    Formulas compare by value and are hashable (the hash leaves out ``reference``,
+    which is a dict).
+
     Attributes:
         response: Field holding the binary outcome (a Python or numpy bool, or a number
             equal to 0 or 1).
@@ -69,7 +84,7 @@ class Formula:
     response: str
     factors: Sequence[str] = ()
     interactions: Sequence[tuple[str, str]] = ()
-    reference: Mapping[str, str] = field(default_factory=dict)
+    reference: Mapping[str, str] = field(default_factory=dict, hash=False)
     group: str | None = None
 
     def __post_init__(self) -> None:
@@ -115,11 +130,12 @@ def _dependent_columns(x: FloatArray, names: Sequence[str]) -> list[str]:
     return dependent
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Design:
     """A full-rank design matrix, a binary response, and optional cluster labels.
 
-    Arrays are copied and made read-only on construction.
+    Arrays are copied and made read-only on construction. Designs compare and hash by
+    value: two are equal when every field is (arrays element by element).
 
     Attributes:
         x: Design matrix, shape ``(n_obs, n_params)``, finite floats.
@@ -188,6 +204,16 @@ class Design:
         object.__setattr__(self, "groups", groups)
         object.__setattr__(self, "group_labels", labels)
 
+    def __eq__(self, other: object) -> bool:
+        """True when ``other`` is a Design with equal fields (arrays element by element)."""
+        if type(other) is not type(self):
+            return NotImplemented
+        return value_key(self) == value_key(other)
+
+    def __hash__(self) -> int:
+        """Hash of the field values, consistent with ``==``."""
+        return hash(value_key(self))
+
     @property
     def n_obs(self) -> int:
         """Number of observations."""
@@ -215,9 +241,66 @@ class Design:
         )
 
 
+def flatten_records(
+    records: Iterable[Mapping[str, Any]], nested: Sequence[str] = ("conditions",)
+) -> list[dict[str, Any]]:
+    """Copies of ``records`` with the entries of nested mappings also at the top level.
+
+    With the default ``nested``, a row of ``artifacts/e1/runs.jsonl`` such as
+    ``{"task_id": "t1", "conditions": {"M1": "attainable"}, ...}`` becomes
+    ``{"task_id": "t1", "conditions": {"M1": "attainable"}, "M1": "attainable", ...}``,
+    so a :class:`Formula` can name ``M1`` as a factor and the functions of
+    :mod:`receipts.analysis.rates` can use it as a field. The nested mapping is kept
+    and the input records are not modified. Flattening is idempotent: a key already at
+    the top level with an equal value is left as it is.
+
+    Args:
+        records: The records, for example rows of ``artifacts/e1/runs.jsonl``.
+        nested: Fields holding mappings to copy up, in order.
+
+    Raises:
+        ValueError: A record lacks a nested field, a nested field is not a mapping, or a
+            nested key would replace a different value at the top level.
+    """
+    out: list[dict[str, Any]] = []
+    for index, record in enumerate(records):
+        row = dict(record)
+        for name in nested:
+            if name not in record:
+                raise ValueError(f"record {index} has no field {name!r} to flatten")
+            inner = record[name]
+            if not isinstance(inner, Mapping):
+                raise ValueError(
+                    f"record {index}: field {name!r} is not a mapping (got {type(inner).__name__})"
+                )
+            for key, value in inner.items():
+                if key in row and row[key] != value:
+                    raise ValueError(
+                        f"record {index}: {name}[{key!r}] = {value!r} would replace "
+                        f"the top-level {key!r} = {row[key]!r}"
+                    )
+                row[key] = value
+        out.append(row)
+    return out
+
+
+def _missing(record: Mapping[str, Any], name: str, index: int) -> ValueError:
+    """The error for a field absent from a record, naming a nested mapping that has it."""
+    holders = [
+        str(key) for key, value in record.items() if isinstance(value, Mapping) and name in value
+    ]
+    hint = ""
+    if holders:
+        hint = (
+            f" (it is inside the nested field {holders[0]!r}; "
+            "flatten_records copies it to the top level)"
+        )
+    return ValueError(f"record {index} has no field {name!r}{hint}")
+
+
 def _response_value(record: Mapping[str, Any], name: str, index: int) -> float:
     if name not in record:
-        raise ValueError(f"record {index} has no field {name!r}")
+        raise _missing(record, name, index)
     value = record[name]
     if isinstance(value, bool | np.bool_):
         return float(value)
@@ -228,7 +311,7 @@ def _response_value(record: Mapping[str, Any], name: str, index: int) -> float:
 
 def _label(record: Mapping[str, Any], name: str, index: int) -> str:
     if name not in record:
-        raise ValueError(f"record {index} has no field {name!r}")
+        raise _missing(record, name, index)
     value = record[name]
     if value is None:
         raise ValueError(f"record {index} has no value for {name!r}")
@@ -238,10 +321,14 @@ def _label(record: Mapping[str, Any], name: str, index: int) -> str:
 def build_design(records: Sequence[Mapping[str, Any]], formula: Formula) -> Design:
     """Build a treatment-coded :class:`Design` from records (see the module docstring).
 
+    The fields the formula names must be at the top level of each record; for rows of
+    ``artifacts/e1/runs.jsonl``, pass ``flatten_records(rows)``.
+
     Raises:
-        ValueError: There are no records; a record lacks a field or has an invalid
-            response; a factor has a single observed level; a reference level was not
-            observed; or the resulting design matrix is rank deficient.
+        ValueError: There are no records; a record lacks a field (the message names a
+            nested mapping that holds it) or has an invalid response; a factor has a
+            single observed level; a reference level was not observed; or the
+            resulting design matrix is rank deficient.
     """
     if not records:
         raise ValueError("no records to build a design from")

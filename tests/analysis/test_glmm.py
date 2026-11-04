@@ -32,7 +32,12 @@ from receipts.analysis.glmm import (
     marginal_log_likelihood,
     marginal_score,
 )
-from tests.analysis.synthetic import COLUMNS, TRUE_COEF, synthetic_design
+from tests.analysis.synthetic import (
+    COLUMNS,
+    TRUE_COEF,
+    separated_arm_records,
+    synthetic_design,
+)
 
 FloatArray = np.ndarray[Any, np.dtype[np.float64]]
 
@@ -58,6 +63,28 @@ def brute_force_loglik(design: Design, coef: FloatArray, sd: float) -> float:
         value, _ = integrate.quad(integrand, -np.inf, np.inf, epsabs=0, epsrel=1e-12)
         total += peak + math.log(value) - 0.5 * math.log(2 * math.pi)
     return total
+
+
+def brute_force_hessian(design: Design, theta: FloatArray, h: float = 1e-3) -> FloatArray:
+    """Central differences of minus :func:`brute_force_loglik` over ``(coef..., sd)``."""
+    p = design.n_params
+
+    def f(t: FloatArray) -> float:
+        return -brute_force_loglik(design, t[:p], float(t[p]))
+
+    centre = f(theta)
+    step = h * np.eye(theta.size)
+    hessian = np.empty((theta.size, theta.size))
+    for i in range(theta.size):
+        hessian[i, i] = (f(theta + step[i]) - 2.0 * centre + f(theta - step[i])) / (h * h)
+        for j in range(i + 1, theta.size):
+            hessian[i, j] = hessian[j, i] = (
+                f(theta + step[i] + step[j])
+                - f(theta + step[i] - step[j])
+                - f(theta - step[i] + step[j])
+                + f(theta - step[i] - step[j])
+            ) / (4.0 * h * h)
+    return hessian
 
 
 @pytest.fixture(scope="module")
@@ -194,6 +221,21 @@ def test_glmm_recovers_fixed_effects_and_sd(clustered: Design) -> None:
     )
     for sd in (fit.random_sd - 0.05, fit.random_sd + 0.05):
         assert marginal_log_likelihood(clustered, fit.coef, sd, 8) < fit.log_likelihood
+
+
+def test_glmm_covariance_is_the_inverse_observed_information(small: Design) -> None:
+    # The covariance must be the fixed-effect block of the inverse information over all
+    # parameters, the SD included. On this SYNTHETIC design, inverting the fixed-effect
+    # block alone (treating the SD as known) gives SEs up to about 4 percent too small.
+    fit = fit_glmm(small, n_agq=25)  # 25 nodes: the exact likelihood to about 1e-8
+    assert fit.converged and fit.random_sd is not None and fit.random_sd > 0.5
+    hessian = brute_force_hessian(small, np.append(fit.coef, fit.random_sd))
+    p = small.n_params
+    cov = np.linalg.inv(hessian)[:p, :p]
+    assert fit.cov == pytest.approx(cov, rel=1e-4, abs=1e-6)
+    assert fit.se == pytest.approx(np.sqrt(np.diag(cov)), rel=1e-4)
+    sd_known = np.sqrt(np.diag(np.linalg.inv(hessian[:p, :p])))
+    assert np.max(np.abs(sd_known / fit.se - 1.0)) > 0.02  # the test can tell them apart
 
 
 def test_glmm_equals_logistic_when_true_sd_is_zero(unclustered: Design) -> None:
@@ -377,6 +419,38 @@ def test_quadrature_check_flags_inaccurate_laplace_fits() -> None:
     reference = fit_glmm(design, n_agq=CHECK_AGQ)
     assert reference.quadrature_shift is None
     assert reference.coef == pytest.approx(accurate.coef, abs=1e-4)
+
+
+def test_quadrature_check_ignores_an_unfinished_optimisation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # SYNTHETIC: the design above, where 12 nodes are accurate. Stopping the optimiser
+    # after one iteration leaves a large score, which is not a quadrature error.
+    design = synthetic_design(seed=21, n_tasks=40, runs_per_task=8, coef=TRUE_COEF, sd=1.5)
+    monkeypatch.setattr(glmm, "_NEWTON_REFINEMENTS", 0)
+    fit = fit_glmm(design, n_agq=12, max_iter=1)
+    assert not fit.converged and fit.random_sd is not None
+    assert any("did not reach a converged maximum" in w for w in fit.warnings)
+    assert np.max(np.abs(marginal_score(design, fit.coef, fit.random_sd, 12))) > 1.0
+    assert fit.quadrature_shift is not None and fit.quadrature_shift < 1e-3
+    assert not any(w.startswith("quadrature") for w in fit.warnings)
+
+
+def test_quadrature_check_is_skipped_for_separated_designs() -> None:
+    # SYNTHETIC: arm "small" never has an event; and an all-zero response in 4 tasks.
+    arm = build_design(separated_arm_records(), Formula("y", ("arm", "M1"), group="task"))
+    zeros = Design(
+        x=np.ones((12, 1)),
+        y=np.zeros(12),
+        column_names=("(Intercept)",),
+        groups=np.repeat(np.arange(4), 3),
+    )
+    for design in (arm, zeros):
+        for n_agq in (1, 8):
+            fit = fit_glmm(design, n_agq=n_agq)
+            assert fit.separation and not fit.converged
+            assert fit.quadrature_shift is None
+            assert not any(w.startswith("quadrature") for w in fit.warnings)
 
 
 def test_singular_information_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -564,6 +638,23 @@ def test_fit_result_validates_shapes_and_freezes_arrays() -> None:
     assert fit.se == pytest.approx([1.0, 1.0])
     with pytest.raises(ValueError, match="column names"):
         replace(fit, cov=np.eye(3))
+
+
+def test_fit_results_compare_and_hash_by_value(unclustered: Design) -> None:
+    first, second = fit_logistic(unclustered), fit_logistic(unclustered)
+    assert first == second and hash(first) == hash(second)
+    assert first != replace(first, coef=first.coef + 1e-12)
+    mixed = fit_glmm(unclustered)
+    assert mixed == fit_glmm(unclustered) and first != mixed
+    assert first.__eq__(first.as_dict()) is NotImplemented
+    # A failed fit's NaN covariance equals itself, and -0.0 equals 0.0, as values.
+    failed = replace(first, cov=np.full_like(first.cov, np.nan), log_likelihood=math.nan)
+    again = replace(first, cov=np.full_like(first.cov, np.nan), log_likelihood=float("nan"))
+    assert failed == again and hash(failed) == hash(again)
+    zero = replace(first, coef=np.zeros(first.coef.size))
+    negative_zero = replace(first, coef=-np.zeros(first.coef.size))
+    assert zero == negative_zero and hash(zero) == hash(negative_zero)
+    assert len({first, second, failed, again}) == 2
 
 
 def test_standard_errors_are_calibrated_across_replications() -> None:

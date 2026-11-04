@@ -93,7 +93,7 @@ def e1_rows(
                 "task_id": r["task_id"],
                 "conditions": dict(r.get("conditions", {})),
                 "seed": r["seed"],
-                "synthetic": False,
+                "synthetic": bool(r.get("synthetic", False)),
                 "included": bool(report.strip()),
                 "completed": r["stop_reason"] == "finished" and bool(report.strip()),
                 "false_success": bool(r["false_success"]),

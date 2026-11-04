@@ -6,7 +6,10 @@ variance ``L' Cov(beta_hat) L``, using the fit's covariance (the observed
 information for ``fit_glmm`` and ``fit_logistic``). Tests and intervals are Wald
 (normal) ones, so a contrast that picks out one coefficient reproduces that
 coefficient's z, p-value, and interval. Odds ratios are ``exp`` of the estimate and
-of the interval bounds on the log-odds scale.
+of the interval bounds on the log-odds scale. A value whose ``exp`` exceeds the
+float range is ``inf``, never an exception: a separated fit (see
+:func:`receipts.analysis.glmm.detect_separation`) has finite but huge standard errors,
+so its odds-ratio interval is typically ``(0, inf)``.
 
 :func:`wald_test` tests several contrasts jointly (chi-square with one degree of
 freedom per row). :func:`holm_bonferroni` adjusts a family of p-values by Holm's
@@ -78,6 +81,14 @@ def contrast_vector(fit: FitResult, weights: Weights) -> FloatArray:
     return vector
 
 
+def _exp(value: float) -> float:
+    """``exp(value)``, with ``inf`` instead of OverflowError (NaN stays NaN)."""
+    try:
+        return math.exp(value)
+    except OverflowError:
+        return math.inf
+
+
 def _label(fit: FitResult, vector: FloatArray) -> str:
     return " + ".join(
         f"{w:g}*{name}" for name, w in zip(fit.column_names, vector, strict=True) if w
@@ -112,21 +123,26 @@ class Contrast:
 
     @property
     def odds_ratio(self) -> float:
-        """``exp(estimate)``: the odds ratio the contrast describes."""
-        return math.exp(self.estimate)
+        """``exp(estimate)``: the odds ratio the contrast describes (``inf`` on overflow)."""
+        return _exp(self.estimate)
 
     @property
     def or_ci_low(self) -> float:
-        """Lower bound of the odds-ratio interval, ``exp(ci_low)``."""
-        return math.exp(self.ci_low)
+        """Lower bound of the odds-ratio interval, ``exp(ci_low)`` (``inf`` on overflow)."""
+        return _exp(self.ci_low)
 
     @property
     def or_ci_high(self) -> float:
-        """Upper bound of the odds-ratio interval, ``exp(ci_high)``."""
-        return math.exp(self.ci_high)
+        """Upper bound of the odds-ratio interval, ``exp(ci_high)`` (``inf`` on overflow)."""
+        return _exp(self.ci_high)
 
     def as_dict(self) -> dict[str, Any]:
-        """JSON-ready mapping of every field plus the odds ratio and its interval."""
+        """Mapping of every field plus the odds ratio and its interval, for JSON.
+
+        Values are plain floats and can be NaN or ``inf`` (a failed or separated fit),
+        which ``json.dumps`` writes as ``NaN`` and ``Infinity`` unless ``allow_nan`` is
+        False.
+        """
         out = asdict(self)
         out["weights"] = list(self.weights)
         out.update(odds_ratio=self.odds_ratio, or_ci_low=self.or_ci_low, or_ci_high=self.or_ci_high)

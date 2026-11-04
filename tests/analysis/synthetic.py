@@ -68,3 +68,20 @@ TRUE_COEF: dict[str, float] = {
     "B[T.b1]": -0.5,
     "B[T.b2]": 0.4,
 }
+
+
+def separated_arm_records() -> list[dict[str, Any]]:
+    """SYNTHETIC: 12 tasks x 2 arms x 2 M1 levels x 3 runs; arm "small" never has y = 1."""
+    rng = np.random.default_rng(4)
+    records: list[dict[str, Any]] = []
+    for task in range(12):
+        task_effect = rng.normal()
+        for arm in ("big", "small"):
+            for m1 in ("attainable", "unattainable"):
+                for _ in range(3):
+                    eta = -0.5 + task_effect + (0.7 if m1 == "unattainable" else 0.0)
+                    y = 0 if arm == "small" else int(rng.random() < float(expit(eta)))
+                    records.append(
+                        {"task": f"t{task}", "arm": arm, "M1": m1, "y": y, "synthetic": True}
+                    )
+    return records

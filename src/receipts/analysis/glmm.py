@@ -52,10 +52,15 @@ SD is not identified (its estimate is infinite), and an ``sd`` at or beyond
 
 Quadrature accuracy. AGQ with few nodes can be inaccurate when clusters are small
 and the SD is large, and it can even show a spurious maximum when many clusters
-have all-equal outcomes. :func:`fit_glmm` therefore takes one Newton step on the
-``CHECK_AGQ``-node likelihood from the estimate and reports the largest predicted
-change in any parameter as ``quadrature_shift``, with a warning above
-``QUADRATURE_TOL``.
+have all-equal outcomes. :func:`fit_glmm` therefore compares, at the estimate, the
+Newton step on the ``CHECK_AGQ``-node likelihood with the Newton step on the
+``n_agq``-node likelihood (both with the ``n_agq`` Hessian ``H``), and reports the
+largest difference in any parameter, ``max |H^-1 (score_CHECK_AGQ - score_n_agq)|``,
+as ``quadrature_shift``, with a warning above ``QUADRATURE_TOL``. Taking the
+difference keeps out of the measure the step that remains when the optimiser
+stopped before the maximum, which has its own warning. The check is skipped for a
+separated design: its estimates along the separating direction are not meaningful,
+and its nearly singular Hessian would magnify rounding error.
 
 Bootstrap. :func:`bootstrap_coefficients` gives cluster (task) bootstrap percentile
 intervals for every coefficient by refitting the model on resampled tasks, with
@@ -78,6 +83,7 @@ from scipy.optimize import linprog, minimize
 from scipy.special import expit, logsumexp
 from scipy.stats import chi2, norm
 
+from receipts.analysis._values import value_key
 from receipts.analysis.design import Design, Formula, build_design
 from receipts.analysis.rates import BootstrapResult, cluster_bootstrap_many, relabel_field
 
@@ -98,7 +104,7 @@ CHECK_AGQ = MAX_AGQ
 """Nodes of the reference likelihood used by the quadrature-accuracy check."""
 
 QUADRATURE_TOL = 0.01
-"""A predicted change above this (log-odds or SD units) with CHECK_AGQ nodes is a warning."""
+"""A ``quadrature_shift`` above this (log-odds or SD units) gives a warning."""
 
 _LOG_2PI = math.log(2.0 * math.pi)
 _MODE_TOL = 1e-10
@@ -241,12 +247,14 @@ class Coefficient:
     ci_high: float
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class FitResult:
     """A fitted logistic model, with or without a random intercept.
 
     ``se``, ``z``, ``p_values``, ``ci_low``, ``ci_high``, ``n_params``, and ``aic`` are
-    derived from the stored fields. Arrays are read-only.
+    derived from the stored fields. Arrays are read-only. Fits compare and hash by
+    value: two are equal when every field is (arrays element by element, NaN equal to
+    NaN), so two fits of the same design in one environment compare equal.
 
     Attributes:
         model: ``"glmm"`` (random intercept) or ``"logistic"``.
@@ -265,10 +273,12 @@ class FitResult:
         warnings: Human-readable problems, empty for a clean fit.
         iterations: Optimiser iterations (BFGS plus Newton refinements, or Newton).
         level: Coverage level of the Wald intervals.
-        quadrature_shift: For ``glmm`` with ``n_agq < CHECK_AGQ``: the largest change in
-            any parameter predicted by one Newton step on the ``CHECK_AGQ``-node
-            likelihood from the estimate (a measure of quadrature error); None when not
-            computed (``logistic``, ``n_agq = CHECK_AGQ``, or a singular Hessian).
+        quadrature_shift: For ``glmm`` with ``n_agq < CHECK_AGQ``: the largest
+            difference, in any parameter, between the Newton steps on the
+            ``CHECK_AGQ``-node and the ``n_agq``-node likelihoods from the estimate (a
+            measure of quadrature error, see the module docstring); None when not
+            computed (``logistic``, ``n_agq = CHECK_AGQ``, a Hessian that is not
+            positive definite, or a separated design).
     """
 
     model: Literal["glmm", "logistic"]
@@ -301,6 +311,16 @@ class FitResult:
         object.__setattr__(self, "column_names", tuple(self.column_names))
         object.__setattr__(self, "coef", coef)
         object.__setattr__(self, "cov", cov)
+
+    def __eq__(self, other: object) -> bool:
+        """True when ``other`` is a FitResult with equal fields (arrays element by element)."""
+        if type(other) is not type(self):
+            return NotImplemented
+        return value_key(self) == value_key(other)
+
+    def __hash__(self) -> int:
+        """Hash of the field values, consistent with ``==``."""
+        return hash(value_key(self))
 
     @property
     def se(self) -> FloatArray:
@@ -734,9 +754,11 @@ def fit_glmm(
     if not converged and identified and not check.separated and sd < SD_LIMIT:
         warnings.append(f"the optimiser did not reach a converged maximum ({result.message})")
     shift = None
-    if n_agq < CHECK_AGQ and full_step is not None:
+    if n_agq < CHECK_AGQ and full_step is not None and not check.separated:
         _, reference_grad = _MarginalLikelihood(design, CHECK_AGQ).evaluate(theta[:p], sd)
-        predicted = _solve_pd(hessian, reference_grad)
+        # ``-grad`` is the n_agq score, so this is H^-1 (score_check - score_n_agq): the
+        # difference of the two Newton steps, without the step left by an early stop.
+        predicted = _solve_pd(hessian, reference_grad + grad)
         shift = None if predicted is None else float(np.max(np.abs(predicted)))
         if shift is not None and shift > QUADRATURE_TOL:
             warnings.append(

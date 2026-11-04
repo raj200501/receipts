@@ -12,6 +12,7 @@ from receipts.analysis.design import (
     Design,
     Formula,
     build_design,
+    flatten_records,
     interaction_column,
     treatment_column,
 )
@@ -121,6 +122,55 @@ def test_build_design_rejects_bad_records(
         build_design(records, formula)
 
 
+#: Synthetic rows in the shape of artifacts/e1/runs.jsonl: conditions are nested.
+NESTED: list[dict[str, Any]] = [
+    {"task_id": "t1", "conditions": {"M1": "attainable", "M2": "full"}, "y": 1},
+    {"task_id": "t1", "conditions": {"M1": "unattainable", "M2": "full"}, "y": 0},
+    {"task_id": "t2", "conditions": {"M1": "attainable", "M2": "truncated"}, "y": 0},
+    {"task_id": "t2", "conditions": {"M1": "unattainable", "M2": "truncated"}, "y": 1},
+]
+
+
+def test_flatten_records_copies_nested_conditions_up() -> None:
+    flat = flatten_records(NESTED)
+    assert flat[1] == {
+        "task_id": "t1",
+        "conditions": {"M1": "unattainable", "M2": "full"},
+        "y": 0,
+        "M1": "unattainable",
+        "M2": "full",
+    }
+    assert "M1" not in NESTED[1]  # the input is not modified
+    assert flatten_records(flat) == flat  # idempotent
+    design = build_design(flat, Formula("y", ("M1", "M2"), group="task_id"))
+    assert design.column_names == (INTERCEPT, "M1[T.unattainable]", "M2[T.truncated]")
+    assert design.x[:, 1].tolist() == [0.0, 1.0, 0.0, 1.0]
+    other = [{"meta": {"k": 1}, "conditions": {"M1": "a"}}]
+    assert flatten_records(other, nested=("meta", "conditions"))[0]["k"] == 1
+
+
+@pytest.mark.parametrize(
+    ("records", "message"),
+    [
+        ([{"y": 1}], "record 0 has no field 'conditions'"),
+        ([{"conditions": ["M1"]}], "not a mapping"),
+        ([{"M1": "a", "conditions": {"M1": "b"}}], "would replace"),
+    ],
+)
+def test_flatten_records_rejects_bad_rows(records: list[dict[str, Any]], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        flatten_records(records)
+
+
+def test_missing_field_names_the_nested_mapping_that_holds_it() -> None:
+    formula = Formula("y", ("M1",), group="task_id")
+    with pytest.raises(ValueError, match=r"no field 'M1' \(it is inside .*'conditions'"):
+        build_design(NESTED, formula)
+    nested_response = [{"out": {"y": 1}, "M1": "a"}]
+    with pytest.raises(ValueError, match=r"no field 'y' \(it is inside .*'out'"):
+        build_design(nested_response, Formula("y", ("M1",)))
+
+
 def test_build_design_reports_rank_deficient_interactions() -> None:
     # The cell (a1, b1) never occurs, so the interaction column is all zeros.
     records = [
@@ -218,3 +268,22 @@ def test_design_with_response_keeps_everything_else() -> None:
     assert np.array_equal(regrouped.groups, design.groups)
     assert np.array_equal(regrouped.y, [1.0, 1.0, 0.0, 0.0, 1.0])
     assert regrouped.column_names == design.column_names
+
+
+def test_designs_compare_and_hash_by_value() -> None:
+    design = build_design(RECORDS, Formula("y", ("M1",), group="task"))
+    same = design.with_response(design.y)
+    assert design == same and hash(design) == hash(same)
+    flipped = design.with_response(1.0 - design.y)
+    assert design != flipped
+    assert design != build_design(RECORDS, Formula("y", ("M1",)))  # no clusters
+    assert design.__eq__("not a design") is NotImplemented
+    assert len({design, same, flipped}) == 2
+
+
+def test_formulas_compare_and_hash_by_value() -> None:
+    formula = Formula("y", ["A", "B"], [("A", "B")], {"A": "a"}, group="task")
+    same = Formula("y", ("A", "B"), (("A", "B"),), {"A": "a"}, group="task")
+    assert formula == same and hash(formula) == hash(same)
+    assert formula != Formula("y", ("A", "B"), (("A", "B"),), {"A": "b"}, group="task")
+    assert len({formula, same}) == 1

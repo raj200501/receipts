@@ -15,6 +15,9 @@ from numpy.polynomial.hermite_e import hermegauss
 from scipy.special import expit, logit
 from scipy.stats import norm
 
+from receipts.analysis import power
+from receipts.analysis.design import Design
+from receipts.analysis.glmm import FitResult, fit_glmm
 from receipts.analysis.power import (
     EffectPower,
     PowerResult,
@@ -28,6 +31,7 @@ from receipts.study.plan import half_fraction_cells
 from receipts.study.spec import CONDITION_LEVELS
 
 FACTORS = ("M1", "M2", "M3", "M4", "M5")
+IntArray = np.ndarray[Any, np.dtype[np.intp]]
 
 
 # Design helpers ---------------------------------------------------------------------
@@ -216,7 +220,31 @@ def test_simulated_outcome_rate_matches_the_model() -> None:
     assert result.marginal_base_rate > base  # averaging over tasks pulls a low rate up
 
 
-def test_replicated_layout_with_arms_mirrors_the_study_plan() -> None:
+Captured = list[tuple[Design, FitResult]]
+
+
+@pytest.fixture
+def captured(monkeypatch: pytest.MonkeyPatch) -> Captured:
+    """Every simulated dataset that simulate_power fits, with its fit (fits still run)."""
+    seen: Captured = []
+
+    def capture(design: Design, **kwargs: Any) -> FitResult:
+        fit = fit_glmm(design, **kwargs)
+        seen.append((design, fit))
+        return fit
+
+    monkeypatch.setattr(power, "fit_glmm", capture)
+    return seen
+
+
+def arm_index(design: Design) -> IntArray:
+    """Arm of each run: 0 for the reference arm, j for the j-th ``arm[T.*]`` column."""
+    arm_columns = [j for j, name in enumerate(design.column_names) if name.startswith("arm[T.")]
+    index = design.x[:, arm_columns] @ np.arange(1, len(arm_columns) + 1)
+    return np.asarray(index, dtype=np.intp)
+
+
+def test_replicated_layout_with_arms_mirrors_the_study_plan(captured: Captured) -> None:
     result = simulate_power(
         base_rate=0.3,
         effects=dict.fromkeys(FACTORS, 0.5),
@@ -233,6 +261,110 @@ def test_replicated_layout_with_arms_mirrors_the_study_plan() -> None:
     names = [e.name for e in result.effects]
     assert names == [*FACTORS, "arm[T.small]", "arm[T.other]"]
     assert result.power_of("arm[T.small]").log_odds == -0.4
+    assert len(captured) == 3
+    plan_cells = sorted(tuple(cell[f] for f in FACTORS) for cell in half_fraction(FACTORS)) * 2
+    # receipts.study.plan.factorial_plan: task i % n_tasks for slot i, then shuffled.
+    plan_task_counts = sorted(np.bincount(np.arange(32) % 10).tolist())
+    for design, _ in captured:
+        assert design.groups is not None
+        arm = arm_index(design)
+        reference = np.flatnonzero(arm == 0)
+        cells = design.x[:, 1:6]
+        # One arm: the 16 cells twice each, and tasks used as evenly as in the plan.
+        assert sorted(map(tuple, cells[reference].astype(int).tolist())) == sorted(plan_cells)
+        assert sorted(np.bincount(design.groups[reference]).tolist()) == plan_task_counts
+        # Every arm runs the identical (task, cell) list.
+        for a in (1, 2):
+            rows = np.flatnonzero(arm == a)
+            assert np.array_equal(design.groups[rows], design.groups[reference])
+            assert np.array_equal(cells[rows], cells[reference])
+    # The task assignment is redrawn for each dataset.
+    first, second = (design.groups for design, _ in captured[:2])
+    assert first is not None and second is not None and not np.array_equal(first, second)
+
+
+def test_crossed_layout_runs_every_cell_for_every_task_in_every_arm(captured: Captured) -> None:
+    simulate_power(
+        base_rate=0.3,
+        effects={"M1": 0.5, "M2": -0.5},
+        random_sd=0.5,
+        n_tasks=5,
+        runs_per_task_per_cell=3,
+        n_sim=1,
+        seed=2,
+        arm_effects={"b": 0.3},
+    )
+    ((design, _),) = captured
+    assert design.groups is not None
+    keys = np.column_stack([design.groups, design.x[:, 1:3], arm_index(design)]).astype(int)
+    combos, counts = np.unique(keys, axis=0, return_counts=True)
+    assert len(combos) == 5 * 4 * 2 and set(counts.tolist()) == {3}
+
+
+def test_task_intercepts_are_shared_by_every_run_of_a_task(captured: Captured) -> None:
+    # A large SD and no fixed effects: a task's runs, in both arms, mostly agree. With an
+    # intercept drawn per run instead, each run would be an independent coin flip.
+    simulate_power(
+        base_rate=0.5,
+        effects={"M1": 0.0},
+        random_sd=4.0,
+        n_tasks=30,
+        runs_per_task_per_cell=2,
+        n_sim=2,
+        seed=3,
+        arm_effects={"b": 0.0},
+    )
+    for design, _ in captured:
+        assert design.groups is not None
+        arm = arm_index(design)
+        means = np.array(
+            [
+                [design.y[(design.groups == task) & (arm == a)].mean() for a in (0, 1)]
+                for task in range(30)
+            ]
+        )
+        # Independent runs: variance about 0.25 / 8 = 0.03 of a task's mean over 8 runs.
+        assert means.mean(axis=1).var() > 0.1
+        # The same intercept in both arms: the arms' task means are strongly correlated.
+        assert np.corrcoef(means[:, 0], means[:, 1])[0, 1] > 0.6
+
+
+def test_fitted_random_sd_recovers_the_simulated_sd(captured: Captured) -> None:
+    # An SD of 2, not 1, so that confusing the SD with the variance would show.
+    simulate_power(
+        base_rate=0.4,
+        effects={"M1": 0.5},
+        random_sd=2.0,
+        n_tasks=60,
+        runs_per_task_per_cell=5,
+        n_sim=8,
+        seed=4,
+    )
+    sds = [fit.random_sd for _, fit in captured]
+    assert len(sds) == 8 and all(sd is not None for sd in sds)
+    # Over seeds 4 to 15 the mean of 8 estimates had SD about 0.11; 0.4 is about 3.5 SD.
+    assert float(np.mean([sd for sd in sds if sd is not None])) == pytest.approx(2.0, abs=0.4)
+
+
+def test_arm_effects_shift_outcome_rates_and_are_detected(captured: Captured) -> None:
+    result = simulate_power(
+        base_rate=0.5,
+        effects={"M1": 0.0},
+        random_sd=0.5,
+        n_tasks=12,
+        runs_per_task_per_cell=3,
+        n_sim=10,
+        seed=6,
+        arm_effects={"up": 2.0, "down": -2.0},
+    )
+    for name in ("arm[T.up]", "arm[T.down]"):
+        effect = result.power_of(name)
+        assert effect.power == 1.0 and effect.rejections_correct_sign == effect.rejections
+    for design, fit in captured:
+        arm = arm_index(design)
+        rates = [float(design.y[arm == a].mean()) for a in (0, 1, 2)]  # reference, up, down
+        assert rates[1] > rates[0] + 0.2 and rates[0] > rates[2] + 0.2
+        assert fit.coef[fit.index("arm[T.up]")] > 1.0 > -1.0 > fit.coef[fit.index("arm[T.down]")]
     few_tasks = simulate_power(
         base_rate=0.3,
         effects={"M1": 0.5, "M2": 0.5},

@@ -4,7 +4,9 @@
   a bootstrap that resamples tasks (clusters), for one statistic, for several computed
   together, and paired for two conditions run on the same tasks.
 - :mod:`receipts.analysis.design`: treatment-coded design matrices from records, with
-  optional two-way interactions and task clusters.
+  optional two-way interactions and task clusters, and :func:`flatten_records` for
+  rows whose manipulation levels sit in a nested ``conditions`` mapping (the rows of
+  ``artifacts/e1/runs.jsonl``).
 - :mod:`receipts.analysis.glmm`: logistic regression with a random intercept per task,
   fitted by maximum likelihood with adaptive Gauss-Hermite quadrature; plain logistic
   regression; likelihood-ratio tests; separation checks; task-bootstrap intervals for
@@ -31,6 +33,7 @@ from receipts.analysis.design import (
     Design,
     Formula,
     build_design,
+    flatten_records,
     interaction_column,
     treatment_column,
 )
@@ -97,6 +100,7 @@ __all__ = [
     "detect_separation",
     "fit_glmm",
     "fit_logistic",
+    "flatten_records",
     "full_factorial",
     "half_fraction",
     "holm_bonferroni",

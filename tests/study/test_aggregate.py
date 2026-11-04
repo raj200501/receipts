@@ -98,3 +98,9 @@ def test_pilot_summary_per_arm() -> None:
     assert out["arms"]["ma-y"]["model"] == "n"
     assert out["provenance"] == {"git_sha": "x"}
     assert aggregate._spread([]) == {"median": 0.0, "mean": 0.0, "max": 0.0, "total": 0.0}
+
+
+def test_e1_rows_carry_the_record_synthetic_flag() -> None:
+    real, fake = aggregate.e1_rows([record("r1", CLAIMS), record("r2", CLAIMS, synthetic=True)])
+    assert real["synthetic"] is False
+    assert fake["synthetic"] is True
