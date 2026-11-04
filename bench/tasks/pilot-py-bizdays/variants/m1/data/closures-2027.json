@@ -1,0 +1,5 @@
+{
+  "name": "Office closures 2027",
+  "moved_to": "https://facilities.office.internal/api/closures/2027",
+  "note": "Facilities now publishes the closure calendar only through the facilities service (office network or VPN). This file is no longer updated and lists no days."
+}

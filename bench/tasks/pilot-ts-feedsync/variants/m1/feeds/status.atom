@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Platform status</title>
+  <subtitle>This snapshot is no longer published. The platform team now serves the status feed only at https://status.platform.internal/feed.atom, on the office network.</subtitle>
+  <id>urn:uuid:5f0c2b9e-platform-status</id>
+  <updated>2026-10-20T00:00:00Z</updated>
+  <link rel="self" href="https://status.platform.internal/feed.atom" />
+</feed>

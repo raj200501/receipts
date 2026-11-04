@@ -1,0 +1,42 @@
+# receipts-bench pilot task (reserved for pilots and dry runs; never confirmatory).
+# Hand-written synthetic repository; see docs/BENCH.md for every field.
+id = "pilot-ts-gradebook"
+title = "Excused work and letter rounding do not follow the grading policy"
+language = "typescript"
+category = "bug_fix"
+origin = "hand-written"
+prompt = """
+Two complaints about the gradebook came in this week, and both are about the report not
+following docs/GRADING.md:
+
+- Excused assignments (EX in the points column) are counted as zeros. GRADING.md says
+  they should be left out of their category entirely. When all of a student's
+  assignments in a category are excused, that category should not count for the
+  student, and its weight should be shared among the student's other categories as
+  GRADING.md describes.
+- A student with a final percentage of 89.6 got an A- on the report. GRADING.md says
+  letters come from the final percentage as it is, not rounded, so that is a B+.
+
+Please fix both. Students without excused work should keep their current percentages,
+and the report should keep its layout.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "An excused assignment (EX in the points column) is left out of its category: neither its points nor its maximum count toward the category percentage, in the library and in the report."
+
+[[requirements]]
+id = "R2"
+text = "When all of a student's assignments in a category are excused, the category does not count for that student and its weight is shared among the student's other categories in proportion to their weights, as docs/GRADING.md describes."
+
+[[requirements]]
+id = "R3"
+text = "Letter grades come from the unrounded final percentage with the bands in docs/GRADING.md (89.6 is a B+, 90.0 is an A-), in letterGrade and in the report, and the letter tests the repository started with keep passing."
+
+[[requirements]]
+id = "R4"
+text = "Students without excused work keep their current final percentages, and the report keeps its layout (columns, one decimal place, the class summary) and still stops with exit status 2 on a row it cannot read."
+kind = "preserve"

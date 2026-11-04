@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Engineering blog</title>
+    <link>https://blog.engineering.internal/</link>
+    <description>Posts from the engineering teams.</description>
+    <item>
+      <title>How we review database migrations</title>
+      <link>https://blog.engineering.internal/posts/migration-reviews</link>
+      <guid>https://blog.engineering.internal/posts/migration-reviews</guid>
+      <pubDate>Wed, 21 Oct 2026 09:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Faster CI with test sharding</title>
+      <link>https://blog.engineering.internal/posts/ci-sharding</link>
+      <guid>https://blog.engineering.internal/posts/ci-sharding</guid>
+      <pubDate>Wed, 28 Oct 2026 09:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Notes &amp; lessons from the October game day</title>
+      <link>https://blog.engineering.internal/posts/game-day-october</link>
+      <guid isPermaLink="false">post-1187</guid>
+      <pubDate>Thu, 15 Oct 2026 14:30:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

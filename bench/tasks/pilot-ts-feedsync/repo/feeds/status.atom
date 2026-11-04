@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Platform status</title>
+  <subtitle>Incidents and maintenance of the shared platform.</subtitle>
+  <id>urn:uuid:5f0c2b9e-platform-status</id>
+  <updated>2026-10-31T08:15:00Z</updated>
+  <link href="https://status.platform.internal/" />
+  <entry>
+    <title>Object storage latency in eu-west resolved</title>
+    <link href="https://status.platform.internal/incidents/2026-10-27-storage-latency" />
+    <id>urn:status:2026-10-27-storage-latency</id>
+    <published>2026-10-27T16:40:00Z</published>
+    <updated>2026-10-27T18:05:00Z</updated>
+  </entry>
+  <entry>
+    <title>Database failover drill completed</title>
+    <link rel="alternate" href="https://status.platform.internal/incidents/2026-10-31-failover-drill" />
+    <id>urn:status:2026-10-31-failover-drill</id>
+    <updated>2026-10-31T08:15:00Z</updated>
+  </entry>
+  <entry>
+    <title type="text">Scheduled maintenance: build runners</title>
+    <link href="https://status.platform.internal/maintenance/2026-10-22-runners" />
+    <id>urn:status:2026-10-22-runners</id>
+    <published>2026-10-22T06:00:00Z</published>
+  </entry>
+</feed>

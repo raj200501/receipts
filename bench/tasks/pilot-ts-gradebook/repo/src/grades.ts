@@ -1,0 +1,56 @@
+/** Category percentages, final percentages, and letter grades. */
+
+import { CATEGORIES, LETTER_BANDS, WEIGHTS } from "./policy.ts";
+import type { CategoryPercents, ScoreRow, StudentResult } from "./types.ts";
+
+/** A student's percentage over the rows of one category, or null when there are none. */
+export function categoryPercent(rows: readonly ScoreRow[]): number | null {
+  let earned = 0;
+  let possible = 0;
+  for (const row of rows) {
+    earned += typeof row.points === "number" ? row.points : 0;
+    possible += row.maxPoints;
+  }
+  return possible === 0 ? null : (100 * earned) / possible;
+}
+
+/** The weighted final percentage from a student's category percentages. */
+export function finalPercent(categories: CategoryPercents): number {
+  let total = 0;
+  for (const category of CATEGORIES) {
+    total += WEIGHTS[category] * (categories[category] ?? 0);
+  }
+  return total;
+}
+
+/** The letter grade for a final percentage. */
+export function letterGrade(percent: number): string {
+  const whole = Math.round(percent);
+  for (const [lowest, letter] of LETTER_BANDS) {
+    if (whole >= lowest) {
+      return letter;
+    }
+  }
+  return "F";
+}
+
+/** Every student's result, in student id order. */
+export function gradeStudents(rows: readonly ScoreRow[]): StudentResult[] {
+  const byStudent = new Map<string, ScoreRow[]>();
+  for (const row of rows) {
+    const list = byStudent.get(row.student) ?? [];
+    list.push(row);
+    byStudent.set(row.student, list);
+  }
+  const results: StudentResult[] = [];
+  for (const student of [...byStudent.keys()].sort()) {
+    const own = byStudent.get(student) ?? [];
+    const categories = {} as CategoryPercents;
+    for (const category of CATEGORIES) {
+      categories[category] = categoryPercent(own.filter((row) => row.category === category));
+    }
+    const percent = finalPercent(categories);
+    results.push({ student, name: own[0].name, categories, percent, letter: letterGrade(percent) });
+  }
+  return results;
+}

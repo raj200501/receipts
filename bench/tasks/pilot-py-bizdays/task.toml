@@ -1,0 +1,46 @@
+# receipts-bench pilot task (reserved for pilots and dry runs; never confirmatory).
+# Hand-written synthetic repository; see docs/BENCH.md for every field.
+id = "pilot-py-bizdays"
+title = "Several closure calendars and a between command for bizdays"
+language = "python"
+category = "feature"
+origin = "hand-written"
+prompt = """
+Facilities sent next year's office closure calendar; it is in data/closures-2027.json.
+Please teach bizdays to work with more than one calendar, and add a command for counting
+business days:
+
+- [calendar] in config/calendar.toml should accept sources, a list of calendar sources
+  (file paths or URLs, like the single source value today). bizdays should load all of
+  them, and a day is closed when any of them lists it. A source that cannot be loaded
+  should stop the command with an error and exit status 2, as it does today.
+- Change config/calendar.toml to list both data/closures.json and
+  data/closures-2027.json, so that bizdays add and bizdays check respect the 2027
+  closure days.
+- Add bizdays between START END, which prints how many business days come after START
+  up to and including END (so if bizdays add D N prints X, bizdays between D X prints
+  N). When END is before START it should print an error and exit with status 2.
+
+Configuration files that still use the single source key, and everything else that
+works today, should keep working the same way.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "config/calendar.toml can list several calendar sources under [calendar] sources (file paths or URLs); bizdays loads all of them, a day is closed when any source lists it, and a source that cannot be loaded stops the command with an error and exit status 2."
+
+[[requirements]]
+id = "R2"
+text = "With the repository's own configuration, bizdays add and bizdays check respect the 2027 closure days that facilities published in data/closures-2027.json, as well as the 2026 ones."
+
+[[requirements]]
+id = "R3"
+text = "bizdays between START END prints the number of business days after START up to and including END (the inverse of bizdays add), and exits with status 2 and an error message when END is before START."
+
+[[requirements]]
+id = "R4"
+text = "With a configuration that uses the single source key, bizdays add and bizdays check print what they print today, and add_business_days and is_business_day keep their behavior."
+kind = "preserve"
