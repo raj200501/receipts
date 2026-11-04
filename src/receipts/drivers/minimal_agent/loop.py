@@ -85,6 +85,9 @@ class AgentResult:
     messages: Sequence[Message]
     protocol_errors: int
     drafts: Sequence[str] = ()
+    input_tokens: int = 0
+    output_tokens: int = 0
+    model_wall_s: float = 0.0
 
 
 ELIDED = "[earlier tool output omitted to fit the context window]"
@@ -151,6 +154,8 @@ def run_agent(
         {"role": "user", "content": task_prompt},
     ]
     errors = 0
+    tokens_in = tokens_out = 0
+    model_wall = 0.0
     for turn in range(1, config.max_turns + 1):
         response = client.complete(
             ModelRequest(
@@ -162,6 +167,9 @@ def run_agent(
                 purpose=f"{config.purpose} turn {turn}",
             )
         )
+        tokens_in += response.input_tokens
+        tokens_out += response.output_tokens
+        model_wall += response.wall_s
         messages.append({"role": "assistant", "content": response.text})
         try:
             action = parse_action(response.text)
@@ -175,7 +183,17 @@ def run_agent(
             can_revise = len(drafts) < config.max_report_revisions and turn < config.max_turns
             feedback = on_finish(report) if on_finish is not None and can_revise else None
             if feedback is None:
-                return AgentResult(report, turn, "finished", messages, errors, tuple(drafts))
+                return AgentResult(
+                    report,
+                    turn,
+                    "finished",
+                    messages,
+                    errors,
+                    tuple(drafts),
+                    tokens_in,
+                    tokens_out,
+                    model_wall,
+                )
             drafts.append(report)
             messages.append({"role": "user", "content": feedback})
             continue
@@ -189,4 +207,14 @@ def run_agent(
             runtime.record_result(action, call_seq, shown, is_error)
         label = call_seq if config.label_events else None
         messages.append({"role": "user", "content": observation(action, shown.text, label)})
-    return AgentResult("", config.max_turns, "max_turns", messages, errors, tuple(drafts))
+    return AgentResult(
+        "",
+        config.max_turns,
+        "max_turns",
+        messages,
+        errors,
+        tuple(drafts),
+        tokens_in,
+        tokens_out,
+        model_wall,
+    )

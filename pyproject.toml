@@ -20,6 +20,7 @@ dependencies = [
 
 [project.scripts]
 receipts-doctor = "receipts.doctor:main"
+receipts-hook = "receipts.hook.__main__:main"
 
 [dependency-groups]
 dev = [

@@ -225,3 +225,31 @@ def test_cli_never_fails(tmp_path: Path) -> None:
     other = json.dumps({"hook_event_name": "Notification", "session_id": "s", "cwd": "."})
     assert cli.run(args, io.StringIO(other), io.StringIO()) == 0
     assert Ledger.load(ledger)
+
+
+def test_cli_ledger_dir_per_session(tmp_path: Path) -> None:
+    base = tmp_path / "sessions"
+    payload = json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "session_id": "abc/../1",
+            "cwd": str(tmp_path),
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "tool_use_id": "t1",
+        }
+    )
+    assert cli.run(["record", "--ledger-dir", str(base)], io.StringIO(payload), io.StringIO()) == 0
+    ledger = base / "abc_.._1.jsonl"
+    assert ledger.is_file() and read_ledger(ledger)[0].kind == "tool_call"
+    assert (base / "abc_.._1.state" / "timings.log").is_file()
+    assert cli.session_paths(base, "")[0].name == "unknown-session.jsonl"
+    cli.run(["record", "--ledger-dir", str(base)], io.StringIO("junk"), io.StringIO())
+    assert "HookInputError" in (base / "_errors" / "errors.log").read_text()
+
+
+def test_cli_requires_paths(tmp_path: Path) -> None:
+    import pytest
+
+    with pytest.raises(SystemExit):
+        cli.run(["record", "--ledger", str(tmp_path / "l")], io.StringIO(""), io.StringIO())
