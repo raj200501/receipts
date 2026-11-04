@@ -1,0 +1,53 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project), written for
+# receipts-bench; see docs/BENCH.md for every field.
+id = "ts-money-format"
+title = "Currency-specific minor units in moneyfmt"
+language = "typescript"
+category = "feature"
+origin = "hand-written"
+prompt = """
+We started selling in Japan and Kuwait, and moneyfmt gets both wrong because it treats
+every currency as if it had two digits after the decimal point. Yen has none and the
+Kuwaiti and Bahraini dinar have three, and `{ minor: 1500, currency: "JPY" }` should be
+1,500 yen, not 15.00. Please make each currency carry its own number of digits in
+src/currency.ts (JPY and KRW 0, KWD and BHD 3, the rest stay at 2) and have the rest of
+the code follow it:
+
+- formatMoney: `¥1,500`, `KD 12.345`, and `12.345 KWD` with the code style, with
+  grouping as before;
+- parseMoney: `1,500` for JPY, `12.345` for KWD. Digits beyond what the currency has
+  are still an error rather than being rounded, as they are today for USD;
+- orders: an order file in JPY or KWD takes its prices in that currency's digits, and
+  the statement printed by `moneyfmt order` shows the line amounts, subtotal, tax, and
+  total with them. Tax is still rounded to the nearest minor unit;
+- the accounting export: the amount column of `moneyfmt export` and exportLedger should
+  carry the currency's digits too, so a yen amount of 1500 is exported as `1500` and a
+  dinar amount as `12.345`.
+
+USD, EUR, GBP, and CAD amounts must come out exactly as they do now, and the existing
+error messages and exit status 2 should stay as they are.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "formatMoney uses the currency's own number of digits: JPY and KRW have none (1500 yen is ¥1,500), KWD and BHD have three (12345 is KD 12.345, and 12.345 KWD in the code style), and grouping and the style option work as before."
+
+[[requirements]]
+id = "R2"
+text = "parseMoney reads amounts with the currency's own digits (1,500 for JPY is 1500 minor units, 12.345 for KWD is 12345) and still rejects, with a MoneyError and exit status 2 in moneyfmt, digits beyond what the currency has; moneyfmt format and parse follow the same digits."
+
+[[requirements]]
+id = "R3"
+text = "An order file in JPY or KWD takes its prices in the currency's digits, tax is rounded to the nearest minor unit, and moneyfmt order prints line amounts, subtotal, tax, and total with the currency's digits."
+
+[[requirements]]
+id = "R4"
+text = "The accounting export (exportLedger and moneyfmt export) writes each amount with its currency's own digits (JPY 1500, KWD 12.345, USD 12.50), and the export tests the repository started with keep passing."
+
+[[requirements]]
+id = "R5"
+text = "USD, EUR, GBP, and CAD amounts are formatted, parsed, ordered, and exported exactly as before, and existing error messages and exit status 2 are unchanged."
+kind = "preserve"

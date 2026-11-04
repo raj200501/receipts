@@ -1,0 +1,15 @@
+{
+  "id": "SO-1002",
+  "customer": "Grace Hopper",
+  "state": "delivered",
+  "totalCents": 12900,
+  "paidCents": 12900,
+  "address": "4 Harbour Street, Portside",
+  "deliveredAt": "2027-05-10T14:30:00Z",
+  "history": [
+    { "at": "2027-05-03T09:12:00Z", "from": "created", "event": "pay", "to": "paid" },
+    { "at": "2027-05-04T08:00:00Z", "from": "paid", "event": "pack", "to": "packed" },
+    { "at": "2027-05-05T16:45:00Z", "from": "packed", "event": "ship", "to": "shipped" },
+    { "at": "2027-05-10T14:30:00Z", "from": "shipped", "event": "deliver", "to": "delivered" }
+  ]
+}

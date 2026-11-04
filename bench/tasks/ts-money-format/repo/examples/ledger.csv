@@ -1,0 +1,5 @@
+date,account,memo,amount,currency
+2027-03-02,4000-sales,Order SO-1041,1230.45,USD
+2027-03-02,2200-sales-tax,Order SO-1041 tax,101.51,USD
+2027-03-03,4000-sales,Order SO-1042,95.00,EUR
+2027-03-04,6100-shipping,Parcel refund,-14.20,GBP

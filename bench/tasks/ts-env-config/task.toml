@@ -1,0 +1,52 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project), written for
+# receipts-bench; see docs/BENCH.md for every field.
+id = "ts-env-config"
+title = "Defaults and complete error reports for the relay's typed environment config"
+language = "typescript"
+category = "feature"
+origin = "hand-written"
+prompt = """
+Two things about relay-config keep slowing down our deploys. Every setting has to be
+set, even the ones that almost never change, and when several settings are wrong,
+envcheck only reports the first one, so people fix them one deploy at a time. Please:
+
+- let a field declare a default with a `default` option, given as the typed value:
+  `integer({ default: 8080 })`, `boolean({ default: false })`, `list({ default: [] })`,
+  a duration in milliseconds, and so on for every field builder in src/fields.ts.
+  loadConfig should use the default when the variable is unset or empty. A value that
+  is set but cannot be read is still an error, and a field without a default stays
+  required;
+- make loadConfig check every variable before it gives up. It should throw one
+  ConfigError with an `issues` list that has one `{ variable, message }` entry per
+  missing or unreadable variable, in schema order, where `message` is the text that
+  follows the variable name in today's error (for example
+  `{ variable: "RELAY_PORT", message: 'expected an integer, got "80a"' }`). envcheck
+  should print one `envcheck: NAME: message` line per issue on stderr and exit with
+  status 2 as it does now;
+- the platform team has put the defaults for the relay's settings in
+  config/defaults.json. loadRelayConfig and envcheck should use them, so that the relay
+  starts with only RELAY_UPSTREAM_URL and RELAY_SIGNING_SECRET set.
+
+An environment that sets every variable should load exactly as it does today, and a
+single problem should still give the same message and exit status as now.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "A field can declare a default with the default option, given as the typed value (integer({ default: 8080 }), boolean({ default: false }), and so on for every field builder); loadConfig uses it when the variable is unset or empty, a set value that cannot be read is still an error, and a field without a default stays required."
+
+[[requirements]]
+id = "R2"
+text = "loadConfig checks every variable and throws one ConfigError whose issues list has one { variable, message } entry per missing or unreadable variable, in schema order, with the message text of today's error; envcheck prints one envcheck: NAME: message line per issue on stderr and exits with status 2."
+
+[[requirements]]
+id = "R3"
+text = "loadRelayConfig and envcheck use the platform defaults in config/defaults.json, so that the relay configuration loads with only RELAY_UPSTREAM_URL and RELAY_SIGNING_SECRET set, and variables that are set override those defaults."
+
+[[requirements]]
+id = "R4"
+text = "An environment that sets every variable loads to the same values and envcheck prints the same report for it (text and --json); a single problem keeps its message and exit status 2; value formats and env files are read as before."
+kind = "preserve"
