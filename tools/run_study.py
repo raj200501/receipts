@@ -26,6 +26,7 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from receipts.bench.hashing import tree_sha256
 from receipts.bench.spec import TOOLCHAIN_PACKAGES, TOOLCHAIN_PYTHON
 from receipts.client.backends import LocalOpenAIBackend
 from receipts.client.models import LOCAL_MODELS
@@ -48,6 +49,17 @@ def git_sha() -> str:
     return subprocess.run(
         ["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
     ).stdout.strip()
+
+
+def dirty_files() -> list[str]:
+    """Tracked files with uncommitted changes (recorded per run; confirmatory runs need none)."""
+    out = subprocess.run(
+        ["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return sorted(line[3:] for line in out.splitlines() if line.strip())
 
 
 def pending(plan: Plan, artifacts: Path) -> list[str]:
@@ -81,9 +93,11 @@ def one_run(
     state: Path,
     sha: str,
     server: LocalServer,
+    dirty: Sequence[str] = (),
 ) -> bool:
     """Execute one run; on an infrastructure failure, log it and return False."""
-    task = load_run_task(ROOT / "bench" / "tasks" / spec.task_id)
+    task_dir = ROOT / "bench" / "tasks" / spec.task_id
+    task = load_run_task(task_dir)
     policy = with_toolchain(
         SandboxPolicy(timeout_s=task.command_timeout_s, memory_mb=task.memory_mb), toolchain()
     )
@@ -101,7 +115,11 @@ def one_run(
             sandbox_factory=lambda work: make_sandbox(work, policy, prefer=BACKENDS),
             git_sha=sha,
             server_provenance=server.provenance(),
-            extra_provenance={"toolchain_installed": list(toolchain().installed)},
+            extra_provenance={
+                "toolchain_installed": list(toolchain().installed),
+                "task_tree_sha256": tree_sha256(task_dir),
+                "uncommitted_at_start": list(dirty),
+            },
         )
     except Exception as exc:  # infrastructure failure: log it, leave the run unbanked
         with _FAILURES_LOCK, (state / "failures.jsonl").open("a", encoding="utf-8") as handle:
@@ -154,6 +172,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.limit is not None:
         todo = todo[: args.limit]
     sha = git_sha()
+    dirty = dirty_files()
     specs = {r.run_id: r for r in plan.runs}
     done = 0
     by_model: dict[str, list[str]] = {}
@@ -174,7 +193,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         with server, ThreadPoolExecutor(max_workers=args.parallel) as pool:
             futures = [
-                pool.submit(one_run, plan, specs[r], client, artifacts, state, sha, server)
+                pool.submit(one_run, plan, specs[r], client, artifacts, state, sha, server, dirty)
                 for r in run_ids
             ]
             done += sum(1 for f in futures if f.result())
