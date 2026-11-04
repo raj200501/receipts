@@ -51,6 +51,38 @@ def test_parse_action_errors(text: str, match: str) -> None:
         parse_action(text)
 
 
+def test_parse_action_tolerates_invalid_escapes_and_raw_control_characters() -> None:
+    # A synthetic reply in the shape a 7B model wrote in the smoke study: Python source with
+    # an escaped quote inside a JSON string, which strict JSON rejects (\' is no JSON escape).
+    text = (
+        '```json\n{"thought": "t", "tool": "write", "args": {"path": "t.py", '
+        "\"content\": \"s = 'a\\'b'\\nprint(r'\\d+')\"}}\n```"
+    )
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(text.split("```json\n", 1)[1].rsplit("\n```", 1)[0])
+    action = parse_action(text)
+    assert action.args["content"] == "s = 'a\\'b'\nprint(r'\\d+')"
+    # A raw newline and tab inside a string are kept as written.
+    raw = '{"tool": "bash", "args": {"cmd": "printf \'a\tb\'\necho done"}}'
+    assert parse_action(raw).args["cmd"] == "printf 'a\tb'\necho done"
+    # Valid escapes are untouched: an escaped backslash before a quote stays one backslash.
+    kept = '{"tool": "bash", "args": {"cmd": "echo \\\\\'x"}}'
+    assert parse_action(kept).args["cmd"] == "echo \\'x"
+
+
+def test_parse_action_names_the_json_error_of_a_broken_action() -> None:
+    broken = '```json\n{"tool": "bash", "args": {"cmd": "ls" "extra": 1}}\n```'
+    with pytest.raises(ProtocolError, match=r"did not parse as JSON .*line 1, column \d+"):
+        parse_action(broken)
+
+
+def test_protocol_error_says_when_a_reply_was_cut_off() -> None:
+    cut = protocol.format_protocol_error(ProtocolError("no JSON action found"), cut_off=True)
+    assert "cut off" in cut and "edit" in cut
+    assert cut.startswith(protocol.PROTOCOL_ERROR_PREFIX)
+    assert "cut off" not in protocol.format_protocol_error(ProtocolError("x"))
+
+
 def test_protocol_error_message_and_action_dict() -> None:
     msg = protocol.format_protocol_error(ProtocolError("bad"))
     assert "bad" in msg and "```json" in msg

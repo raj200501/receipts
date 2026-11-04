@@ -195,7 +195,10 @@ def run_agent(
             action = parse_action(response.text)
         except ProtocolError as exc:
             errors += 1
-            messages.append({"role": "user", "content": format_protocol_error(exc)})
+            cut_off = response.finish_reason == "length"
+            messages.append(
+                {"role": "user", "content": format_protocol_error(exc, cut_off=cut_off)}
+            )
             continue
         call_seq = runtime.record_call(action)
         if action.tool == "finish":
@@ -249,7 +252,10 @@ def run_agent(
             action = parse_action(response.text)
         except ProtocolError as exc:
             errors += 1
-            messages.append({"role": "user", "content": format_protocol_error(exc)})
+            cut_off = response.finish_reason == "length"
+            messages.append(
+                {"role": "user", "content": format_protocol_error(exc, cut_off=cut_off)}
+            )
         else:
             if action.tool == "finish":
                 runtime.record_call(action)

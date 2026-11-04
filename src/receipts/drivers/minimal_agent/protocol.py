@@ -99,17 +99,52 @@ def _candidates(text: str) -> list[str]:
     return found
 
 
+_ESCAPE = re.compile(r"\\(.)", re.DOTALL)
+_JSON_ESCAPES = frozenset('"\\/bfnrtu')
+
+
+def _repair_escapes(raw: str) -> str:
+    """Keep a backslash that JSON cannot escape (``\\'``, ``\\d``, ...) as a literal one.
+
+    Pairs are read left to right, so an escaped backslash (``\\\\``) is never split.
+    """
+    return _ESCAPE.sub(
+        lambda m: m.group(0) if m.group(1) in _JSON_ESCAPES else "\\\\" + m.group(1), raw
+    )
+
+
+def _loads(raw: str) -> Any:
+    """Parse one JSON candidate, tolerating two slips models make in long string values.
+
+    Raw control characters inside strings (a literal newline in a file's content) are
+    accepted (``strict=False``), and a backslash before a character JSON cannot escape
+    (``\\'`` in Python source, ``\\d`` in a regular expression) is read as the literal
+    backslash the model meant. Anything else that is not JSON still raises
+    ``json.JSONDecodeError``.
+    """
+    try:
+        return json.loads(raw, strict=False)
+    except json.JSONDecodeError:
+        return json.loads(_repair_escapes(raw), strict=False)
+
+
 def parse_action(text: str) -> Action:
     """Parse the one action in a model reply.
 
     The last syntactically valid JSON object with a ``tool`` key wins, so a model
-    that restates an example before acting is handled. Arguments are validated
-    against :data:`TOOLS`; unknown keys are dropped.
+    that restates an example before acting is handled. Candidates are parsed by
+    :func:`_loads` (raw control characters and stray backslashes in strings are
+    tolerated, DECISIONS D45). Arguments are validated against :data:`TOOLS`; unknown
+    keys are dropped. When no action parses and a candidate that names a ``tool`` was
+    not JSON, the error says where its JSON broke, so the agent can fix it.
     """
+    broken: json.JSONDecodeError | None = None
     for raw in reversed(_candidates(text)):
         try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
+            data = _loads(raw)
+        except json.JSONDecodeError as exc:
+            if broken is None and '"tool"' in raw:
+                broken = exc
             continue
         if not isinstance(data, dict) or "tool" not in data:
             continue
@@ -127,12 +162,32 @@ def parse_action(text: str) -> Action:
             if not isinstance(value, str):
                 raise ProtocolError(f"{tool} arg {name} must be a string")
         return Action(tool, clean, str(data.get("thought", "")))
+    if broken is not None:
+        raise ProtocolError(
+            f"your action did not parse as JSON ({broken.msg} at line {broken.lineno}, "
+            f"column {broken.colno})"
+        )
     raise ProtocolError("no JSON action found; reply with one ```json action block")
 
 
-def format_protocol_error(error: ProtocolError) -> str:
-    """The observation shown to the agent after an unparseable reply."""
+PROTOCOL_ERROR_PREFIX = "Your last reply could not be used"
+"""How every protocol-error observation starts; completeness reads it to tell which
+replies were never run, whatever parser version wrote the transcript."""
+
+
+def format_protocol_error(error: ProtocolError, *, cut_off: bool = False) -> str:
+    """The observation shown to the agent after an unparseable reply.
+
+    ``cut_off`` (the reply stopped at the output-token limit) adds that the reply was cut
+    off and that long files can be written in parts.
+    """
+    cut = (
+        " It was cut off at the output limit before the action was complete; write a long "
+        "file in parts (write the first part, then add the rest with edit)."
+        if cut_off
+        else ""
+    )
     return (
-        f"Your last reply could not be used: {error}. Reply with exactly one JSON action "
+        f"{PROTOCOL_ERROR_PREFIX}: {error}.{cut} Reply with exactly one JSON action "
         'in a ```json block, for example {"thought": "...", "tool": "run_tests", "args": {}}.'
     )

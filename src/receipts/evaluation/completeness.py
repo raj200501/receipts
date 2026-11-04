@@ -25,7 +25,11 @@ from dataclasses import dataclass
 
 from receipts.drivers.minimal_agent.boundary import TRANSIENT_ERRORS
 from receipts.drivers.minimal_agent.loop import NOT_RUN_AT_CAP
-from receipts.drivers.minimal_agent.protocol import ProtocolError, parse_action
+from receipts.drivers.minimal_agent.protocol import (
+    PROTOCOL_ERROR_PREFIX,
+    ProtocolError,
+    parse_action,
+)
 from receipts.ledger.events import Ledger, sha256_text
 
 
@@ -48,6 +52,18 @@ def task_start(messages: Sequence[Mapping[str, str]], prompt_sha256: str) -> int
     return matches[-1] + 1
 
 
+def never_run(reply: str) -> bool:
+    """Whether the observation after an assistant reply says the reply was never run.
+
+    The loop answers an unparseable reply with an observation that starts with
+    ``PROTOCOL_ERROR_PREFIX``. Reading that answer, not re-parsing the reply, keeps the
+    check right for transcripts written under an older, stricter parser (DECISIONS
+    D45): a reply that the current parser would accept but the run's parser rejected
+    was still never run.
+    """
+    return reply.startswith(PROTOCOL_ERROR_PREFIX)
+
+
 def transcript_commands(
     messages: Sequence[Mapping[str, str]], test_cmd: str, *, start: int = 0
 ) -> list[str]:
@@ -56,13 +72,15 @@ def transcript_commands(
     for index, message in enumerate(messages):
         if index < start or message.get("role") != "assistant":
             continue
+        reply = messages[index + 1]["content"] if index + 1 < len(messages) else ""
+        if never_run(reply):
+            continue
         try:
             action = parse_action(message.get("content", ""))
         except ProtocolError:
             continue
         if action.tool not in ("bash", "run_tests"):
             continue
-        reply = messages[index + 1]["content"] if index + 1 < len(messages) else ""
         if NOT_RUN_AT_CAP in reply or any(err in reply for err in TRANSIENT_ERRORS):
             continue
         commands.append(str(action.args["cmd"]) if action.tool == "bash" else test_cmd)

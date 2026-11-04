@@ -2727,7 +2727,7 @@ def run_completeness(run: BankedRun, bench_dir: Path) -> dict[str, Any]:
     it that are not tool calls, so a protocol mismatch cannot pass silently.
     """
     from receipts.drivers.minimal_agent.protocol import ProtocolError, parse_action
-    from receipts.evaluation.completeness import check_run, task_start
+    from receipts.evaluation.completeness import check_run, never_run, task_start
 
     start_event = run.ledger.run_start()
     agent = "" if start_event is None else str(start_event.data.get("agent", ""))
@@ -2748,12 +2748,18 @@ def run_completeness(run: BankedRun, bench_dir: Path) -> dict[str, Any]:
         run.run_id, messages, run.ledger, task_test_command(bench_dir, run.task_id), start=start
     )
     unparsed = 0
-    for message in messages[start:]:
-        if message.get("role") == "assistant":
-            try:
-                parse_action(str(message.get("content", "")))
-            except ProtocolError:
-                unparsed += 1
+    for index in range(start, len(messages)):
+        message = messages[index]
+        if message.get("role") != "assistant":
+            continue
+        reply = messages[index + 1] if index + 1 < len(messages) else {}
+        if never_run(str(reply.get("content", ""))):
+            unparsed += 1
+            continue
+        try:
+            parse_action(str(message.get("content", "")))
+        except ProtocolError:
+            unparsed += 1
     return {**result.to_dict(), "unparsed_actions": unparsed}
 
 

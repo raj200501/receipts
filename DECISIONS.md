@@ -476,3 +476,23 @@ provenance. The smoke study was restarted with both at 13:48 UTC after 10 of its
 the runs in flight at the restart were discarded and run again from the start, as the
 runner does for any interrupted run. The pilot, E1, and E4 all use these settings, so the
 pilot's timing feeds the E1 budget (D41) under the conditions E1 runs in.
+
+**D45. minimal-agent reads JSON actions leniently and says why a reply failed.** Recorded
+before the pilot (rule 10); like D39 it changes the scaffold for every arm alike. The
+smoke study showed runs that spent all 16 turns re-sending one action: a `write` whose
+file content (Python source) held `\'` inside the JSON string, which strict JSON rejects,
+while the error the agent saw only said "no JSON action found", so the model had nothing
+to correct and repeated the same reply (about ten minutes of generation per turn on this
+CPU, two to three hours per run, with no tool call at all). From the pilot on: (1) a
+candidate action is parsed with raw control characters allowed inside strings, and a
+backslash before a character JSON cannot escape (`\'`, `\d`) is read as the literal
+backslash the model wrote; escape pairs are read left to right, so a valid `\\` is never
+split; (2) when a candidate that names a tool still does not parse, the error gives the
+JSON parser's message with its line and column; (3) when the reply stopped at the
+output-token limit, the observation says it was cut off and that a long file can be
+written in parts (write, then edit). Nothing here tells the agent what to report (rule
+14). Ledger completeness (E0b) now decides that a reply was never run from the
+observation that follows it (it starts with the protocol-error prefix), not by parsing
+the reply again, so transcripts written under the older, stricter parser are read
+correctly. Smoke runs banked before this change keep their recorded code (each run's
+provenance names its commit); the smoke study is restarted with it.

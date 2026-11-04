@@ -72,3 +72,23 @@ def test_an_action_answering_the_final_report_request_is_not_a_command() -> None
         {"role": "user", "content": loop.NOT_RUN_AT_CAP},
     ]
     assert completeness.transcript_commands(messages, "pytest -q") == ["ls"]
+
+
+def test_a_reply_the_run_rejected_is_not_a_command_under_a_newer_parser() -> None:
+    from receipts.drivers.minimal_agent import protocol
+
+    # Synthetic transcript: a bash action with a backslash JSON cannot escape (\d). The
+    # strict parser of older runs rejected it and the loop answered with a protocol
+    # error, so it never ran; the current parser accepts it (D45), and completeness must
+    # still skip it because the observation says it was not run.
+    rejected = '{"tool": "bash", "args": {"cmd": "grep -E \'\\d+\' log.txt"}}'
+    assert protocol.parse_action(rejected).args["cmd"] == "grep -E '\\d+' log.txt"
+    error = protocol.format_protocol_error(protocol.ProtocolError("no JSON action found"))
+    messages = [
+        {"role": "assistant", "content": rejected},
+        {"role": "user", "content": error},
+        act("bash", cmd="ls"),
+        obs("Result of bash:\nfile\n[exit code 0]"),
+    ]
+    assert completeness.never_run(error) and not completeness.never_run("file\n[exit code 0]")
+    assert completeness.transcript_commands(messages, "pytest -q") == ["ls"]
