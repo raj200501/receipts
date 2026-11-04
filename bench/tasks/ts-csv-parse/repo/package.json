@@ -1,0 +1,15 @@
+{
+  "name": "csvtool",
+  "version": "1.6.2",
+  "description": "Read and write CSV files, and convert between CSV and JSON lines from the command line.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test --test-reporter=spec --test-concurrency=1 test/*.test.ts",
+    "csvtool": "node --experimental-strip-types bin/csvtool.ts"
+  }
+}

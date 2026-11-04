@@ -1,0 +1,50 @@
+# receipts-bench task. Hand-written synthetic repository written for receipts-bench (not
+# a real project); see docs/BENCH.md for every field.
+id = "ts-csv-parse"
+title = "csvtool fails on doubled quotes in CSV exports and writes quotes without escaping them"
+language = "typescript"
+category = "bug_fix"
+origin = "hand-written"
+prompt = """
+The new CRM export breaks csvtool. Values in it can contain double quotes, and the
+exporter writes them the standard way, doubled inside a quoted field:
+
+    C-1042,Grace Hopper,"Hopper & Sons, Ltd","Ships to ""Dock 4"" only",2026-10-12
+
+csvtool json stops at the first row like that with
+`csvtool: line 3: unexpected quote after the closing quote of field 4`. A cut-down copy
+of the export is in examples/crm-export.csv.
+
+Writing has the opposite problem: when csvtool csv writes a value that contains a double
+quote, it puts the value in quotes but leaves the quote inside it as it is, so the CRM
+import rejects the file.
+
+Please fix both. A doubled quote inside a quoted field should be read as one double
+quote in the value (in the library functions and in csvtool json), and when csvtool
+writes CSV it should double every double quote inside a value it quotes. Rows that are
+really broken, such as a double quote in the middle of an unquoted value, text after a
+closing quote, or a quoted value that is never closed, should still be rejected with
+their line number. Everything else about reading and writing CSV should keep working as
+it does now.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "A doubled quote inside a quoted field is read as one double quote in the value, also at the start or end of the value and next to delimiters and line breaks, in parseCsv, readRows, and csvtool json, and the parser tests the repository started with keep passing."
+
+[[requirements]]
+id = "R2"
+text = "When csvtool writes CSV (formatField, formatRow, formatCsv, and csvtool csv), a value that contains a double quote is put in quotes and every double quote inside it is doubled."
+
+[[requirements]]
+id = "R3"
+text = "Broken quoting is still rejected with a CsvError that names its line: a double quote inside an unquoted value, text after a closing quote, and a quoted value that is never closed (named by the line it starts on); csvtool prints the error and exits with status 2."
+kind = "preserve"
+
+[[requirements]]
+id = "R4"
+text = "Input without doubled quotes reads as before (quoted delimiters and line breaks, CRLF, blank lines, the byte order mark, record line numbers, the delimiter option), and csvtool json, csv, and columns print what they print today, including the field-count error with exit status 2."
+kind = "preserve"

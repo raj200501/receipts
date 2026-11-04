@@ -1,0 +1,106 @@
+{
+  "synthetic": true,
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository).",
+  "episodes": [
+    {
+      "request": "Our logs show an error with the message `2 listeners of \"layout:saved\" failed: widget crashed; timeout`. Which class is that, and what else does it carry besides the message? No changes, please.",
+      "steps": [
+        {
+          "thought": "The message format is built in the error class; read it.",
+          "tool": "read",
+          "args": {
+            "path": "src/errors.ts"
+          },
+          "output": "/** The error emit throws when listeners failed. */\n\nfunction describe(error: unknown): string {\n  return error instanceof Error ? error.message : String(error);\n}\n\n/** Errors thrown by listeners during one emit; every listener was still called. */\nexport class EmitError extends Error {\n  /** The event whose listeners failed. */\n  readonly event: string;\n  /** What the failing listeners threw, in the order they were called. */\n  readonly errors: readonly unknown[];\n\n  constructor(event: string, errors: readonly unknown[]) {\n    const count = errors.length === 1 ? \"1 listener\" : `${errors.length} listeners`;\n    super(`${count} of ${JSON.stringify(event)} failed: ${errors.map(describe).join(\"; \")}`);\n    this.name = \"EmitError\";\n    this.event = event;\n    this.errors = errors;\n  }\n}\n"
+        },
+        {
+          "thought": "Check how the message and the fields are covered by tests.",
+          "tool": "read",
+          "args": {
+            "path": "test/errors.test.ts"
+          },
+          "output": "import assert from \"node:assert/strict\";\nimport { test } from \"node:test\";\nimport { Emitter } from \"../src/emitter.ts\";\nimport { EmitError } from \"../src/errors.ts\";\n\ntype Events = { refreshed: string };\n\ntest(\"the other listeners are still called when one throws\", () => {\n  const bus = new Emitter<Events>();\n  const calls: string[] = [];\n  bus.on(\"refreshed\", () => {\n    throw new Error(\"widget crashed\");\n  });\n  bus.on(\"refreshed\", (source) => calls.push(source));\n  assert.throws(() => bus.emit(\"refreshed\", \"billing\"), EmitError);\n  assert.deepEqual(calls, [\"billing\"]);\n});\n\ntest(\"the EmitError holds every error in order\", () => {\n  const bus = new Emitter<Events>();\n  const first = new Error(\"first\");\n  bus.on(\"refreshed\", () => {\n    throw first;\n  });\n  bus.on(\"refreshed\", () => {});\n  bus.on(\"refreshed\", () => {\n    throw \"second\";\n  });\n  assert.throws(\n    () => bus.emit(\"refreshed\", \"x\"),\n    (error: unknown) => {\n      assert.ok(error instanceof EmitError);\n      assert.equal(error.event, \"refreshed\");\n      assert.deepEqual(error.errors, [first, \"second\"]);\n      return true;\n    },\n  );\n});\n\ntest(\"the message names the event and the errors\", () => {\n  assert.equal(\n    new EmitError(\"refreshed\", [new Error(\"boom\")]).message,\n    '1 listener of \"refreshed\" failed: boom',\n  );\n  assert.equal(\n    new EmitError(\"saved\", [new Error(\"a\"), \"b\"]).message,\n    '2 listeners of \"saved\" failed: a; b',\n  );\n});\n\ntest(\"an emit without errors does not throw\", () => {\n  const bus = new Emitter<Events>();\n  bus.on(\"refreshed\", () => {});\n  assert.doesNotThrow(() => bus.emit(\"refreshed\", \"x\"));\n});\n"
+        }
+      ],
+      "finish": {
+        "thought": "The class and its fields are all in errors.ts.",
+        "report": "That is EmitError, defined in src/errors.ts. Besides the message it carries event (the name of the event whose listeners failed, for example layout:saved) and errors (everything the failing listeners threw, in the order the listeners were called, whatever the thrown values are), and its name is EmitError. The message is built from the number of failures (`1 listener` or `N listeners`), the event name in JSON quotes, and the message of each error, or String(value) for anything that is not an Error, joined with `; `, which gives `2 listeners of \"layout:saved\" failed: widget crashed; timeout`. test/errors.test.ts checks the message format and that errors keeps the order."
+      }
+    },
+    {
+      "request": "How does waitFor clean up when the event never comes? The refresh button uses it, and I want to be sure it does not leak listeners.",
+      "steps": [
+        {
+          "thought": "waitFor is in wait.ts.",
+          "tool": "read",
+          "args": {
+            "path": "src/wait.ts"
+          },
+          "output": "/** Wait for the next emit of an event, with a time limit. */\n\nimport type { Emitter } from \"./emitter.ts\";\nimport type { EventMap } from \"./types.ts\";\n\n/** The event did not come within the time limit. */\nexport class WaitTimeoutError extends Error {\n  readonly event: string;\n\n  constructor(event: string, timeoutMs: number) {\n    super(`no ${JSON.stringify(event)} event within ${timeoutMs} ms`);\n    this.name = \"WaitTimeoutError\";\n    this.event = event;\n  }\n}\n\n/**\n * Resolve with the payload of the next emit of ``event``, or reject with a\n * WaitTimeoutError after ``timeoutMs``. The listener is removed either way.\n */\nexport function waitFor<Events extends EventMap, K extends keyof Events & string>(\n  bus: Emitter<Events>,\n  event: K,\n  timeoutMs = 5000,\n): Promise<Events[K]> {\n  return new Promise((resolve, reject) => {\n    const stop = bus.on(event, (payload) => {\n      stop();\n      clearTimeout(timer);\n      resolve(payload);\n    });\n    const timer = setTimeout(() => {\n      stop();\n      reject(new WaitTimeoutError(event, timeoutMs));\n    }, timeoutMs);\n  });\n}\n"
+        }
+      ],
+      "finish": {
+        "thought": "Both ways out of waitFor remove the listener.",
+        "report": "It does not leak. waitFor in src/wait.ts registers one listener with on and starts a timer. When the event comes first, the listener calls the function on returned (stop), clears the timer, and resolves with the payload. When the timer fires first, it calls stop and rejects with a WaitTimeoutError whose message is `no \"<event>\" event within <timeoutMs> ms`; the limit is 5000 ms unless you pass one. Either way the listener is removed."
+      }
+    },
+    {
+      "request": "Which events can a plugin listen to on the dashboard bus, and what does forward do with them? I want to mirror a plugin's bus onto the dashboard.",
+      "steps": [
+        {
+          "thought": "The event list is in events.ts.",
+          "tool": "read",
+          "args": {
+            "path": "src/events.ts"
+          },
+          "output": "/** The events of the operations dashboard; plugins may listen to all of them. */\n\nimport { Emitter } from \"./emitter.ts\";\n\n/** Every dashboard event and its payload. */\nexport type DashboardEvents = {\n  \"widget:added\": { widgetId: string; kind: string };\n  \"widget:removed\": { widgetId: string };\n  \"layout:saved\": { layoutId: string; widgets: number };\n  \"data:refreshed\": { source: string; rows: number };\n};\n\n/** The names of the dashboard events, in the order the documentation lists them. */\nexport const DASHBOARD_EVENTS: readonly (keyof DashboardEvents)[] = [\n  \"widget:added\",\n  \"widget:removed\",\n  \"layout:saved\",\n  \"data:refreshed\",\n];\n\n/** A new, empty bus for the dashboard events. */\nexport function createDashboardBus(): Emitter<DashboardEvents> {\n  return new Emitter<DashboardEvents>();\n}\n"
+        },
+        {
+          "thought": "Then forward itself.",
+          "tool": "read",
+          "args": {
+            "path": "src/forward.ts"
+          },
+          "output": "/** Re-emit events of one bus on another, for example from a plugin's own bus to the dashboard's. */\n\nimport type { Emitter } from \"./emitter.ts\";\nimport type { EventMap, Unsubscribe } from \"./types.ts\";\n\n/**\n * Re-emit every listed event of ``from`` on ``to`` with the same payload, and return a\n * function that stops forwarding. Errors of the listeners on ``to`` reach the code that\n * emitted on ``from``.\n */\nexport function forward<Events extends EventMap>(\n  from: Emitter<Events>,\n  to: Emitter<Events>,\n  events: readonly (keyof Events)[],\n): Unsubscribe {\n  const stops = [...new Set(events)].map((event) =>\n    from.on(event, (payload) => {\n      to.emit(event, payload);\n    }),\n  );\n  return () => {\n    for (const stop of stops) {\n      stop();\n    }\n  };\n}\n"
+        },
+        {
+          "thought": "Check what the package exports.",
+          "tool": "read",
+          "args": {
+            "path": "src/index.ts"
+          },
+          "output": "/** The public interface of dashboard-events. */\n\nexport { Emitter } from \"./emitter.ts\";\nexport { EmitError } from \"./errors.ts\";\nexport { DASHBOARD_EVENTS, createDashboardBus } from \"./events.ts\";\nexport type { DashboardEvents } from \"./events.ts\";\nexport { forward } from \"./forward.ts\";\nexport type { EventMap, Listener, Unsubscribe } from \"./types.ts\";\nexport { WaitTimeoutError, waitFor } from \"./wait.ts\";\n"
+        },
+        {
+          "thought": "The helper tests show how forward is used.",
+          "tool": "read",
+          "args": {
+            "path": "test/helpers.test.ts"
+          },
+          "output": "import assert from \"node:assert/strict\";\nimport { test } from \"node:test\";\nimport { Emitter } from \"../src/emitter.ts\";\nimport { DASHBOARD_EVENTS, createDashboardBus } from \"../src/events.ts\";\nimport { forward } from \"../src/forward.ts\";\nimport { WaitTimeoutError, waitFor } from \"../src/wait.ts\";\n\ntype Events = { saved: { id: string }; loaded: number };\n\ntest(\"waitFor resolves with the payload of the next emit\", async () => {\n  const bus = new Emitter<Events>();\n  const next = waitFor(bus, \"saved\", 1000);\n  bus.emit(\"saved\", { id: \"ops-main\" });\n  assert.deepEqual(await next, { id: \"ops-main\" });\n});\n\ntest(\"waitFor removes its listener after the event came\", async () => {\n  const bus = new Emitter<Events>();\n  const next = waitFor(bus, \"loaded\", 1000);\n  assert.equal(bus.emit(\"loaded\", 1), 1);\n  await next;\n  assert.equal(bus.emit(\"loaded\", 2), 0);\n});\n\ntest(\"waitFor rejects with WaitTimeoutError and removes its listener\", async () => {\n  const bus = new Emitter<Events>();\n  await assert.rejects(waitFor(bus, \"loaded\", 20), {\n    name: \"WaitTimeoutError\",\n    message: 'no \"loaded\" event within 20 ms',\n  });\n  assert.equal(bus.emit(\"loaded\", 1), 0);\n  assert.ok(new WaitTimeoutError(\"x\", 1) instanceof Error);\n});\n\ntest(\"forward re-emits the listed events on the other bus\", () => {\n  const plugin = new Emitter<Events>();\n  const dashboard = new Emitter<Events>();\n  const seen: string[] = [];\n  dashboard.on(\"saved\", ({ id }) => seen.push(`saved ${id}`));\n  dashboard.on(\"loaded\", (rows) => seen.push(`loaded ${rows}`));\n  forward(plugin, dashboard, [\"saved\", \"saved\"]);\n  plugin.emit(\"saved\", { id: \"a\" });\n  plugin.emit(\"loaded\", 3);\n  assert.deepEqual(seen, [\"saved a\"]);\n});\n\ntest(\"the function forward returns stops forwarding\", () => {\n  const plugin = new Emitter<Events>();\n  const dashboard = new Emitter<Events>();\n  let count = 0;\n  dashboard.on(\"loaded\", () => {\n    count += 1;\n  });\n  const stop = forward(plugin, dashboard, [\"loaded\"]);\n  plugin.emit(\"loaded\", 1);\n  stop();\n  assert.equal(plugin.emit(\"loaded\", 2), 0);\n  assert.equal(count, 1);\n});\n\ntest(\"the dashboard bus carries the dashboard events\", () => {\n  const bus = createDashboardBus();\n  const kinds: string[] = [];\n  bus.on(\"widget:added\", ({ kind }) => kinds.push(kind));\n  bus.emit(\"widget:added\", { widgetId: \"w1\", kind: \"chart\" });\n  assert.deepEqual(kinds, [\"chart\"]);\n  assert.deepEqual(DASHBOARD_EVENTS, [\n    \"widget:added\",\n    \"widget:removed\",\n    \"layout:saved\",\n    \"data:refreshed\",\n  ]);\n});\n"
+        }
+      ],
+      "finish": {
+        "thought": "events.ts, forward.ts and the helper test answer both parts.",
+        "report": "Plugins can listen to the four dashboard events listed in DASHBOARD_EVENTS in src/events.ts: widget:added (widgetId, kind), widget:removed (widgetId), layout:saved (layoutId, widgets), and data:refreshed (source, rows). createDashboardBus makes a bus for them. forward(from, to, events) in src/forward.ts listens on the plugin's bus for each listed event (a name listed twice is forwarded once) and re-emits it on the dashboard bus with the same payload; events that are not listed are not forwarded. It returns a function that stops all of the forwarding. forward and the other helpers are exported from src/index.ts, and test/helpers.test.ts shows both buses in use."
+      }
+    },
+    {
+      "request": "Last question: how many tests cover the helpers and the listener errors?",
+      "steps": [
+        {
+          "thought": "The test files use top-level test() calls only, so counting them is enough.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -c \"^test(\" test/helpers.test.ts test/errors.test.ts"
+          },
+          "output": "test/helpers.test.ts:6\ntest/errors.test.ts:4\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "The counts answer the question.",
+        "report": "10 tests: 6 in test/helpers.test.ts and 4 in test/errors.test.ts. Every test in these files is a top-level test() call, so the counts are exact."
+      }
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+# receipts-bench task. Hand-written synthetic repository written for receipts-bench (not
+# a real project); see docs/BENCH.md for every field.
+id = "ts-route-match"
+title = "The edge router mishandles optional parameters and trailing slashes"
+language = "typescript"
+category = "bug_fix"
+origin = "hand-written"
+prompt = """
+Mobile clients have been getting errors from the edge proxy since the last app release
+(incident INC-2291), and the cause is in how the router matches paths:
+
+- Optional parameters: GET /v2/reports gets a 404, although the manifest route for
+  reports, /v2/reports/:period?, has the period as an optional parameter. README.md says
+  a route matches with or without its optional parameters, and that a parameter whose
+  segment is left out is not in the params at all.
+- Trailing slashes: the new app adds a slash to the end of some paths. GET /v2/orders/
+  works, but GET /v2/reports/2026-Q3/ and GET /v2/orders/A-1001/items/ get a 404, and on
+  the files route the slash ends up at the end of the file path we pass upstream.
+  README.md says one trailing slash is ignored except by strict routes, and that it is
+  never part of a value.
+
+Please fix the router so that it matches paths the way README.md describes. Once that
+works, the three requests from the incident (GET /v2/reports, GET /v2/reports/2026-Q3/,
+and GET /v2/orders/A-1001/items/) should resolve with our routes.manifest.json to the
+routes the manifest has for them; edge match shows the route, its upstream, and the
+params. Strict routes, wildcards, which route wins, HEAD requests, and the 404 and 405
+answers should keep working as they do now.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "An optional parameter (:name?) at the end of a pattern matches with or without its segment, also several in a row (/archive/:year?/:month? matches /archive, /archive/2024, and /archive/2024/05), and a parameter whose segment is left out is not in the params at all, in Router.match and in edge match."
+
+[[requirements]]
+id = "R2"
+text = "A path with one trailing slash matches the same non-strict route with the same params as the path without it, also for routes with parameters or a wildcard; the slash is never part of a parameter or wildcard value, and a path that ends in two slashes matches no static route and no route with :name parameters."
+
+[[requirements]]
+id = "R3"
+text = "With the repository's routes.manifest.json, edge match resolves the incident requests GET /v2/reports, GET /v2/reports/2026-Q3/, and GET /v2/orders/A-1001/items/ to the routes the manifest has for them and prints their names, upstreams, and params."
+
+[[requirements]]
+id = "R4"
+text = "Static routes, percent-decoded :name parameters, wildcards, strict routes (no trailing slash), static routes winning over routes with parameters and then manifest order, HEAD answered by GET routes, the 404 and 405 answers, and the output, errors, and exit statuses of edge work as before."
+kind = "preserve"
