@@ -26,17 +26,18 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from receipts.sandbox.select import make_sandbox
-from receipts.study.tasks import load_run_task
-
+from receipts.bench.spec import TOOLCHAIN_PACKAGES, TOOLCHAIN_PYTHON
 from receipts.client.backends import LocalOpenAIBackend
 from receipts.client.models import LOCAL_MODELS
 from receipts.client.server import LocalServer
 from receipts.client.wrapper import ModelClient
 from receipts.sandbox.api import SandboxPolicy
+from receipts.sandbox.select import make_sandbox
+from receipts.sandbox.toolchain import Toolchain, python_toolchain, with_toolchain
 from receipts.study.plan import Plan, load_plan
 from receipts.study.runner import execute_run
 from receipts.study.spec import RunSpec
+from receipts.study.tasks import load_run_task
 
 ROOT = Path(__file__).resolve().parents[1]
 _FAILURES_LOCK = threading.Lock()
@@ -54,6 +55,24 @@ def pending(plan: Plan, artifacts: Path) -> list[str]:
     return [r.run_id for r in plan.ordered() if not (artifacts / r.run_id / "run.json").is_file()]
 
 
+#: Same sandbox backends and pinned toolchain as tools/bench_validate.py, so runs see the
+#: environment the tasks were validated in.
+BACKENDS: tuple[str, ...] = ("bwrap", "unshare")
+TOOLCHAIN_DIR = ROOT / "runs" / "toolchains" / f"bench-py{TOOLCHAIN_PYTHON.replace('.', '')}"
+_TOOLCHAIN_LOCK = threading.Lock()
+_TOOLCHAIN: list[Toolchain] = []
+
+
+def toolchain() -> Toolchain:
+    """The pinned read-only Python toolchain (built once, then reused)."""
+    with _TOOLCHAIN_LOCK:
+        if not _TOOLCHAIN:
+            _TOOLCHAIN.append(
+                python_toolchain(TOOLCHAIN_DIR, TOOLCHAIN_PACKAGES, python=TOOLCHAIN_PYTHON)
+            )
+        return _TOOLCHAIN[0]
+
+
 def one_run(
     plan: Plan,
     spec: RunSpec,
@@ -65,7 +84,7 @@ def one_run(
 ) -> bool:
     """Execute one run; on an infrastructure failure, log it and return False."""
     task = load_run_task(ROOT / "bench" / "tasks" / spec.task_id)
-    policy = SandboxPolicy(timeout_s=task.command_timeout_s)
+    policy = with_toolchain(SandboxPolicy(timeout_s=task.command_timeout_s), toolchain())
     started = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     print(f"{started} start {spec.run_id} ({spec.config_id})", flush=True)
     try:
@@ -77,9 +96,10 @@ def one_run(
             study=plan.text,
             artifacts_dir=artifacts,
             work_root=ROOT / "runs" / "work" / plan.study,
-            sandbox_factory=lambda work: make_sandbox(work, policy),
+            sandbox_factory=lambda work: make_sandbox(work, policy, prefer=BACKENDS),
             git_sha=sha,
             server_provenance=server.provenance(),
+            extra_provenance={"toolchain_installed": list(toolchain().installed)},
         )
     except Exception as exc:  # infrastructure failure: log it, leave the run unbanked
         with _FAILURES_LOCK, (state / "failures.jsonl").open("a", encoding="utf-8") as handle:
