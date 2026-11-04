@@ -1,0 +1,18 @@
+{
+  "products": {
+    "WGT-1": {"name": "Widget, small", "price_cents": 450, "weight_g": 120},
+    "WGT-2": {"name": "Widget, large", "price_cents": 1290, "weight_g": 480},
+    "GAD-7": {"name": "Gadget", "price_cents": 2495, "weight_g": 900},
+    "BLT-M6": {"name": "Bolt M6, pack of 50", "price_cents": 899, "weight_g": 300},
+    "CBL-2": {"name": "Cable, 2 m", "price_cents": 1175, "weight_g": 150, "backorder": true},
+    "LMP-3": {"name": "Desk lamp", "price_cents": 3850, "weight_g": 1800},
+    "OLD-9": {"name": "Gizmo, old model", "price_cents": 1999, "weight_g": 700, "discontinued": true},
+    "SPR-5": {"name": "Spring set", "price_cents": 640, "weight_g": 220, "backorder": true}
+  },
+  "countries": {
+    "DE": {"tax_pct": 19, "ship_base_cents": 490, "ship_per_kg_cents": 120, "free_over_cents": 10000},
+    "FR": {"tax_pct": 20, "ship_base_cents": 590, "ship_per_kg_cents": 150, "free_over_cents": 12000},
+    "NL": {"tax_pct": 21, "ship_base_cents": 520, "ship_per_kg_cents": 130, "free_over_cents": 11000},
+    "AT": {"tax_pct": 20, "ship_base_cents": 650, "ship_per_kg_cents": 160, "free_over_cents": 12500}
+  }
+}

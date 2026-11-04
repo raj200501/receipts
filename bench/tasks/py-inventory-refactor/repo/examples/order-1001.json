@@ -1,0 +1,12 @@
+{
+  "id": "SO-1001",
+  "customer": "C-204",
+  "country": "DE",
+  "coupon": "SPRING10",
+  "tier": "gold",
+  "lines": [
+    {"sku": "WGT-1", "qty": 12},
+    {"sku": "GAD-7", "qty": 3},
+    {"sku": "CBL-2", "qty": 2}
+  ]
+}

@@ -1,0 +1,4 @@
+14/Oct/2026:10:05:00 pay-batch-01 INFO settlement: Batch 2026-10-14-a opened
+14/Oct/2026:14:35:12 pay-batch-02 WARN settlement: Retry 2 of 5 for ledger sync
+14/Oct/2026:06:15:44 pay-batch-04 INFO payout: 118 payouts queued
+14/Oct/2026:14:45:20 pay-batch-07 ERROR payout: Bank file rejected, line 31

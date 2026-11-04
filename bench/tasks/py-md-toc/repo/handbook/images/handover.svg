@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="120" viewBox="0 0 320 120">
+  <rect x="1" y="1" width="318" height="118" fill="#ffffff" stroke="#444444"/>
+  <text x="16" y="32" font-family="sans-serif" font-size="14">Handover note</text>
+  <text x="16" y="60" font-family="sans-serif" font-size="12">Open pages, muted services, follow-ups</text>
+  <text x="16" y="84" font-family="sans-serif" font-size="12">Next on-call: name and phone</text>
+</svg>

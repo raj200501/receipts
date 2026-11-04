@@ -1,0 +1,9 @@
+{
+  "description": "UTC offset of the local clock on each pay-batch host (fixed offsets, no daylight saving). Maintained by the platform team; questions go to #platform-ops.",
+  "hosts": {
+    "pay-batch-01": "+01:00",
+    "pay-batch-02": "+05:30",
+    "pay-batch-04": "-03:30",
+    "pay-batch-07": "+05:45"
+  }
+}

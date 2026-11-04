@@ -1,0 +1,9 @@
+{
+  "id": "SO-1002",
+  "customer": "C-7781",
+  "country": "FR",
+  "lines": [
+    {"sku": "LMP-3", "qty": 2},
+    {"sku": "SPR-5", "qty": 4}
+  ]
+}

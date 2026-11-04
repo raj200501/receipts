@@ -1,0 +1,105 @@
+{
+  "synthetic": true,
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository).",
+  "episodes": [
+    {
+      "request": "Support asked why an order for 8 cables (CBL-2) was accepted when only 5 are on the shelf. Can you find out from the code? Please don't change anything.",
+      "steps": [
+        {
+          "thought": "The catalog marks which products can be backordered; look at CBL-2 there.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n \"CBL-2\" data/catalog.json data/stock.json"
+          },
+          "output": "data/catalog.json:7:    \"CBL-2\": {\"name\": \"Cable, 2 m\", \"price_cents\": 1175, \"weight_g\": 150, \"backorder\": true},\ndata/stock.json:3:  \"CBL-2\": 5,\n[exit code 0]"
+        },
+        {
+          "thought": "Now the code that checks the stock.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n \"backorder\" src/stockroom/orders.py src/stockroom/catalog.py src/stockroom/receipt.py"
+          },
+          "output": "src/stockroom/orders.py:108:    # --- stock: every line must be covered, or backorderable ---------------------------\nsrc/stockroom/orders.py:114:            reservations.append({\"sku\": sku, \"from_stock\": qty, \"backordered\": 0})\nsrc/stockroom/orders.py:115:        elif product.backorder:\nsrc/stockroom/orders.py:116:            reservations.append({\"sku\": sku, \"from_stock\": on_shelf, \"backordered\": qty - on_shelf})\nsrc/stockroom/catalog.py:23:    backorder: bool = False\nsrc/stockroom/catalog.py:61:                backorder=bool(item.get(\"backorder\", False)),\nsrc/stockroom/receipt.py:25:    backordered = [r for r in receipt.get(\"reserved\", []) if r[\"backordered\"]]\nsrc/stockroom/receipt.py:26:    for item in backordered:\nsrc/stockroom/receipt.py:27:        out.append(f\"backordered: {item['backordered']} x {item['sku']}\")\n[exit code 0]"
+        },
+        {
+          "thought": "Read the order function around the stock check.",
+          "tool": "read",
+          "args": {
+            "path": "src/stockroom/orders.py"
+          },
+          "output": "\"\"\"Processing an order: validate it, price it, and reserve its stock.\n\nAn order is a dictionary (usually read from JSON)::\n\n    {\"id\": \"SO-1001\", \"customer\": \"C-204\", \"country\": \"DE\", \"coupon\": \"SPRING10\",\n     \"tier\": \"gold\", \"lines\": [{\"sku\": \"WGT-1\", \"qty\": 12}]}\n\n``coupon`` and ``tier`` are optional. :func:`process_order` returns the receipt, and takes\nthe reserved units off the stock only when the whole order went through. The rules for\nthe discounts are in docs/DISCOUNTS.md.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport re\nfrom datetime import date\nfrom typing import Any\n\nfrom stockroom.catalog import Catalog\nfrom stockroom.money import percent_of\nfrom stockroom.stock import Stock\n\nMAX_LINES = 20\nMAX_QTY = 100\n\n#: Coupon code -> (kind, value, minimum merchandise value in cents, last valid day).\nCOUPONS: dict[str, tuple[str, int, int, date]] = {\n    \"SPRING10\": (\"percent\", 10, 5000, date(2026, 12, 31)),\n    \"WELCOME5\": (\"flat\", 500, 2000, date(2027, 3, 31)),\n}\nTIERS: dict[str, int] = {\"silver\": 3, \"gold\": 5}\n\n\nclass OrderError(ValueError):\n    \"\"\"The order was rejected. ``problems`` lists every reason, in the order found.\"\"\"\n\n    def __init__(self, problems: list[str]) -> None:\n        super().__init__(\"; \".join(problems))\n        self.problems = problems\n\n\ndef process_order(\n    order: dict[str, Any], catalog: Catalog, stock: Stock, today: date\n) -> dict[str, Any]:\n    \"\"\"Validate, price, and reserve ``order``; return its receipt.\n\n    Raises :class:`OrderError` when the order is invalid or the stock cannot cover it.\n    Nothing is taken off ``stock`` unless the whole order succeeds.\n    \"\"\"\n    problems: list[str] = []\n\n    # --- the order as a whole -------------------------------------------------------\n    order_id = order.get(\"id\")\n    if not isinstance(order_id, str) or not order_id.strip():\n        problems.append(\"order id is missing\")\n    customer = order.get(\"customer\")\n    if not isinstance(customer, str) or not re.fullmatch(r\"C-\\d{3,6}\", customer):\n        problems.append(f\"bad customer id {customer!r}\")\n    country_code = order.get(\"country\")\n    country = catalog.countries.get(country_code) if isinstance(country_code, str) else None\n    if country is None:\n        problems.append(f\"cannot ship to country {country_code!r}\")\n    coupon = order.get(\"coupon\")\n    if coupon is not None:\n        if coupon not in COUPONS:\n            problems.append(f\"unknown coupon {coupon!r}\")\n        elif today > COUPONS[coupon][3]:\n            problems.append(f\"coupon {coupon} expired on {COUPONS[coupon][3].isoformat()}\")\n    tier = order.get(\"tier\")\n    if tier is not None and tier not in TIERS:\n        problems.append(f\"unknown loyalty tier {tier!r}\")\n\n    # --- the lines --------------------------------------------------------------------\n    raw_lines = order.get(\"lines\")\n    if not isinstance(raw_lines, list) or not raw_lines:\n        problems.append(\"order has no lines\")\n        raw_lines = []\n    elif len(raw_lines) > MAX_LINES:\n        problems.append(f\"order has {len(raw_lines)} lines, the limit is {MAX_LINES}\")\n    first_seen: dict[str, int] = {}\n    wanted: list[tuple[int, str, int]] = []\n    for number, raw in enumerate(raw_lines, start=1):\n        sku = raw.get(\"sku\") if isinstance(raw, dict) else None\n        qty = raw.get(\"qty\") if isinstance(raw, dict) else None\n        product = catalog.products.get(sku) if isinstance(sku, str) else None\n        if product is None:\n            problems.append(f\"line {number}: unknown sku {sku!r}\")\n            continue\n        if product.discontinued:\n            problems.append(f\"line {number}: {sku} is discontinued\")\n            continue\n        if sku in first_seen:\n            problems.append(f\"line {number}: {sku} already appears on line {first_seen[sku]}\")\n            continue\n        first_seen[sku] = number\n        if isinstance(qty, bool) or not isinstance(qty, int) or qty < 1:\n            problems.append(f\"line {number}: quantity must be a whole number of at least 1\")\n            continue\n        if qty > MAX_QTY:\n            problems.append(f\"line {number}: quantity {qty} is above the limit of {MAX_QTY}\")\n            continue\n        wanted.append((number, sku, qty))\n    if problems:\n        raise OrderError(problems)\n    assert country is not None\n    assert isinstance(order_id, str) and isinstance(customer, str)\n\n    # --- stock: every line must be covered, or backorderable ---------------------------\n    reservations: list[dict[str, Any]] = []\n    for number, sku, qty in wanted:\n        product = catalog.products[sku]\n        on_shelf = stock.available(sku)\n        if qty <= on_shelf:\n            reservations.append({\"sku\": sku, \"from_stock\": qty, \"backordered\": 0})\n        elif product.backorder:\n            reservations.append({\"sku\": sku, \"from_stock\": on_shelf, \"backordered\": qty - on_shelf})\n        else:\n            problems.append(f\"line {number}: only {on_shelf} of {sku} in stock\")\n    if problems:\n        raise OrderError(problems)\n\n    # --- price the lines ------------------------------------------------------------------\n    lines: list[dict[str, Any]] = []\n    subtotal = 0\n    total_weight = 0\n    for _number, sku, qty in wanted:\n        product = catalog.products[sku]\n        line_cents = product.price_cents * qty\n        lines.append(\n            {\n                \"sku\": sku,\n                \"name\": product.name,\n                \"qty\": qty,\n                \"unit_cents\": product.price_cents,\n                \"line_cents\": line_cents,\n            }\n        )\n        subtotal += line_cents\n        total_weight += product.weight_g * qty\n\n    # --- discounts: volume per line, then the coupon, then the loyalty tier ----------------\n    # Each discount after the first is taken from what is left after the ones before it.\n    discounts: list[dict[str, Any]] = []\n    remaining = subtotal\n    volume = 0\n    for line in lines:\n        if line[\"qty\"] >= 25:\n            volume += percent_of(line[\"line_cents\"], 10)\n        elif line[\"qty\"] >= 10:\n            volume += percent_of(line[\"line_cents\"], 5)\n    if volume:\n        discounts.append({\"name\": \"volume\", \"cents\": volume})\n        remaining -= volume\n    if coupon is not None:\n        kind, value, minimum, _last_day = COUPONS[coupon]\n        coupon_cents = 0\n        if remaining >= minimum:\n            if kind == \"percent\":\n                coupon_cents = percent_of(remaining, value)\n            else:\n                coupon_cents = min(value, remaining)\n        if coupon_cents:\n            discounts.append({\"name\": \"coupon\", \"cents\": coupon_cents})\n            remaining -= coupon_cents\n    if tier is not None:\n        loyalty = percent_of(remaining, TIERS[tier])\n        if loyalty:\n            discounts.append({\"name\": \"loyalty\", \"cents\": loyalty})\n            remaining -= loyalty\n    discount_total = subtotal - remaining\n\n    # --- shipping and tax ------------------------------------------------------------------\n    kilograms = -(-total_weight // 1000)\n    shipping = country.ship_base_cents + country.ship_per_kg_cents * kilograms\n    if remaining >= country.free_over_cents:\n        shipping = 0\n    tax = percent_of(remaining, country.tax_pct)\n    total = remaining + shipping + tax\n\n    # --- take the units off the shelf, now that nothing can fail -----------------------------\n    for item in reservations:\n        stock.take(item[\"sku\"], item[\"from_stock\"])\n\n    return {\n        \"order\": order_id,\n        \"customer\": customer,\n        \"country\": country.code,\n        \"lines\": lines,\n        \"subtotal_cents\": subtotal,\n        \"discounts\": discounts,\n        \"discount_cents\": discount_total,\n        \"shipping_cents\": shipping,\n        \"tax_cents\": tax,\n        \"total_cents\": total,\n        \"reserved\": reservations,\n    }\n"
+        },
+        {
+          "thought": "Read the stock module to see what happens to the shelf count.",
+          "tool": "read",
+          "args": {
+            "path": "src/stockroom/stock.py"
+          },
+          "output": "\"\"\"Stock levels: how many units of each SKU are on the shelf.\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nfrom dataclasses import dataclass, field\nfrom pathlib import Path\n\n\nclass StockError(ValueError):\n    \"\"\"The stock file is missing, unreadable, or not a SKU-to-count mapping.\"\"\"\n\n\n@dataclass\nclass Stock:\n    \"\"\"Units on hand by SKU. Reserving an order takes units off the shelf.\"\"\"\n\n    on_hand: dict[str, int] = field(default_factory=dict)\n\n    def available(self, sku: str) -> int:\n        \"\"\"Units of ``sku`` on the shelf (0 for a SKU that has no entry).\"\"\"\n        return self.on_hand.get(sku, 0)\n\n    def take(self, sku: str, qty: int) -> None:\n        \"\"\"Take ``qty`` units off the shelf; the shelf never goes below zero.\"\"\"\n        self.on_hand[sku] = max(0, self.available(sku) - qty)\n\n\ndef load_stock(path: str | Path) -> Stock:\n    \"\"\"Read ``data/stock.json`` (a JSON object from SKU to a whole number of units).\"\"\"\n    try:\n        document = json.loads(Path(path).read_text(encoding=\"utf-8\"))\n    except OSError as exc:\n        raise StockError(f\"cannot read {path}: {exc.strerror or exc}\") from None\n    except ValueError as exc:\n        raise StockError(f\"{path} is not valid JSON: {exc}\") from None\n    if not isinstance(document, dict) or not all(\n        isinstance(v, int) and v >= 0 for v in document.values()\n    ):\n        raise StockError(f\"{path} must map each SKU to a whole number of units\")\n    return Stock(on_hand=dict(document))\n\n\ndef save_stock(stock: Stock, path: str | Path) -> None:\n    \"\"\"Write the stock file back, keys sorted, one level of indentation.\"\"\"\n    Path(path).write_text(\n        json.dumps(stock.on_hand, indent=2, sort_keys=True) + \"\\n\", encoding=\"utf-8\"\n    )\n"
+        }
+      ],
+      "finish": {
+        "thought": "CBL-2 has backorder set, so the order is accepted.",
+        "report": "CBL-2 is marked \"backorder\": true in data/catalog.json, and data/stock.json has 5 units of it. In process_order (src/stockroom/orders.py) a line whose quantity is above the shelf count is only rejected when the product is not backorderable; for a backorderable product the shelf units are reserved and the rest is recorded as backordered, and the receipt shows it as a `backordered:` line. So 8 cables are accepted: 5 from stock and 3 backordered. I did not change anything."
+      }
+    },
+    {
+      "request": "What does the stockroom command do with --today, and what is the default? Just explain from the code.",
+      "steps": [
+        {
+          "thought": "Read the command line module first.",
+          "tool": "read",
+          "args": {
+            "path": "src/stockroom/cli.py"
+          },
+          "output": "\"\"\"The ``stockroom`` command line: ``process`` an order file.\"\"\"\n\nfrom __future__ import annotations\n\nimport argparse\nimport json\nimport sys\nfrom collections.abc import Sequence\nfrom datetime import date\nfrom pathlib import Path\n\nfrom stockroom.catalog import CatalogError, load_catalog\nfrom stockroom.orders import OrderError, process_order\nfrom stockroom.receipt import format_receipt\nfrom stockroom.stock import StockError, load_stock, save_stock\n\n\ndef build_parser() -> argparse.ArgumentParser:\n    \"\"\"The argument parser.\"\"\"\n    parser = argparse.ArgumentParser(prog=\"stockroom\", description=\"Process shop orders.\")\n    commands = parser.add_subparsers(dest=\"command\", required=True)\n    process = commands.add_parser(\"process\", help=\"price an order and reserve its stock\")\n    process.add_argument(\"order\", metavar=\"ORDER.json\")\n    process.add_argument(\"--catalog\", default=\"data/catalog.json\", metavar=\"FILE\")\n    process.add_argument(\"--stock\", default=\"data/stock.json\", metavar=\"FILE\")\n    process.add_argument(\"--today\", metavar=\"YYYY-MM-DD\", help=\"the day to check coupons against\")\n    process.add_argument(\"--commit\", action=\"store_true\", help=\"write the new stock levels back\")\n    return parser\n\n\ndef _error(message: str) -> int:\n    print(f\"stockroom: {message}\", file=sys.stderr)\n    return 2\n\n\ndef main(argv: Sequence[str] | None = None) -> int:\n    \"\"\"Run the command. Exit status: 0 done, 1 order rejected, 2 bad input or files.\"\"\"\n    try:\n        args = build_parser().parse_args(argv)\n    except SystemExit as exc:\n        return int(exc.code) if isinstance(exc.code, int) else 2\n    try:\n        today = date.fromisoformat(args.today) if args.today else date.today()\n    except ValueError:\n        return _error(f\"not a date: {args.today!r}\")\n    try:\n        order = json.loads(Path(args.order).read_text(encoding=\"utf-8\"))\n    except OSError as exc:\n        return _error(f\"cannot read {args.order}: {exc.strerror or exc}\")\n    except ValueError as exc:\n        return _error(f\"{args.order} is not valid JSON: {exc}\")\n    if not isinstance(order, dict):\n        return _error(f\"{args.order} must hold one order object\")\n    try:\n        catalog = load_catalog(args.catalog)\n        stock = load_stock(args.stock)\n    except (CatalogError, StockError) as exc:\n        return _error(str(exc))\n    try:\n        receipt = process_order(order, catalog, stock, today)\n    except OrderError as exc:\n        label = order.get(\"id\") if isinstance(order.get(\"id\"), str) else args.order\n        for problem in exc.problems:\n            print(f\"stockroom: {label}: {problem}\", file=sys.stderr)\n        return 1\n    sys.stdout.write(format_receipt(receipt))\n    if args.commit:\n        save_stock(stock, args.stock)\n    return 0\n"
+        },
+        {
+          "thought": "Find where the option is defined and used.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n \"today\" src/stockroom/cli.py"
+          },
+          "output": "26:    process.add_argument(\"--today\", metavar=\"YYYY-MM-DD\", help=\"the day to check coupons against\")\n43:        today = date.fromisoformat(args.today) if args.today else date.today()\n45:        return _error(f\"not a date: {args.today!r}\")\n60:        receipt = process_order(order, catalog, stock, today)\n[exit code 0]"
+        },
+        {
+          "thought": "The README should describe the same thing; compare.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n \"today\" README.md"
+          },
+          "output": "8:    python3 -m stockroom process examples/order-1001.json --today 2026-10-14\n13:`--commit` writes the reduced stock levels back. `--today` (default: today) is the day\n51:                            load_stock(\"data/stock.json\"), today)\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "The option is a date for the coupon check.",
+        "report": "--today takes a YYYY-MM-DD date. In src/stockroom/cli.py it is parsed with date.fromisoformat, and when it is not given the command uses date.today(). An invalid date prints an error and exits with status 2. The date is passed to process_order as `today`, which is only used to check whether a coupon has expired. The README describes it the same way."
+      }
+    },
+    {
+      "request": "How many example orders are there and which customer ids do they use?",
+      "steps": [
+        {
+          "thought": "List the examples folder.",
+          "tool": "bash",
+          "args": {
+            "cmd": "ls examples"
+          },
+          "output": "order-1001.json\norder-1002.json\n[exit code 0]"
+        },
+        {
+          "thought": "Pull the customer lines out of the order files.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n \"customer\" examples/order-1001.json examples/order-1002.json"
+          },
+          "output": "examples/order-1001.json:3:  \"customer\": \"C-204\",\nexamples/order-1002.json:3:  \"customer\": \"C-7781\",\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "Two orders.",
+        "report": "There are two example orders in examples/: order-1001.json for customer C-204 and order-1002.json for customer C-7781."
+      }
+    }
+  ]
+}

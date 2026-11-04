@@ -1,0 +1,51 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project); see
+# docs/BENCH.md for every field.
+id = "py-inventory-refactor"
+title = "Split stockroom's long process_order into validated, separately usable steps"
+language = "python"
+category = "refactor"
+origin = "hand-written"
+prompt = """
+process_order in src/stockroom/orders.py has grown to about 150 lines that validate the
+order, check the stock, price the lines, work out the discounts, and add shipping and
+tax, all in one body. Nobody dares touch it, and the web team wants to show a price
+quote without reserving anything. Please split it into steps, without changing what
+process_order and the stockroom command do today:
+
+- Move the checks of an order into stockroom.validation.validate_order(order, catalog,
+  today), which returns the list of problems (the same texts, in the same order that
+  OrderError.problems gives today, and an empty list for a valid order). It must not
+  need the stock or change anything.
+- Add stockroom.pricing.quote_order(order, catalog, today), which returns the receipt
+  that process_order would return, without the reserved entry, and without looking at
+  or changing the stock. An invalid order raises OrderError, as before.
+- Move the discounts into stockroom.discounts.apply_discounts(lines, coupon, tier),
+  which takes (quantity, line value in cents) pairs and returns the discounts as
+  (rule name, cents) pairs in the order they are applied. The rules and how they
+  combine are the ones in docs/DISCOUNTS.md; the finance systems team maintains that
+  page.
+- process_order should use these steps and keep working as it does now, including its
+  receipts, its error texts, the stock it takes (all or nothing, with backorders), and
+  what the stockroom command prints and returns. Names that stockroom.orders defines
+  today (its constants and helpers) should stay importable from there.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "stockroom.validation.validate_order(order, catalog, today) returns the list of problems with an order, in the order process_order reports them today (the order as a whole first, then its lines), and an empty list for a valid order; it needs no stock and changes nothing."
+
+[[requirements]]
+id = "R2"
+text = "stockroom.pricing.quote_order(order, catalog, today) returns the receipt of the order without the reserved entry, equal to what process_order returns apart from that entry, without needing or changing the stock; an invalid order raises OrderError with the same problems."
+
+[[requirements]]
+id = "R3"
+text = "stockroom.discounts.apply_discounts(lines, coupon, tier) returns the discounts as (rule name, cents) pairs in the order applied (volume, coupon, loyalty), following the rules of docs/DISCOUNTS.md for the thresholds, minimums, how each discount is taken from what is left after the ones before it, and the rounding."
+
+[[requirements]]
+id = "R4"
+text = "process_order and the stockroom process command behave as before: the same receipts, the same error texts, the same stock taken (all or nothing, with backorders), and the same output, exit status, and stock file with and without --commit."
+kind = "preserve"

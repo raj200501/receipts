@@ -1,0 +1,495 @@
+{
+ "cli_errors": {
+  "bad_date": {
+   "status": 2,
+   "stderr": "stockroom: not a date: 'soon'\n",
+   "stdout": "",
+   "stock_file": "{\n  \"BLT-M6\": 12,\n  \"CBL-2\": 5,\n  \"GAD-7\": 40,\n  \"LMP-3\": 9,\n  \"OLD-9\": 3,\n  \"SPR-5\": 0,\n  \"WGT-1\": 340,\n  \"WGT-2\": 85\n}\n"
+  },
+  "expired": {
+   "status": 1,
+   "stderr": "stockroom: SO-5001: coupon SPRING10 expired on 2026-12-31\n",
+   "stdout": "",
+   "stock_file": "{\n  \"BLT-M6\": 12,\n  \"CBL-2\": 5,\n  \"GAD-7\": 40,\n  \"LMP-3\": 9,\n  \"OLD-9\": 3,\n  \"SPR-5\": 0,\n  \"WGT-1\": 340,\n  \"WGT-2\": 85\n}\n"
+  },
+  "missing_order": {
+   "status": 2,
+   "stderr": "stockroom: cannot read <tmp>/none.json: No such file or directory\n",
+   "stdout": ""
+  },
+  "not_an_object": {
+   "status": 2,
+   "stderr": "stockroom: <tmp>/order.json must hold one order object\n",
+   "stdout": "",
+   "stock_file": "{\n  \"BLT-M6\": 12,\n  \"CBL-2\": 5,\n  \"GAD-7\": 40,\n  \"LMP-3\": 9,\n  \"OLD-9\": 3,\n  \"SPR-5\": 0,\n  \"WGT-1\": 340,\n  \"WGT-2\": 85\n}\n"
+  },
+  "not_json": {
+   "status": 2,
+   "stderr": "stockroom: <tmp>/order.json is not valid JSON: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)\n",
+   "stdout": "",
+   "stock_file": "{\n  \"BLT-M6\": 12,\n  \"CBL-2\": 5,\n  \"GAD-7\": 40,\n  \"LMP-3\": 9,\n  \"OLD-9\": 3,\n  \"SPR-5\": 0,\n  \"WGT-1\": 340,\n  \"WGT-2\": 85\n}\n"
+  },
+  "rejected": {
+   "status": 1,
+   "stderr": "stockroom: : order id is missing\nstockroom: : bad customer id 'C-12'\nstockroom: : cannot ship to country 'XX'\nstockroom: : unknown coupon 'OLDCODE'\nstockroom: : unknown loyalty tier 'platinum'\nstockroom: : line 1: unknown sku 'NOPE'\nstockroom: : line 2: quantity must be a whole number of at least 1\nstockroom: : line 3: OLD-9 is discontinued\nstockroom: : line 4: quantity 101 is above the limit of 100\nstockroom: : line 5: WGT-2 already appears on line 4\nstockroom: : line 6: quantity must be a whole number of at least 1\nstockroom: : line 7: unknown sku None\n",
+   "stdout": "",
+   "stock_file": "{\n  \"BLT-M6\": 12,\n  \"CBL-2\": 5,\n  \"GAD-7\": 40,\n  \"LMP-3\": 9,\n  \"OLD-9\": 3,\n  \"SPR-5\": 0,\n  \"WGT-1\": 340,\n  \"WGT-2\": 85\n}\n"
+  },
+  "stock_short": {
+   "status": 1,
+   "stderr": "stockroom: SO-5001: line 2: only 9 of LMP-3 in stock\nstockroom: SO-5001: line 3: only 12 of BLT-M6 in stock\n",
+   "stdout": "",
+   "stock_file": "{\n  \"BLT-M6\": 12,\n  \"CBL-2\": 5,\n  \"GAD-7\": 40,\n  \"LMP-3\": 9,\n  \"OLD-9\": 3,\n  \"SPR-5\": 0,\n  \"WGT-1\": 340,\n  \"WGT-2\": 85\n}\n"
+  }
+ },
+ "cli_receipts": {
+  "backorder_springs": {
+   "status": 0,
+   "stderr": "",
+   "stdout": "Order SO-1002 for C-3141 (FR)\n    2 x LMP-3   Desk lamp                 38.50     77.00\n    4 x SPR-5   Spring set                 6.40     25.60\nsubtotal                                  102.60\nshipping                                   13.40\ntax                                        20.52\ntotal                                     136.52\nbackordered: 4 x SPR-5\n",
+   "stock_file": "{\n  \"BLT-M6\": 12,\n  \"CBL-2\": 5,\n  \"GAD-7\": 40,\n  \"LMP-3\": 7,\n  \"OLD-9\": 3,\n  \"SPR-5\": 0,\n  \"WGT-1\": 340,\n  \"WGT-2\": 85\n}\n"
+  },
+  "dry_run": {
+   "status": 0,
+   "stderr": "",
+   "stdout": "Order SO-1006 for C-3141 (DE)\n    8 x CBL-2   Cable, 2 m                11.75     94.00\nsubtotal                                   94.00\nshipping                                    7.30\ntax                                        17.86\ntotal                                     119.16\nbackordered: 3 x CBL-2\n",
+   "stock_file": "{\n  \"BLT-M6\": 12,\n  \"CBL-2\": 5,\n  \"GAD-7\": 40,\n  \"LMP-3\": 9,\n  \"OLD-9\": 3,\n  \"SPR-5\": 0,\n  \"WGT-1\": 340,\n  \"WGT-2\": 85\n}\n"
+  },
+  "gold_spring": {
+   "status": 0,
+   "stderr": "",
+   "stdout": "Order SO-1001 for C-3141 (DE)\n   12 x WGT-1   Widget, small              4.50     54.00\n    3 x GAD-7   Gadget                    24.95     74.85\n    2 x CBL-2   Cable, 2 m                11.75     23.50\nsubtotal                                  152.35\ndiscount (volume)                           -2.70\ndiscount (coupon)                          -14.97\ndiscount (loyalty)                           -6.73\nshipping                                    0.00\ntax                                        24.31\ntotal                                     152.26\n",
+   "stock_file": "{\n  \"BLT-M6\": 12,\n  \"CBL-2\": 3,\n  \"GAD-7\": 37,\n  \"LMP-3\": 9,\n  \"OLD-9\": 3,\n  \"SPR-5\": 0,\n  \"WGT-1\": 328,\n  \"WGT-2\": 85\n}\n"
+  },
+  "volume_welcome_silver": {
+   "status": 0,
+   "stderr": "",
+   "stdout": "Order SO-1003 for C-3141 (AT)\n   30 x WGT-2   Widget, large             12.90    387.00\n   10 x WGT-1   Widget, small              4.50     45.00\n    9 x BLT-M6  Bolt M6, pack of 50        8.99     80.91\nsubtotal                                  512.91\ndiscount (volume)                          -40.95\ndiscount (coupon)                           -5.00\ndiscount (loyalty)                          -14.01\nshipping                                    0.00\ntax                                        90.59\ntotal                                     543.54\n",
+   "stock_file": "{\n  \"BLT-M6\": 3,\n  \"CBL-2\": 5,\n  \"GAD-7\": 40,\n  \"LMP-3\": 9,\n  \"OLD-9\": 3,\n  \"SPR-5\": 0,\n  \"WGT-1\": 330,\n  \"WGT-2\": 55\n}\n"
+  }
+ },
+ "receipts": {
+  "backorder_springs": {
+   "country": "FR",
+   "customer": "C-3141",
+   "discount_cents": 0,
+   "discounts": [],
+   "lines": [
+    {
+     "line_cents": 7700,
+     "name": "Desk lamp",
+     "qty": 2,
+     "sku": "LMP-3",
+     "unit_cents": 3850
+    },
+    {
+     "line_cents": 2560,
+     "name": "Spring set",
+     "qty": 4,
+     "sku": "SPR-5",
+     "unit_cents": 640
+    }
+   ],
+   "order": "SO-1002",
+   "reserved": [
+    {
+     "backordered": 0,
+     "from_stock": 2,
+     "sku": "LMP-3"
+    },
+    {
+     "backordered": 4,
+     "from_stock": 0,
+     "sku": "SPR-5"
+    }
+   ],
+   "shipping_cents": 1340,
+   "subtotal_cents": 10260,
+   "tax_cents": 2052,
+   "total_cents": 13652
+  },
+  "free_shipping": {
+   "country": "NL",
+   "customer": "C-3141",
+   "discount_cents": 0,
+   "discounts": [],
+   "lines": [
+    {
+     "line_cents": 15400,
+     "name": "Desk lamp",
+     "qty": 4,
+     "sku": "LMP-3",
+     "unit_cents": 3850
+    }
+   ],
+   "order": "SO-1004",
+   "reserved": [
+    {
+     "backordered": 0,
+     "from_stock": 4,
+     "sku": "LMP-3"
+    }
+   ],
+   "shipping_cents": 0,
+   "subtotal_cents": 15400,
+   "tax_cents": 3234,
+   "total_cents": 18634
+  },
+  "gold_spring": {
+   "country": "DE",
+   "customer": "C-3141",
+   "discount_cents": 2440,
+   "discounts": [
+    {
+     "cents": 270,
+     "name": "volume"
+    },
+    {
+     "cents": 1497,
+     "name": "coupon"
+    },
+    {
+     "cents": 673,
+     "name": "loyalty"
+    }
+   ],
+   "lines": [
+    {
+     "line_cents": 5400,
+     "name": "Widget, small",
+     "qty": 12,
+     "sku": "WGT-1",
+     "unit_cents": 450
+    },
+    {
+     "line_cents": 7485,
+     "name": "Gadget",
+     "qty": 3,
+     "sku": "GAD-7",
+     "unit_cents": 2495
+    },
+    {
+     "line_cents": 2350,
+     "name": "Cable, 2 m",
+     "qty": 2,
+     "sku": "CBL-2",
+     "unit_cents": 1175
+    }
+   ],
+   "order": "SO-1001",
+   "reserved": [
+    {
+     "backordered": 0,
+     "from_stock": 12,
+     "sku": "WGT-1"
+    },
+    {
+     "backordered": 0,
+     "from_stock": 3,
+     "sku": "GAD-7"
+    },
+    {
+     "backordered": 0,
+     "from_stock": 2,
+     "sku": "CBL-2"
+    }
+   ],
+   "shipping_cents": 0,
+   "subtotal_cents": 15235,
+   "tax_cents": 2431,
+   "total_cents": 15226
+  },
+  "partial_backorder": {
+   "country": "DE",
+   "customer": "C-3141",
+   "discount_cents": 0,
+   "discounts": [],
+   "lines": [
+    {
+     "line_cents": 9400,
+     "name": "Cable, 2 m",
+     "qty": 8,
+     "sku": "CBL-2",
+     "unit_cents": 1175
+    }
+   ],
+   "order": "SO-1006",
+   "reserved": [
+    {
+     "backordered": 3,
+     "from_stock": 5,
+     "sku": "CBL-2"
+    }
+   ],
+   "shipping_cents": 730,
+   "subtotal_cents": 9400,
+   "tax_cents": 1786,
+   "total_cents": 11916
+  },
+  "rounding_edges": {
+   "country": "DE",
+   "customer": "C-3141",
+   "discount_cents": 1261,
+   "discounts": [
+    {
+     "cents": 494,
+     "name": "volume"
+    },
+    {
+     "cents": 500,
+     "name": "coupon"
+    },
+    {
+     "cents": 267,
+     "name": "loyalty"
+    }
+   ],
+   "lines": [
+    {
+     "line_cents": 9889,
+     "name": "Bolt M6, pack of 50",
+     "qty": 11,
+     "sku": "BLT-M6",
+     "unit_cents": 899
+    }
+   ],
+   "order": "SO-1007",
+   "reserved": [
+    {
+     "backordered": 0,
+     "from_stock": 11,
+     "sku": "BLT-M6"
+    }
+   ],
+   "shipping_cents": 970,
+   "subtotal_cents": 9889,
+   "tax_cents": 1639,
+   "total_cents": 11237
+  },
+  "small_coupon": {
+   "country": "DE",
+   "customer": "C-3141",
+   "discount_cents": 0,
+   "discounts": [],
+   "lines": [
+    {
+     "line_cents": 2697,
+     "name": "Bolt M6, pack of 50",
+     "qty": 3,
+     "sku": "BLT-M6",
+     "unit_cents": 899
+    }
+   ],
+   "order": "SO-1005",
+   "reserved": [
+    {
+     "backordered": 0,
+     "from_stock": 3,
+     "sku": "BLT-M6"
+    }
+   ],
+   "shipping_cents": 610,
+   "subtotal_cents": 2697,
+   "tax_cents": 512,
+   "total_cents": 3819
+  },
+  "volume_welcome_silver": {
+   "country": "AT",
+   "customer": "C-3141",
+   "discount_cents": 5996,
+   "discounts": [
+    {
+     "cents": 4095,
+     "name": "volume"
+    },
+    {
+     "cents": 500,
+     "name": "coupon"
+    },
+    {
+     "cents": 1401,
+     "name": "loyalty"
+    }
+   ],
+   "lines": [
+    {
+     "line_cents": 38700,
+     "name": "Widget, large",
+     "qty": 30,
+     "sku": "WGT-2",
+     "unit_cents": 1290
+    },
+    {
+     "line_cents": 4500,
+     "name": "Widget, small",
+     "qty": 10,
+     "sku": "WGT-1",
+     "unit_cents": 450
+    },
+    {
+     "line_cents": 8091,
+     "name": "Bolt M6, pack of 50",
+     "qty": 9,
+     "sku": "BLT-M6",
+     "unit_cents": 899
+    }
+   ],
+   "order": "SO-1003",
+   "reserved": [
+    {
+     "backordered": 0,
+     "from_stock": 30,
+     "sku": "WGT-2"
+    },
+    {
+     "backordered": 0,
+     "from_stock": 10,
+     "sku": "WGT-1"
+    },
+    {
+     "backordered": 0,
+     "from_stock": 9,
+     "sku": "BLT-M6"
+    }
+   ],
+   "shipping_cents": 0,
+   "subtotal_cents": 51291,
+   "tax_cents": 9059,
+   "total_cents": 54354
+  }
+ },
+ "rejections": {
+  "expired_coupon": [
+   "coupon SPRING10 expired on 2026-12-31"
+  ],
+  "header_and_lines": [
+   "order id is missing",
+   "bad customer id 'C-12'",
+   "cannot ship to country 'XX'",
+   "unknown coupon 'OLDCODE'",
+   "unknown loyalty tier 'platinum'",
+   "line 1: unknown sku 'NOPE'",
+   "line 2: quantity must be a whole number of at least 1",
+   "line 3: OLD-9 is discontinued",
+   "line 4: quantity 101 is above the limit of 100",
+   "line 5: WGT-2 already appears on line 4",
+   "line 6: quantity must be a whole number of at least 1",
+   "line 7: unknown sku None"
+  ],
+  "lines_not_a_list": [
+   "order has no lines"
+  ],
+  "no_lines": [
+   "order has no lines"
+  ],
+  "short_stock": [
+   "line 2: only 9 of LMP-3 in stock",
+   "line 3: only 12 of BLT-M6 in stock"
+  ],
+  "too_many_lines": [
+   "order has 21 lines, the limit is 20",
+   "line 2: WGT-1 already appears on line 1",
+   "line 3: WGT-1 already appears on line 1",
+   "line 4: WGT-1 already appears on line 1",
+   "line 5: WGT-1 already appears on line 1",
+   "line 6: WGT-1 already appears on line 1",
+   "line 7: WGT-1 already appears on line 1",
+   "line 8: WGT-1 already appears on line 1",
+   "line 9: WGT-1 already appears on line 1",
+   "line 10: WGT-1 already appears on line 1",
+   "line 11: WGT-1 already appears on line 1",
+   "line 12: WGT-1 already appears on line 1",
+   "line 13: WGT-1 already appears on line 1",
+   "line 14: WGT-1 already appears on line 1",
+   "line 15: WGT-1 already appears on line 1",
+   "line 16: WGT-1 already appears on line 1",
+   "line 17: WGT-1 already appears on line 1",
+   "line 18: WGT-1 already appears on line 1",
+   "line 19: WGT-1 already appears on line 1",
+   "line 20: WGT-1 already appears on line 1",
+   "line 21: WGT-1 already appears on line 1"
+  ]
+ },
+ "stock": {
+  "after_rejection": {
+   "BLT-M6": 12,
+   "CBL-2": 5,
+   "GAD-7": 40,
+   "LMP-3": 9,
+   "OLD-9": 3,
+   "SPR-5": 0,
+   "WGT-1": 340,
+   "WGT-2": 85
+  },
+  "backorder_springs": {
+   "BLT-M6": 12,
+   "CBL-2": 5,
+   "GAD-7": 40,
+   "LMP-3": 7,
+   "OLD-9": 3,
+   "SPR-5": 0,
+   "WGT-1": 340,
+   "WGT-2": 85
+  },
+  "free_shipping": {
+   "BLT-M6": 12,
+   "CBL-2": 5,
+   "GAD-7": 40,
+   "LMP-3": 5,
+   "OLD-9": 3,
+   "SPR-5": 0,
+   "WGT-1": 340,
+   "WGT-2": 85
+  },
+  "gold_spring": {
+   "BLT-M6": 12,
+   "CBL-2": 3,
+   "GAD-7": 37,
+   "LMP-3": 9,
+   "OLD-9": 3,
+   "SPR-5": 0,
+   "WGT-1": 328,
+   "WGT-2": 85
+  },
+  "partial_backorder": {
+   "BLT-M6": 12,
+   "CBL-2": 0,
+   "GAD-7": 40,
+   "LMP-3": 9,
+   "OLD-9": 3,
+   "SPR-5": 0,
+   "WGT-1": 340,
+   "WGT-2": 85
+  },
+  "rounding_edges": {
+   "BLT-M6": 1,
+   "CBL-2": 5,
+   "GAD-7": 40,
+   "LMP-3": 9,
+   "OLD-9": 3,
+   "SPR-5": 0,
+   "WGT-1": 340,
+   "WGT-2": 85
+  },
+  "small_coupon": {
+   "BLT-M6": 9,
+   "CBL-2": 5,
+   "GAD-7": 40,
+   "LMP-3": 9,
+   "OLD-9": 3,
+   "SPR-5": 0,
+   "WGT-1": 340,
+   "WGT-2": 85
+  },
+  "volume_welcome_silver": {
+   "BLT-M6": 3,
+   "CBL-2": 5,
+   "GAD-7": 40,
+   "LMP-3": 9,
+   "OLD-9": 3,
+   "SPR-5": 0,
+   "WGT-1": 330,
+   "WGT-2": 55
+  }
+ }
+}
