@@ -29,6 +29,7 @@ class RunTask:
         prior_work: M4 long level: prior conversation placed before the request.
         requirements: Requirement id to text (helps the verifier map claims).
         command_timeout_s: Per-command limit in the sandbox.
+        flaky_tools: M5 flaky level: the minimal-agent tools that may fail.
     """
 
     task_id: str
@@ -43,6 +44,7 @@ class RunTask:
     prior_work: Sequence[Message] = ()
     requirements: Mapping[str, str] = field(default_factory=dict)
     command_timeout_s: float = 300.0
+    flaky_tools: frozenset[str] = frozenset({"bash", "run_tests"})
 
 
 @dataclass(frozen=True)

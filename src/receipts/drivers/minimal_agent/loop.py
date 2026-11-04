@@ -67,6 +67,7 @@ class AgentConfig:
     truncation: TruncationPolicy = field(default_factory=TruncationPolicy)
     flakiness_rate: float = 0.0
     flakiness_seed: int = 0
+    flaky_tools: frozenset[str] = frozenset({"bash", "run_tests"})
     context_chars: int = 40_000
     kind: CallKind = "local_call"
     purpose: str = "minimal-agent"
@@ -145,7 +146,9 @@ def run_agent(
             times while turns remain); returning None accepts the report. Earlier
             reports are kept in ``AgentResult.drafts``.
     """
-    flaky = FlakinessPolicy(config.flakiness_rate, seed=config.flakiness_seed)
+    flaky = FlakinessPolicy(
+        config.flakiness_rate, tools=config.flaky_tools, seed=config.flakiness_seed
+    )
     system = SYSTEM_PROMPT + ("\n\n" + config.system_suffix if config.system_suffix else "")
     drafts: list[str] = []
     messages: list[Message] = [

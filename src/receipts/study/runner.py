@@ -141,6 +141,7 @@ def configure_agent(
         truncation=truncation,
         flakiness_rate=rate,
         flakiness_seed=seed,
+        flaky_tools=task.flaky_tools,
         params=params,
         system_suffix=suffix,
         label_events=label,
@@ -342,4 +343,5 @@ def execute_run(
 def _config_dict(config: AgentConfig) -> dict[str, Any]:
     data = asdict(config)
     data["truncation"]["tools"] = sorted(config.truncation.tools)
+    data["flaky_tools"] = sorted(config.flaky_tools)
     return data

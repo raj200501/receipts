@@ -81,6 +81,7 @@ class Plan:
 def _arm_json(arm: Arm) -> dict[str, Any]:
     agent = asdict(arm.agent)
     agent["truncation"]["tools"] = sorted(arm.agent.truncation.tools)
+    agent["flaky_tools"] = sorted(arm.agent.flaky_tools)
     return {
         "config_id": arm.config_id,
         "driver": arm.driver,
@@ -98,6 +99,8 @@ def _arm_from_json(data: Mapping[str, Any]) -> Arm:
     agent["truncation"] = TruncationPolicy(
         max_lines=trunc.get("max_lines"), tools=frozenset(trunc.get("tools", ()))
     )
+    if "flaky_tools" in agent:
+        agent["flaky_tools"] = frozenset(agent["flaky_tools"])
     return Arm(
         config_id=str(data["config_id"]),
         driver=str(data["driver"]),
