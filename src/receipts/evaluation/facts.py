@@ -71,13 +71,12 @@ def _describe(event: Event, by_seq: Mapping[int, Event]) -> str | None:
     return None
 
 
-def fact_sheet(ledger: Ledger | Iterable[Event], *, include_report: bool = False) -> str:
-    """Return the fact sheet for a ledger.
+def fact_lines(ledger: Ledger | Iterable[Event]) -> list[str]:
+    """Return the fact sheet's entries, in order, without the final report.
 
-    Args:
-        ledger: The run's ledger.
-        include_report: Append the agent's own final report (off for writers of
-            seeded reports, who must not copy it).
+    There is one entry for the run, one per described event, and one for the run's
+    end. An entry is one line unless a command line itself contains newlines (a heredoc,
+    for example). E0 packets number these entries so writers can cite them.
     """
     view = ledger if isinstance(ledger, Ledger) else Ledger(ledger)
     by_seq = {e.seq: e for e in view}
@@ -100,6 +99,20 @@ def fact_sheet(ledger: Ledger | Iterable[Event], *, include_report: bool = False
         lines.append(
             f"Run ended: {end.data.get('stop_reason')} after {end.data.get('turns')} turns"
         )
-        if include_report:
-            lines.append("Final report:\n" + str(end.data.get("final_report", "")))
+    return lines
+
+
+def fact_sheet(ledger: Ledger | Iterable[Event], *, include_report: bool = False) -> str:
+    """Return the fact sheet for a ledger (:func:`fact_lines`, one per line).
+
+    Args:
+        ledger: The run's ledger.
+        include_report: Append the agent's own final report (off for writers of
+            seeded reports, who must not copy it).
+    """
+    view = ledger if isinstance(ledger, Ledger) else Ledger(ledger)
+    lines = fact_lines(view)
+    end = view.last("run_end")
+    if end is not None and include_report:
+        lines.append("Final report:\n" + str(end.data.get("final_report", "")))
     return "\n".join(lines) + "\n"

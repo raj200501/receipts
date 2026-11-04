@@ -5,11 +5,14 @@ The two sides are independent records of the same run:
 - the agent's native transcript (what it asked for and was told), and
 - the ledger's ``command`` events with source ``agent`` (what the sandbox executed).
 
-For minimal-agent, every ``bash`` and ``run_tests`` action in the transcript is a command
-the agent ran, unless the tool boundary failed it on purpose before it ran (M5 flaky
-tools: the observation is one of the transient error messages). For Claude Code, the
-commands are the Bash tool uses in the stream-json transcript. Gate G5 requires zero
-transcript commands missing from the ledger on the validation runs.
+For minimal-agent, every ``bash`` and ``run_tests`` action in the transcript after the
+task request is a command the agent ran, unless the tool boundary failed it on purpose
+before it ran (M5 flaky tools: the observation is one of the transient error messages).
+Messages before the task request are the system prompt and, under M4's long level,
+rendered prior work that never ran in this run's sandbox; :func:`task_start` finds where
+the agent's own turns begin. For Claude Code, the commands are the Bash tool uses in the
+stream-json transcript. Gate G5 requires zero transcript commands missing from the
+ledger on the validation runs.
 """
 
 from __future__ import annotations
@@ -20,14 +23,35 @@ from dataclasses import dataclass
 
 from receipts.drivers.minimal_agent.boundary import TRANSIENT_ERRORS
 from receipts.drivers.minimal_agent.protocol import ProtocolError, parse_action
-from receipts.ledger.events import Ledger
+from receipts.ledger.events import Ledger, sha256_text
 
 
-def transcript_commands(messages: Sequence[Mapping[str, str]], test_cmd: str) -> list[str]:
-    """Commands minimal-agent ran, read from its native transcript."""
+def task_start(messages: Sequence[Mapping[str, str]], prompt_sha256: str) -> int:
+    """Index of the first message after the task request in a minimal-agent transcript.
+
+    The transcript is ``[system, *prior work, task request, ...]``. The task request is
+    the user message whose SHA-256 equals ``prompt_sha256`` (``provenance.prompt_sha256``
+    in the run's ``run.json``); the last such message is taken, because nothing after
+    the request repeats it. Raises ValueError when no user message matches.
+    """
+    matches = [
+        index
+        for index, message in enumerate(messages)
+        if message.get("role") == "user"
+        and sha256_text(message.get("content", "")) == prompt_sha256
+    ]
+    if not matches:
+        raise ValueError("no user message in the transcript matches the run's prompt_sha256")
+    return matches[-1] + 1
+
+
+def transcript_commands(
+    messages: Sequence[Mapping[str, str]], test_cmd: str, *, start: int = 0
+) -> list[str]:
+    """Commands minimal-agent ran, read from its native transcript from index ``start``."""
     commands: list[str] = []
     for index, message in enumerate(messages):
-        if message.get("role") != "assistant":
+        if index < start or message.get("role") != "assistant":
             continue
         try:
             action = parse_action(message.get("content", ""))
@@ -72,11 +96,16 @@ class Completeness:
 
 
 def check_run(
-    run_id: str, messages: Sequence[Mapping[str, str]], ledger: Ledger, test_cmd: str
+    run_id: str,
+    messages: Sequence[Mapping[str, str]],
+    ledger: Ledger,
+    test_cmd: str,
+    *,
+    start: int = 0,
 ) -> Completeness:
-    """Compare one minimal-agent run's transcript with its ledger."""
+    """Compare one minimal-agent run's transcript (from index ``start``) with its ledger."""
     return Completeness(
         run_id,
-        tuple(transcript_commands(messages, test_cmd)),
+        tuple(transcript_commands(messages, test_cmd, start=start)),
         tuple(ledger_commands(ledger)),
     )
