@@ -1,6 +1,6 @@
 # E1: claim-level report faithfulness under five manipulations (confirmatory)
 
-Status: DRAFT. Not frozen. Two fields are marked TO FIX BEFORE FREEZE; they are filled
+Status: DRAFT. Not frozen. Fields marked TO FIX BEFORE FREEZE are filled
 from the pilot (section 9) and the power simulation (section 8). Freezing appends this
 file to `prereg/LOCK.json` (`python tools/prereg.py freeze`); after that it is never
 edited, and any change is a dated amendment file.
@@ -37,9 +37,11 @@ No direction is presumed for any effect. All tests are two-sided.
   are in `artifacts/studies/e1/plan.json`, committed with the freeze; its SHA-256 is
   recorded here at freeze: TO FIX BEFORE FREEZE.
 - Agent configurations (arms), all minimal-agent with the same system prompt, tools,
-  `max_turns = 25`, temperature 0.3, `max_tokens = 768`, a per-run seed, and the local
-  llama-cpp-python server (context 16384), pinned by file SHA-256 in
-  `receipts.client.models`:
+  `max_turns = 25`, temperature 0.3, `max_tokens = 768`, and a per-run seed, served by
+  llama.cpp's `llama-server` (DECISIONS D30: built from the llama.cpp sources vendored in
+  llama-cpp-python 0.3.36; context 16384 per slot; q8_0 key and value cache; the exact
+  server command is recorded in each run's provenance), with weights pinned by file
+  SHA-256 in `receipts.client.models`:
   - `ma-qwen7b`: Qwen2.5-Coder-7B-Instruct, q4_k_m (family qwen, larger)
   - `ma-qwen1.5b`: Qwen2.5-Coder-1.5B-Instruct, q4_k_m (family qwen, smaller)
   - `ma-granite8b`: Granite 3.3 8B Instruct, Q4_K_M (family granite, larger)
@@ -49,6 +51,11 @@ No direction is presumed for any effect. All tests are two-sided.
   or higher interactions), 16 cells, replicated R times. Every arm receives the identical
   list of (task, cell, seed) triples, so arms are compared on identical work. R: TO FIX
   BEFORE FREEZE (at least 4, giving at least 64 runs per arm and at least 256 runs).
+- Planned runs per configuration (machine-readable for the ship gate, 16 R):
+  planned_runs_per_config: TO FIX BEFORE FREEZE
+- G6 smoke runs (one unmanipulated run per benchmark task by `ma-qwen7b`, seed 0) exist
+  for every E1 and E4 task before freeze. They validate the benchmark and supply E0's
+  material; they are never pooled with E1 or E4 data.
 
 ## 4. Manipulations (realistic situations only; nothing instructs an agent to misreport)
 
@@ -83,6 +90,15 @@ No direction is presumed for any effect. All tests are two-sided.
 - E2 mechanism mix of contradicted claims by arm and condition (descriptive).
 
 Y1 to Y3 are analyzed among runs with a non-empty final report. Y4 uses all runs.
+
+Instrument version: claims are extracted (pattern extractor, DECISIONS D31) and verified
+from each run's banked ledger with `receipts.claims` and `receipts.verify` as they stand
+at the commit of the G5 held-out evaluation (`artifacts/e0/seeded_eval.json`). E1 reports
+are never used to develop the instrument. If the instrument changes after that commit,
+outcomes are computed with both versions and the frozen version is primary.
+
+Analysis code: the analysis is `tools/analyze.py e1` and `tools/analyze.py e2` at the
+freeze commit; any later change to them is a deviation, reported with both results.
 
 ## 6. Hypotheses and tests
 
