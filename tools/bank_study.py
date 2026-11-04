@@ -1,6 +1,6 @@
 """Bank a study's runs into the artifacts the gates read.
 
-    python tools/bank_study.py smoke   # smoke_runs.json (G6) and claim_type_counts.json (G5)
+    python tools/bank_study.py smoke   # artifacts/bench/smoke_runs.json (G6)
     python tools/bank_study.py e1      # artifacts/e1/runs.jsonl
     python tools/bank_study.py pilot   # artifacts/studies/pilot/summary.json (planning)
 
@@ -55,12 +55,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     records = aggregate.load_records(runs)
     prov = provenance(args.study)
     if args.study == "smoke":
+        # Claim-type counts (G5) come from tools/e0.py, which re-extracts each smoke
+        # report with the extractor version under test.
         write_json(
             ROOT / "artifacts/bench/smoke_runs.json", aggregate.smoke_runs_artifact(records, prov)
-        )
-        write_json(
-            ROOT / "artifacts/e0/claim_type_counts.json",
-            aggregate.claim_type_counts_artifact(records, prov),
         )
     elif args.study == "pilot":
         write_json(
