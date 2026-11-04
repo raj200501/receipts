@@ -426,3 +426,37 @@ separation, the fallback tests each manipulation (E1) or mitigation (E4) with a 
 likelihood-ratio test of plain logistic fits, so an effect large enough to separate the
 data can still be detected. (8) Y1 leaves out runs whose hidden checks gave no result;
 they are counted per arm and reported as a deviation.
+
+**D43. Blind-label claim-type counts: interpretations in the tooling.** Recorded before
+any labeler runs (rule 10); they implement D34 in `tools/e0.py` and
+`receipts.evaluation.e0`. (1) The real smoke runs are the real rows of
+`artifacts/bench/smoke_runs.json` (not synthetic, an agent label with no non-agent word),
+each tied to its banked run with G5's banked-run checks; a banked run the summary does
+not list is refused as a stale summary, so `tools/bank_study.py smoke` runs first. (2)
+Labels quote `run.json`'s `report` (what G5 checks), and the packet steps refuse a run
+whose `run.json` report differs from its ledger's `run_end`. (3) The label packet index
+keeps each report's text and SHA-256, so `check-labels` works from the packets alone. (4)
+Writing `artifacts/e0/claim_type_counts.json` needs both `--packets` and `--blindness`,
+so D34's blindness requirement is enforced in code; a trial count written elsewhere may
+leave them out and records nulls. (5) `counts` requires `--method`; extractor counts go
+only to `artifacts/e0/claim_type_counts_extractor.json` (descriptive). (6) A
+`"labeler": "<id>"` pair declares a labeler in the blindness scan, and `tools/e0.py
+check-labels` is exempt from review like the other two check commands. (7) The same type
+and text listed twice is refused; a claim the report repeats word for word is labeled
+once, and one statement of two types once per type. (8) One label file per real smoke
+run, empty reports included (claim list `[]`). (9) `evaluate` accepts blind-label counts
+after a recount, ignoring zero entries as G5 does. (10) `label-packets` flags any packet
+whose text matches a blindness violation rule and exits 1, since reading it would void
+its labeler. (11) Schemas `receipts.e0.claim_type_counts/2` and
+`receipts.e0.label_packets/1`. Reading a blindness file (counts and merge): (12) the
+declared and voided ids come only from the transcript records, and a summary list that
+differs from them is refused, not corrected; (13) the file must have schema
+`receipts.e0.blindness/2`, at least one record, and records with exactly the keys the scan
+writes; (14) a review entry may be marked cleared only when the clearances record counts
+a clearance, and the reverse; (15) `--agents` makes counts and merge re-scan the
+transcripts and refuse unless every record comes out the same (recorded as
+`rescanned`); it is optional because the transcripts stay local (rule 15) and may be gone
+later, so the real run gives `blindness`, `counts --agents`, and `merge --agents` the same
+transcript paths in one session and keeps any clearances file under `artifacts/e0/`.
+Recorded gap (adds to D38): without `--agents`, a record edited by hand together with its
+lists is not detected.

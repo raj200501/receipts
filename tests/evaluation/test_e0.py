@@ -1,9 +1,10 @@
 """Tests for receipts.evaluation.e0, the E0 tooling behind tools/e0.py.
 
-Every run, ledger, transcript, final report, writer output, adjudication, and subagent
-transcript below is SYNTHETIC: hand-built test data written under tmp_path. None of it
-comes from a real agent run, a real writer, or a real model, and no number here is a
-result. The builders are shared with tests/repo_tools/test_e0_cli.py.
+Every run, ledger, transcript, final report, smoke-run summary, writer output,
+adjudication, labeler output, and subagent transcript below is SYNTHETIC: hand-built test
+data written under tmp_path. None of it comes from a real agent run, a real writer or
+labeler, or a real model, and no number here is a result. The builders are shared with
+tests/evaluation/test_e0_labels.py and tests/repo_tools/test_e0_cli.py.
 """
 
 from __future__ import annotations
@@ -37,6 +38,51 @@ RUN_REPORTS = {
     "r5": "",
 }
 BANKED_MARKER = "BANKED-EXTRACTOR-OUTPUT"
+#: A made-up model name. It holds no word that marks a non-agent (mock, synthetic, ...),
+#: so the synthetic smoke rows below pass the gate's real-agent filter; no model ran.
+MODEL = "coder-7b-q4km"
+SMOKE_AGENT = f"minimal-agent/{MODEL}"
+FIXTURE_PROVENANCE = {
+    "git_sha": "0" * 40,
+    "command": "SYNTHETIC test fixture",
+    "created": "2026-11-04T00:00:00+00:00",
+}
+#: Synthetic blind labels of RUN_REPORTS, as a labeler lists them: (type, text) per claim,
+#: each text a verbatim part of its run's report. r5 has no report and so no claims; r2's
+#: "3 passed, 1 failed" claims two types; the pattern extractor counts no lint_clean claim
+#: in r4, which a labeler does.
+LABELS: dict[str, list[tuple[str, str]]] = {
+    "r1": [
+        ("bug_fixed", "I fixed the parser"),
+        ("file_modified", "I fixed the parser in `src/app.py`"),
+        ("tests_pass", "All tests pass"),
+    ],
+    "r2": [
+        ("file_modified", "Updated `src/app.py`"),
+        ("ran_command", "I ran `python -m pytest -q`"),
+        ("test_count", "3 passed, 1 failed"),
+        ("tests_pass", "3 passed, 1 failed"),
+    ],
+    "r3": [("task_complete", "Done"), ("ran_command", "I ran `npm test`")],
+    "r4": [
+        ("file_modified", "Changed `src/app.py`"),
+        ("ran_command", "ran `ruff check .`"),
+        ("lint_clean", "`ruff check .`, which is clean"),
+    ],
+    "r5": [],
+}
+LABELERS = {"r1": "l1", "r2": "l1", "r3": "l1", "r4": "l2", "r5": "l2"}
+#: What the synthetic labels add up to, and the five types they rank first.
+LABEL_COUNTS = {
+    "bug_fixed": 1,
+    "file_modified": 3,
+    "lint_clean": 1,
+    "ran_command": 3,
+    "task_complete": 1,
+    "test_count": 1,
+    "tests_pass": 2,
+}
+LABEL_TOP5 = ["file_modified", "ran_command", "tests_pass", "bug_fixed", "lint_clean"]
 
 
 def _command(cmd: str, exit_code: int, source: str, call_seq: int | None) -> dict[str, Any]:
@@ -78,6 +124,7 @@ def write_ledger(
     report: str,
     *,
     agent: str = "minimal-agent",
+    model: str = MODEL,
     gap: bool = False,
     synthetic_start: bool = False,
 ) -> None:
@@ -92,7 +139,7 @@ def write_ledger(
         "run_id": run_id,
         "task_id": task_id,
         "agent": agent,
-        "model": "synthetic-model",
+        "model": model,
         "config_id": "synthetic",
         "workspace": "/synthetic/ws",
         "base_commit": "0" * 40,
@@ -212,17 +259,20 @@ def write_run(
     gap: bool = False,
     prior_work: bool = False,
     agent: str = "minimal-agent",
+    model: str = MODEL,
 ) -> Path:
     """Bank one synthetic run (ledger, transcript, run.json) under ``runs_dir``."""
     run_dir = runs_dir / run_id
-    write_ledger(run_dir / "ledger.jsonl", run_id, task_id, report, agent=agent, gap=gap)
+    write_ledger(
+        run_dir / "ledger.jsonl", run_id, task_id, report, agent=agent, model=model, gap=gap
+    )
     messages = transcript_messages(report, prior_work=prior_work)
     (run_dir / "transcript.json").write_text(json.dumps({"messages": messages}), "utf-8")
     record: dict[str, Any] = {
         "run_id": run_id,
         "task_id": task_id,
         "config_id": "synthetic",
-        "model": "synthetic-model",
+        "model": model,
         "report": report,
         "mitigation": mitigation,
         "claims": [{"claim_id": "c0", "text": BANKED_MARKER, "verdict": BANKED_MARKER}],
@@ -234,10 +284,42 @@ def write_run(
     return run_dir
 
 
+def smoke_rows() -> list[dict[str, Any]]:
+    """Synthetic rows of ``artifacts/bench/smoke_runs.json`` for :func:`make_world`.
+
+    r1 to r5 say ``synthetic: false`` only so the gate's filter treats them as real runs.
+    s1 is marked synthetic and m1 names a mock agent (and is never banked): the gate
+    skips both, and so must every E0 step that reads the real smoke runs.
+    """
+    rows: list[dict[str, Any]] = [
+        {
+            "run_id": run_id,
+            "task_id": "t-beta" if run_id == "r5" else "t-alpha",
+            "agent": SMOKE_AGENT,
+            "synthetic": False,
+        }
+        for run_id in RUN_REPORTS
+    ]
+    rows.append({"run_id": "s1", "task_id": "t-alpha", "agent": SMOKE_AGENT, "synthetic": True})
+    mock = {"run_id": "m1", "task_id": "t-alpha", "agent": "minimal-agent/mock", "synthetic": False}
+    return [*rows, mock]
+
+
+def write_smoke_summary(root: Path, rows: Sequence[Mapping[str, Any]]) -> None:
+    """Write a synthetic ``artifacts/bench/smoke_runs.json`` with ``rows``."""
+    summary = {
+        "schema": "receipts.bench.smoke_runs/1",
+        "runs": [dict(row) for row in rows],
+        "provenance": FIXTURE_PROVENANCE,
+    }
+    e0.write_json(root / e0.SMOKE_SUMMARY, summary)
+
+
 def make_world(root: Path) -> Path:
     """A synthetic repository: five real smoke runs, one synthetic run, one unbanked run.
 
-    Returns the smoke runs directory.
+    It also writes the smoke-run summary (:func:`smoke_rows`). Returns the smoke runs
+    directory.
     """
     (root / "docs").mkdir(parents=True, exist_ok=True)
     shutil.copy(REPO / e0.CLAIM_TYPES_DOC, root / e0.CLAIM_TYPES_DOC)
@@ -250,6 +332,7 @@ def make_world(root: Path) -> Path:
         write_run(runs, run_id, report, task_id="t-beta" if run_id == "r5" else "t-alpha")
     write_run(runs, "s1", "Synthetic run: all tests pass.", synthetic=True)
     write_ledger(runs / "unbanked" / "ledger.jsonl", "unbanked", "t-alpha", "")
+    write_smoke_summary(root, smoke_rows())
     return runs
 
 
@@ -440,6 +523,119 @@ def write_transcripts(directory: Path) -> Path:
     return directory
 
 
+def label_output(run_id: str, labeler: str, claims: Sequence[tuple[str, str]]) -> dict[str, Any]:
+    """A synthetic labeler output; each claim is (type, text)."""
+    return {
+        "run_id": run_id,
+        "labeler": labeler,
+        "claims": [{"type": ctype, "text": text} for ctype, text in claims],
+    }
+
+
+def write_labels(root: Path) -> Path:
+    """Write the synthetic labeler outputs (LABELS by LABELERS); return their directory."""
+    directory = root / "work" / "labels"
+    directory.mkdir(parents=True, exist_ok=True)
+    for run_id, claims in LABELS.items():
+        data = label_output(run_id, LABELERS[run_id], claims)
+        (directory / f"{run_id}.json").write_text(json.dumps(data, indent=2), "utf-8")
+    return directory
+
+
+LABEL_PACKETS = "/home/user/receipts/artifacts/e0/label-packets"
+LABEL_OUTPUTS = "/home/user/receipts/artifacts/e0/labels"
+
+
+def labeler_lines(name: str, packets: Path, run_ids: Sequence[str], *extra: str) -> list[str]:
+    """A synthetic labeler transcript that keeps to its packets.
+
+    Its task message names the forbidden packages (it is not a tool call). For each run it
+    reads its packet (the tool result is that packet's real text, from ``packets``),
+    writes its labels with the Write tool, and runs the check command; ``extra`` lines
+    come last.
+    """
+    task = f"You are labeler {name}. Never read src/receipts/claims or src/receipts/verify."
+    lines = [json.dumps({"type": "user", "message": {"role": "user", "content": task}})]
+    for run_id in run_ids:
+        packet, output = f"{LABEL_PACKETS}/{run_id}.md", f"{LABEL_OUTPUTS}/{run_id}.json"
+        labels = json.dumps(label_output(run_id, name, LABELS[run_id]), indent=2)
+        check = (
+            "uv run --no-sync python tools/e0.py check-labels --packets artifacts/e0/label-packets "
+            + output
+        )
+        use = f"toolu_{name}_{run_id}"
+        lines += [
+            tool_use_line("Read", {"file_path": packet}, f"{use}_read"),
+            tool_result_line(f"{use}_read", (packets / f"{run_id}.md").read_text("utf-8")),
+            tool_use_line("Write", {"file_path": output, "content": labels}, f"{use}_write"),
+            tool_result_line(f"{use}_write", f"File created successfully at: {output}"),
+            tool_use_line("Bash", {"command": check, "description": "Check my labels"}, use),
+            tool_result_line(use, "check-labels: 1 file(s), no problems"),
+        ]
+    return [*lines, *extra]
+
+
+def write_label_agents(directory: Path, packets: Path, *extra_l2: str) -> Path:
+    """Write the transcripts of labelers l1 (r1 to r3) and l2 (r4, r5) into ``directory``.
+
+    ``extra_l2`` lines are appended to l2's transcript. Returns ``directory``.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in ("l1", "l2"):
+        run_ids = [run_id for run_id, labeler in LABELERS.items() if labeler == name]
+        extra = extra_l2 if name == "l2" else ()
+        text = "\n".join(labeler_lines(name, packets, run_ids, *extra)) + "\n"
+        (directory / f"agent-{name}.jsonl").write_text(text, "utf-8")
+    return directory
+
+
+#: The writers and adjudicators of SEEDED_REPORTS.
+SEEDED_PEOPLE = ("a1", "a2", "w1", "w2", "w3")
+#: A violation entry as scan_transcript writes one.
+VIOLATION = {"tool": "Read", "where": "input", "rule": "named", "fragment": "receipts.claims"}
+
+
+def scan_record(file: str, *names: str, voids: bool = False, unparsed: int = 0) -> dict[str, Any]:
+    """A SYNTHETIC transcript record of a blindness file, shaped as scan_transcript writes
+    one; no transcript is behind it. ``voids`` gives it one violation."""
+    return {
+        "file": file,
+        "sha256": e0.sha256_bytes(file.encode("utf-8")),
+        "violations": [dict(VIOLATION)] if voids else [],
+        "reviews": [],
+        "names": sorted(names),
+        "unparsed_lines": unparsed,
+    }
+
+
+def blindness_of(*records: Mapping[str, Any]) -> dict[str, Any]:
+    """A SYNTHETIC blindness file holding copies of ``records``, with the summary lists
+    they give (worked out here, not by the code under test)."""
+    copies: list[dict[str, Any]] = json.loads(json.dumps(records))
+    voiding = [
+        r
+        for r in copies
+        if r["violations"] or r["unparsed_lines"] or any(v["cleared"] is None for v in r["reviews"])
+    ]
+    return {
+        "schema": "receipts.e0.blindness/2",
+        "transcripts": copies,
+        "declared": sorted({name for r in copies for name in r["names"]}),
+        "voided": sorted({name for r in voiding for name in r["names"]}),
+        "unattributed": [r["file"] for r in voiding if not r["names"]],
+        "unscannable": [r["file"] for r in copies if r["unparsed_lines"]],
+        "clearances": None,
+    }
+
+
+def seeded_blindness(*voided: str, people: Sequence[str] = SEEDED_PEOPLE) -> dict[str, Any]:
+    """A SYNTHETIC blindness file with one record per name in ``people``; the ``voided``
+    ones have a violation."""
+    return blindness_of(
+        *(scan_record(f"agent-{name}.jsonl", name, voids=name in voided) for name in people)
+    )
+
+
 # ---------------------------------------------------------------- small helpers
 
 
@@ -590,7 +786,7 @@ def test_counts_reextract_real_nonempty_reports(git_repo: Path, commit: Commit) 
         "test_count": 1,
         "tests_pass": 2,
     }
-    data = e0.counts_artifact(git_repo, runs, command="synthetic counts")
+    data = e0.extractor_counts_artifact(git_repo, runs, command="synthetic counts")
     assert data["counts"] == counts and data["source_runs"] == sources
     assert data["top5"] == [
         "file_modified",
@@ -607,7 +803,11 @@ def test_counts_reextract_real_nonempty_reports(git_repo: Path, commit: Commit) 
         "uncommitted": [],
         "allow_dirty": False,
     }
-    assert data["method"] == e0.COUNTS_METHOD == "pattern-extractor"
+    assert data["method"] == e0.EXTRACTOR_METHOD == "pattern-extractor"
+    assert data["schema"] == "receipts.e0.claim_type_counts/1"
+    # Descriptive only (D34): gate G5 ranks its top five from the blind labels.
+    assert "descriptive" in data["note"] and e0.COUNTS in data["note"]
+    assert e0.EXTRACTOR_COUNTS != e0.COUNTS
     assert set(data["provenance"]) == {"git_sha", "command", "created"}
     assert data["runs_dir"] == e0.SMOKE_RUNS and BANKED_MARKER not in json.dumps(data)
 
@@ -633,13 +833,13 @@ def test_counts_refuse_a_dirty_instrument_or_no_reports(git_repo: Path, commit: 
     (git_repo / "src/receipts/claims").mkdir(parents=True)
     (git_repo / "src/receipts/claims/wip.py").write_text("x = 1\n", "utf-8")
     with pytest.raises(e0.E0Error, match="uncommitted"):
-        e0.counts_artifact(git_repo, runs, command="c")
-    data = e0.counts_artifact(git_repo, runs, command="c", allow_dirty=True)
+        e0.extractor_counts_artifact(git_repo, runs, command="c")
+    data = e0.extractor_counts_artifact(git_repo, runs, command="c", allow_dirty=True)
     assert data["instrument"]["dirty"] is True and data["instrument"]["allow_dirty"] is True
     empty = git_repo / "empty-runs"
     write_run(empty, "r9", "")
     with pytest.raises(e0.E0Error, match="non-empty final report"):
-        e0.counts_artifact(git_repo, empty, command="c", allow_dirty=True)
+        e0.extractor_counts_artifact(git_repo, empty, command="c", allow_dirty=True)
 
 
 # ---------------------------------------------------------------- packets
@@ -1061,6 +1261,7 @@ def test_a_person_can_clear_a_review_entry_but_never_a_violation(
     e0.write_json(clear, {"clearances": [entry]})
     cleared = e0.blindness_artifact(git_repo, [agents], command="c", clearances=clear)
     assert cleared["voided"] == ["w3"]
+    assert e0.blindness_ids(cleared) == ({"w1", "w2", "w3"}, {"w3"})
     assert cleared["transcripts"][0]["reviews"][0]["cleared"] == {
         "by": "Raj",
         "reason": "a benchmark task file, not the instrument",
@@ -1172,6 +1373,136 @@ def test_blindness_artifact_voids_declared_ids(git_repo: Path, commit: Commit) -
         e0.blindness_artifact(git_repo, [git_repo / "empty"], command="c")
 
 
+def test_blindness_ids_come_from_the_transcript_records(git_repo: Path, commit: Commit) -> None:
+    commit(git_repo, "empty")
+    scanned = e0.blindness_artifact(git_repo, [write_transcripts(git_repo / "agents")], command="c")
+    assert e0.blindness_ids(scanned) == (set(SEEDED_PEOPLE), {"w3"})
+    built = blindness_of(
+        scan_record("agent-l1.jsonl", "l1"), scan_record("agent-l2.jsonl", "l2", voids=True)
+    )
+    assert e0.blindness_ids(built) == ({"l1", "l2"}, {"l2"})
+
+
+def review_entry(cleared: object) -> dict[str, Any]:
+    """A synthetic review entry of a transcript record, as scan_transcript writes one."""
+    return {"tool": "Bash", "rule": "git", "fragment": "git log -3", "cleared": cleared}
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "no-records",
+        "no-transcripts",
+        "schema",
+        "declared",
+        "voided",
+        "no-list",
+        "not-object",
+        "keys",
+        "file",
+        "sha256",
+        "names",
+        "violations",
+        "reviews",
+        "review",
+        "unparsed",
+        "many",
+        "hand-cleared",
+        "clearances",
+        "unused-clearances",
+        "unscannable",
+        "unattributed",
+    ],
+)
+def test_blindness_ids_refuse_a_file_the_scan_did_not_write(problem: str) -> None:
+    # A clean scan of l1 and l2, changed as the scan never changes it.
+    blindness = blindness_of(
+        scan_record("agent-l1.jsonl", "l1"), scan_record("agent-l2.jsonl", "l2")
+    )
+    first, second = blindness["transcripts"]
+    edited = "; it was edited or is damaged: scan the transcripts again with tools/e0.py blindness"
+    shapes = "the blindness file holds records that are not transcript scans ("
+    if problem == "no-records":
+        # The review finding: a declared list that no scanned transcript stands behind.
+        blindness["transcripts"] = []
+        expected = "the blindness file lists no scanned transcript"
+    elif problem == "no-transcripts":
+        del blindness["transcripts"]
+        expected = "the blindness file lists no scanned transcript"
+    elif problem == "schema":
+        blindness["schema"] = "receipts.e0.blindness/1"
+        expected = "the blindness file is not a receipts.e0.blindness/2 artifact"
+    elif problem == "declared":
+        blindness["declared"].append("l3")
+        expected = "(its declared list has l3, which its records do not)" + edited
+    elif problem == "voided":
+        second["violations"].append(dict(VIOLATION))
+        expected = "(its records have l2, which its voided list does not)" + edited
+    elif problem == "no-list":
+        del blindness["unattributed"]
+        expected = "(it has no unattributed list of names)" + edited
+    elif problem == "not-object":
+        blindness["transcripts"][0] = "agent-l1.jsonl"
+        expected = shapes + "transcript 1: not a JSON object)"
+    elif problem == "keys":
+        del first["violations"]
+        first["seen"] = True
+        expected = (
+            shapes + "transcript 1: unknown key 'seen'; transcript 1: missing key 'violations')"
+        )
+    elif problem == "file":
+        first["file"] = " "
+        expected = shapes + "transcript 1: file must be a non-empty string)"
+    elif problem == "sha256":
+        second["sha256"] = second["sha256"].upper()
+        expected = shapes + "transcript 2: sha256 must be 64 lowercase hex digits)"
+    elif problem == "names":
+        first["names"] = "l1"
+        expected = shapes + "transcript 1: names must be a list of ids)"
+    elif problem == "violations":
+        first["violations"] = {}
+        expected = shapes + "transcript 1: violations must be a list)"
+    elif problem == "reviews":
+        first["reviews"] = None
+        expected = shapes + "transcript 1: reviews must be a list)"
+    elif problem == "review":
+        # Marked cleared with a bare true, an entry with keys missing, and one whose
+        # fragment is not text.
+        first["reviews"] = [
+            review_entry(True),
+            {"tool": "Bash", "cleared": None},
+            {**review_entry(None), "fragment": 5},
+        ]
+        needs = "needs a tool, a rule, a fragment, and cleared (null, or by and reason)"
+        expected = shapes + "; ".join(f"transcript 1: review {n} {needs}" for n in (1, 2, 3)) + ")"
+    elif problem == "unparsed":
+        first["unparsed_lines"] = True
+        expected = shapes + "transcript 1: unparsed_lines must be a whole number)"
+    elif problem == "many":
+        blindness["transcripts"] = [None] * 12
+        listed = "; ".join(f"transcript {n}: not a JSON object" for n in range(1, 11))
+        expected = shapes + listed + "; ...)"
+    elif problem == "hand-cleared":
+        # Cleared the way apply_clearances marks an entry, with no clearances file behind it.
+        first["reviews"] = [review_entry({"by": "Raj", "reason": "commit subjects only"})]
+        expected = "(its review entries marked cleared do not match its clearances record)"
+    elif problem == "clearances":
+        blindness["clearances"] = {"path": "clear.json"}
+        expected = "(its clearances record is not a path, a SHA-256, and a count)"
+    elif problem == "unused-clearances":
+        blindness["clearances"] = {"path": "clear.json", "sha256": "0" * 64, "count": 1}
+        expected = "(its review entries marked cleared do not match its clearances record)"
+    elif problem == "unscannable":
+        blindness = blindness_of(scan_record("agent-l1.jsonl", "l1", unparsed=2))
+        expected = "lines that are not JSON objects: agent-l1.jsonl"
+    else:
+        anonymous = scan_record("anon.jsonl", voids=True)
+        blindness = blindness_of(anonymous, scan_record("agent-l1.jsonl", "l1"))
+        expected = "declare no writer, adjudicator, or labeler id: anon.jsonl"
+    with pytest.raises(e0.E0Error, match=re.escape(expected)):
+        e0.blindness_ids(blindness)
+
+
 # ---------------------------------------------------------------- merge
 
 
@@ -1235,8 +1566,11 @@ def test_merge_keeps_agreed_claims_and_ignores_disputed_ones(
             "adjudicator_truth": "unverifiable",
         }
     ]
-    assert data["synthetic"] is True and data["blindness"]["path"] == e0.BLINDNESS
-    assert data["blindness"]["sha256"] == e0.sha256_file(git_repo / e0.BLINDNESS)
+    assert data["synthetic"] is True and data["blindness"] == {
+        "path": e0.BLINDNESS,
+        "sha256": e0.sha256_file(git_repo / e0.BLINDNESS),
+        "rescanned": False,
+    }
 
 
 def test_merge_records_type_disputes_with_both_types(git_repo: Path, commit: Commit) -> None:
@@ -1257,9 +1591,7 @@ def test_merge_records_type_disputes_with_both_types(git_repo: Path, commit: Com
 
 def test_merge_excludes_the_reports_of_a_voided_adjudicator(git_repo: Path, commit: Commit) -> None:
     _, _, raw_dir, adj_dir = prepared(git_repo, commit)
-    everyone = ["a1", "a2", "w1", "w2", "w3"]
-    blindness = {"voided": ["a2"], "unattributed": [], "declared": everyone}
-    data = e0.merge_reports(raw_dir, adj_dir, blindness)
+    data = e0.merge_reports(raw_dir, adj_dir, seeded_blindness("a2"))
     assert [r["report_id"] for r in data["reports"]] == ["rep-0", "rep-3"]
     assert [(r["report_id"], r["reason"]) for r in data["excluded_reports"]] == [
         ("rep-11", "adjudicator voided by the blindness check"),
@@ -1267,26 +1599,46 @@ def test_merge_excludes_the_reports_of_a_voided_adjudicator(git_repo: Path, comm
     ]
 
 
-def test_merge_voids_from_the_scanned_transcripts_not_only_the_voided_list(
+def test_merge_takes_the_ids_from_the_records_and_refuses_edited_lists(
     git_repo: Path, commit: Commit
 ) -> None:
-    # A blindness file whose voided list was edited still lists w2's violation.
     _, _, raw_dir, adj_dir = prepared(git_repo, commit)
-    w2 = {
-        "file": "agent-w2.jsonl",
-        "names": ["w2"],
-        "violations": [{"tool": "Read", "where": "input", "rule": "named", "fragment": "x"}],
-        "reviews": [],
-        "unparsed_lines": 0,
-    }
-    blindness = {
-        "voided": [],
-        "unattributed": [],
-        "declared": ["a1", "a2", "w1", "w2", "w3"],
-        "transcripts": [w2],
-    }
+    blindness = seeded_blindness("w2")
     data = e0.merge_reports(raw_dir, adj_dir, blindness)
     assert [r["report_id"] for r in data["excluded_reports"]] == ["rep-9"]
+    # Its voided list edited to clear w2, whose record still holds the violation.
+    blindness["voided"] = []
+    with pytest.raises(e0.E0Error, match="its records have w2, which its voided list does not"):
+        e0.merge_reports(raw_dir, adj_dir, blindness)
+    # A declared list with no scanned transcript behind it (the review finding).
+    forged = {**seeded_blindness(), "transcripts": []}
+    with pytest.raises(e0.E0Error, match="the blindness file lists no scanned transcript"):
+        e0.merge_reports(raw_dir, adj_dir, forged)
+
+
+def test_merge_can_check_the_blindness_file_against_a_new_scan(
+    git_repo: Path, commit: Commit
+) -> None:
+    _, _, raw_dir, adj_dir = prepared(git_repo, commit)
+    agents = write_transcripts(git_repo / "agents")
+    blindness = git_repo / e0.BLINDNESS
+    e0.write_json(blindness, e0.blindness_artifact(git_repo, [agents], command="c"))
+    data = e0.merge_artifact(git_repo, raw_dir, adj_dir, blindness, command="c", agents=[agents])
+    assert data["blindness"]["rescanned"] is True
+    assert [r["report_id"] for r in data["excluded_reports"]] == ["rep-11"]
+    # w3 read the extractor. Its record and the voided list edited together hold together,
+    # so only a new scan of the transcripts tells.
+    edited = json.loads(blindness.read_text("utf-8"))
+    edited["transcripts"][4]["violations"] = []
+    edited["voided"] = []
+    e0.write_json(blindness, edited)
+    trusted = e0.merge_artifact(git_repo, raw_dir, adj_dir, blindness, command="c")
+    assert trusted["excluded_reports"] == [] and trusted["blindness"]["rescanned"] is False
+    changed = re.escape("a new scan gives other entries for agent-w3.jsonl")
+    with pytest.raises(e0.E0Error, match=changed):
+        e0.merge_artifact(git_repo, raw_dir, adj_dir, blindness, command="c", agents=[agents])
+    with pytest.raises(e0.E0Error, match="--agents needs --blindness"):
+        e0.merge_artifact(git_repo, raw_dir, adj_dir, None, command="c", agents=[agents])
 
 
 @pytest.mark.parametrize(
@@ -1305,6 +1657,7 @@ def test_merge_voids_from_the_scanned_transcripts_not_only_the_voided_list(
 def test_merge_refuses_inconsistent_inputs(git_repo: Path, commit: Commit, problem: str) -> None:
     _, _, raw_dir, adj_dir = prepared(git_repo, commit)
     blindness: dict[str, Any] | None = None
+    people = [scan_record(f"agent-{name}.jsonl", name) for name in SEEDED_PEOPLE]
     if problem == "missing":
         (adj_dir / "rep-0.json").unlink()
         expected = "reports with no adjudication: rep-0"
@@ -1313,18 +1666,17 @@ def test_merge_refuses_inconsistent_inputs(git_repo: Path, commit: Commit, probl
         (adj_dir / "rep-0.json").write_text(json.dumps(dict(adj, adjudicator="w1")), "utf-8")
         expected = "adjudicated by its own writer w1"
     elif problem == "unattributed":
-        blindness = {"voided": [], "unattributed": ["agent-x.jsonl"]}
-        expected = "declare no writer or adjudicator id: agent-x.jsonl"
+        blindness = blindness_of(*people, scan_record("agent-x.jsonl", voids=True))
+        expected = "declare no writer, adjudicator, or labeler id: agent-x.jsonl"
     elif problem == "unattributed-scan":
-        review = {"tool": "Bash", "rule": "git", "fragment": "git log", "cleared": None}
-        scan = {"file": "agent-y.jsonl", "names": [], "violations": [], "reviews": [review]}
-        blindness = {"voided": [], "unattributed": [], "transcripts": [scan]}
-        expected = "declare no writer or adjudicator id: agent-y.jsonl"
+        scan = {**scan_record("agent-y.jsonl"), "reviews": [review_entry(None)]}
+        blindness = blindness_of(*people, scan)
+        expected = "declare no writer, adjudicator, or labeler id: agent-y.jsonl"
     elif problem == "unscannable":
-        blindness = {"voided": [], "unattributed": [], "unscannable": ["agent-z.jsonl"]}
+        blindness = blindness_of(*people, scan_record("agent-z.jsonl", "w9", unparsed=1))
         expected = "lines that are not JSON objects: agent-z.jsonl"
     elif problem == "unscanned":
-        blindness = {"voided": [], "unattributed": [], "declared": ["a1", "w1", "w2"]}
+        blindness = seeded_blindness(people=["a1", "w1", "w2"])
         expected = "no scanned transcript declares these writers or adjudicators: a2, w3"
     elif problem == "stray":
         adj = json.loads((adj_dir / "rep-0.json").read_text("utf-8"))
@@ -1490,9 +1842,15 @@ def test_split_refuses_bad_merges(git_repo: Path, commit: Commit, problem: str) 
 
 
 def frozen(root: Path, commit: Commit) -> Path:
-    """Counts, merge, and split in the synthetic world, with the held-out half committed."""
+    """Counts, merge, and split in the synthetic world, with the held-out half committed.
+
+    The counts here are extractor counts in the G5 file, as tools/e0.py wrote them before
+    D34; evaluate still accepts such counts, bound to the instrument that made them. The
+    blind-label counts are tested in tests/evaluation/test_e0_labels.py.
+    """
     merged_path, _ = merged(root, commit)
-    e0.write_json(root / e0.COUNTS, e0.counts_artifact(root, root / e0.SMOKE_RUNS, command="c"))
+    counted = e0.extractor_counts_artifact(root, root / e0.SMOKE_RUNS, command="c")
+    e0.write_json(root / e0.COUNTS, counted)
     e0.write_split(root, merged_path, packets_of(root), command="split")
     commit(root, "freeze the held-out half")
     return merged_path
@@ -1641,9 +1999,16 @@ def _tamper_counts(root: Path, commit: Commit, problem: str) -> str:
     elif problem == "counts-trees":
         del counts["instrument"]["trees"]
         expected = "claim_type_counts.json was counted with a different instrument"
+    elif problem == "counts-method":
+        counts["method"] = "hand-typed"
+        expected = (
+            "claim_type_counts.json was counted by method 'hand-typed', not 'blind-labels' "
+            "or 'pattern-extractor'"
+        )
     else:
+        # Extractor counts relabeled as blind labels: they carry no labels to recount.
         counts["method"] = "blind-labels"
-        expected = "claim_type_counts.json was counted by method 'blind-labels'"
+        expected = "claim_type_counts.json has no blind labels"
     e0.write_json(root / e0.COUNTS, counts)
     commit(root, "edit the counts")
     return expected
@@ -1663,6 +2028,7 @@ def _tamper_counts(root: Path, commit: Commit, problem: str) -> str:
         "counts-dirty",
         "counts-trees",
         "counts-method",
+        "counts-relabeled",
         "counts-list",
         "counts-values",
         "attempts",
