@@ -8,7 +8,9 @@ itself. This tool then validates the file and prints it, ending with the
 verdict line ``REVIEW: SHIP`` or ``REVIEW: BLOCK``.
 
 A review counts for the current code only if the reviewed commit differs from
-HEAD in nothing but ``artifacts/review/``, ``STATUS.md``, and ``docs/LOG.md``.
+HEAD in nothing but ``artifacts/review/``, ``STATUS.md``, and ``docs/LOG.md``. A
+rename counts as a change to both paths, so code moved into an allowed path is
+still a change.
 A SHIP verdict also needs zero blocking issues, and every non-blocking issue
 must be listed in docs/REVIEW_LOG.md. Anything else prints ``REVIEW: BLOCK``.
 """
@@ -48,7 +50,10 @@ def validate(root: Path, review: Mapping[str, Any]) -> list[str]:
         problems.append("reviewed_commit must be a full 40-character SHA")
     else:
         try:
-            changed = git(root, "diff", "--name-only", commit, "HEAD").split()
+            # --no-renames lists both sides of a rename, so code moved into an allowed path
+            # still counts; -z keeps paths with spaces whole.
+            out = git(root, "diff", "--name-only", "--no-renames", "-z", commit, "HEAD")
+            changed = [p for p in out.split("\0") if p]
         except GitError:
             changed = None
             problems.append(f"reviewed_commit {commit[:12]} is not in this repository")

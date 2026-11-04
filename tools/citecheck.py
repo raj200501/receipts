@@ -6,7 +6,8 @@ it opened each reference. This tool never touches the network. It requires:
 1. every entry has a key, title, authors, year, url, final_url, page_title,
    retrieval date, a 64-hex content hash, and status ``verified`` or ``dropped``;
 2. every external URL in each document matches the ``url`` or ``final_url`` of a
-   ``verified`` entry (links to this repository are not references); and
+   ``verified`` entry (links to this repository, including its ``.git`` clone
+   URL, are not references); and
 3. no document cites a ``dropped`` reference.
 
 A document byte-identical to docs/BUILD_BRIEF.md is exempt; its reading list
@@ -27,7 +28,7 @@ from gitutil import repo_root
 
 CITECHECK = "artifacts/citecheck.json"
 BRIEF = "docs/BUILD_BRIEF.md"
-SELF_URL = re.compile(r"^https?://(?:www\.)?github\.com/raj200501/receipts(?:[/#?].*)?$")
+SELF_URL = re.compile(r"^https?://(?:www\.)?github\.com/raj200501/receipts(?:\.git)?(?:[/#?].*)?$")
 URL = re.compile(r"https?://[^\s)>\]\"'`]+")
 REQUIRED = ("key", "title", "authors", "year", "url", "final_url", "page_title", "retrieved")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")

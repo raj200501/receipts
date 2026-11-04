@@ -4,7 +4,11 @@
 lowered and never raised, and ``cash_usd`` is always 0. ``CAP_SHARE`` (set
 when two projects share one plan) scales every ``claude_*`` cap down. Every
 model call is logged to ``artifacts/usage/ledger.jsonl``; this module counts
-that ledger against the caps.
+that ledger against the caps: cash, the daily Claude caps, the turns of each
+multi-turn Claude run (``num_turns``), and the size of each local model (read
+from its pinned name, such as ``qwen2.5-coder-7b-instruct-q4km``).
+``disk_floor_gb`` governs downloads, which are not model calls, so the ledger
+cannot show it.
 """
 
 from __future__ import annotations
@@ -39,6 +43,26 @@ KIND_TO_DAILY_CAP: Mapping[str, str] = {
     "single_call": "claude_single_calls_per_day",
     "review_run": "claude_review_runs_per_day",
 }
+# Claude kinds that are multi-turn headless runs, held to claude_agent_max_turns.
+MULTI_TURN_KINDS: frozenset[str] = frozenset({"agent_run", "review_run"})
+# A parameter count in billions in a model name: "7b" in qwen2.5-coder-7b, "1.5b", "8B",
+# and "8x7b" (8 experts of 7B each, the GGUF size-label form). "a3b" in qwen3-30b-a3b
+# and "e4b" in gemma-3n-e4b are active or effective sizes, smaller than the total; the
+# marker is a token of its own or glued to a size ("21BA3B"). Other scales are not
+# read: "128k" and "1m" are usually context lengths and "3T" training tokens.
+_MODEL_SIZE = re.compile(
+    r"""
+    (?: (?P<marker> (?: (?<![a-z0-9]) | (?<=\db) ) [ae] ) | (?<![\d.]) )
+    (?: (?P<experts>\d+) [x\N{MULTIPLICATION SIGN}] )?
+    (?P<count>\d+(?:\.\d+)?) b
+    (?! (?![ae]\d) [a-z0-9] )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+# An expert count as a token of its own: "16E" in Llama-4-Scout-17B-16E, where the
+# size beside it (17B) is the active size.
+_EXPERT_COUNT = re.compile(r"(?i)(?<![a-z0-9.])(?:[2-9]|[1-9]\d+)e(?![a-z0-9])")
+_HEX64 = re.compile(r"[0-9a-f]{64}")
 
 
 class BudgetError(ValueError):
@@ -152,6 +176,14 @@ def parse_brief_defaults(brief_text: str) -> Caps:
     return Caps.from_mapping(tomllib.loads(match.group(1)))
 
 
+def recorded_digest(text: str) -> str:
+    """Return the SHA-256 at the start of a ``sha256sum``-style line, else raise BudgetError."""
+    token = text.split()[0] if text.split() else ""
+    if not _HEX64.fullmatch(token):
+        raise BudgetError("expected a line that starts with a 64-character lowercase SHA-256")
+    return token
+
+
 def check_against_defaults(caps: Caps, defaults: Caps) -> list[str]:
     """Return a violation for ``cash_usd != 0`` and for every cap looser than the brief."""
     problems: list[str] = []
@@ -198,6 +230,8 @@ class UsageRecord:
     cap_share: float
     cash_usd: float
     cache_hit: bool
+    model: str = ""
+    num_turns: int | None = None
 
     @classmethod
     def from_json(cls, data: Mapping[str, object]) -> UsageRecord:
@@ -209,13 +243,21 @@ class UsageRecord:
             cache_hit = data.get("cache_hit", False)
         except KeyError as exc:
             raise BudgetError(f"usage record missing {exc}") from exc
+        model = data.get("model", "")
+        turns = data.get("num_turns")
         if not isinstance(cap_share, int | float) or not isinstance(cash, int | float):
             raise BudgetError("usage record cap_share and cash_usd must be numbers")
         if not isinstance(cache_hit, bool):
             raise BudgetError("usage record cache_hit must be a boolean")
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
             raise BudgetError(f"usage record day must be YYYY-MM-DD, got {day!r}")
-        return cls(day, backend, kind, float(cap_share), float(cash), cache_hit)
+        if not isinstance(model, str):
+            raise BudgetError("usage record model must be a string")
+        if turns is not None and (isinstance(turns, bool) or not isinstance(turns, int)):
+            raise BudgetError("usage record num_turns must be an integer")
+        if turns is not None and turns < 0:
+            raise BudgetError("usage record num_turns must be non-negative")
+        return cls(day, backend, kind, float(cap_share), float(cash), cache_hit, model, turns)
 
 
 def read_usage(path: Path) -> list[UsageRecord]:
@@ -236,13 +278,82 @@ def read_usage(path: Path) -> list[UsageRecord]:
     return records
 
 
-def check_usage(records: Iterable[UsageRecord], caps: Caps) -> list[str]:
-    """Return a violation for any cash spend and any day that exceeded a Claude cap.
+def model_params_b(name: str) -> float | None:
+    """Return the total parameter count in billions named in a model name, or None.
 
-    Cache hits make no model call and do not count. The cap for a day uses the
-    smallest CAP_SHARE recorded that day, so a shared-plan day is held to the
-    stricter limit.
+    A mixture-of-experts name is judged by its total, never by an expert or
+    active size. ``NxMb`` (N experts of M billion) reads as N times M, an upper
+    bound because experts share some layers, and the largest reading wins:
+    ``mixtral-8x7b`` reads as 56 and ``qwen3-30b-a3b`` as 30. An active or
+    effective size is not a total, so a name with only that, such as
+    ``qwen1.5-moe-a2.7b``, returns None and the caller fails closed. So does a
+    name with an expert count of its own, such as ``llama-4-scout-17b-16e``,
+    unless it also marks an active size: its plain size is the active one.
     """
+    sizes = list(_MODEL_SIZE.finditer(name))
+    has_active = any(m.group("marker") for m in sizes)
+    plain_is_total = has_active or _EXPERT_COUNT.search(name) is None
+    totals = [
+        float(m.group("experts") or 1) * float(m.group("count"))
+        for m in sizes
+        if m.group("marker") is None and (m.group("experts") or plain_is_total)
+    ]
+    return max(totals) if totals else None
+
+
+def _multi_turn_runs(records: Iterable[UsageRecord]) -> list[UsageRecord]:
+    return [
+        r
+        for r in records
+        if r.backend == "claude" and not r.cache_hit and r.kind in MULTI_TURN_KINDS
+    ]
+
+
+def runs_without_turns(records: Iterable[UsageRecord]) -> int:
+    """Count multi-turn Claude runs whose record has no ``num_turns`` (turns unverified)."""
+    return sum(1 for r in _multi_turn_runs(records) if r.num_turns is None)
+
+
+def _check_turns(records: Iterable[UsageRecord], caps: Caps) -> list[str]:
+    """No multi-turn Claude run recorded more turns than its effective cap."""
+    over: dict[tuple[str, str, int], list[int]] = {}
+    for record in _multi_turn_runs(records):
+        limit = caps.effective(record.cap_share).claude_agent_max_turns
+        if record.num_turns is not None and record.num_turns > limit:
+            over.setdefault((record.day, record.kind, limit), []).append(record.num_turns)
+    return [
+        f"{day}: {len(turns)} {kind} run(s) took more than claude_agent_max_turns = {limit} "
+        f"turns (max {max(turns)})"
+        for (day, kind, limit), turns in sorted(over.items())
+    ]
+
+
+def _check_local_models(records: Iterable[UsageRecord], caps: Caps) -> list[str]:
+    """Every local call names a model within ``local_model_max_params_b``."""
+    calls = Counter(r.model for r in records if r.backend == "local" and not r.cache_hit)
+    problems: list[str] = []
+    for model, count in sorted(calls.items()):
+        size = model_params_b(model)
+        if size is None:
+            problems.append(
+                f"local model {model!r} has no total parameter count in its name ({count} call(s))"
+            )
+        elif size > caps.local_model_max_params_b:
+            problems.append(
+                f"local model {model!r} ({size:g}B) is above local_model_max_params_b = "
+                f"{caps.local_model_max_params_b:g} in {count} call(s)"
+            )
+    return problems
+
+
+def check_usage(records: Iterable[UsageRecord], caps: Caps) -> list[str]:
+    """Return a violation for any cash spend and any call or day that exceeded a cap.
+
+    Cache hits make no model call and do not count. The daily cap for a day uses
+    the smallest CAP_SHARE recorded that day, so a shared-plan day is held to the
+    stricter limit; the turn cap of a run uses the share recorded with it.
+    """
+    records = list(records)
     problems: list[str] = []
     counts: Counter[tuple[str, str]] = Counter()
     shares: dict[str, float] = {}
@@ -261,6 +372,8 @@ def check_usage(records: Iterable[UsageRecord], caps: Caps) -> list[str]:
         limit = caps.effective(shares[day]).as_dict()[cap_key]
         if count > limit:
             problems.append(f"{day}: {count} {kind} calls exceed {cap_key} = {limit:g}")
+    problems += _check_turns(records, caps)
+    problems += _check_local_models(records, caps)
     return problems
 
 

@@ -8,12 +8,24 @@ commit that contains its LOCK entry.
 ``verify`` checks that:
 
 1. the chain is intact and every entry's file exists with its locked hash;
-2. no frozen file changed in any commit after its freeze commit;
-3. every amendment (a file with an ``Amends:`` line) cites a frozen original;
-4. every confirmatory artifact (a JSON file under ``artifacts/`` with
+2. the chain is append-only across history: every committed version of
+   ``LOCK.json`` (oldest first) is an exact prefix of the next version and of the
+   working tree's, so no frozen entry is ever dropped, reordered, or rewritten;
+3. no frozen file changed in any commit after its freeze commit;
+4. every amendment (a file with an ``Amends:`` line) cites a frozen original;
+5. every confirmatory artifact (a JSON file under ``artifacts/`` with
    ``"confirmatory": true``) names a frozen ``prereg`` with the matching
    ``prereg_sha256``, and its first commit is a strict descendant of that
-   preregistration's freeze commit, so the preregistration predates the data.
+   preregistration's freeze commit, so the preregistration predates the data;
+6. the raw data behind a confirmatory artifact of experiment ``eN`` (one under
+   ``artifacts/eN/`` or ``artifacts/studies/eN/``) come after that freeze too:
+   every other file under ``artifacts/eN/`` and ``artifacts/studies/eN/runs/`` is
+   committed, and its first commit (following renames into those directories) is
+   a strict descendant of the freeze commit. Study plans and pilot runs live
+   outside these directories and may predate the freeze.
+
+A shallow clone hides the history these checks read, so ``verify`` refuses one.
+The history checks assume the linear history this project keeps.
 
 ``verify --json`` also reports counts, which ship_check uses to refuse a vacuous
 pass when no confirmatory artifact exists yet.
@@ -44,7 +56,9 @@ from gitutil import (
 LOCK = "prereg/LOCK.json"
 PREREG_NAME = re.compile(r"^prereg/\d{4}-[a-z0-9][a-z0-9-]*\.md$")
 AMENDS = re.compile(r"^Amends:\s*(prereg/\S+\.md)\s*$", re.MULTILINE)
+EXPERIMENT = re.compile(r"^artifacts/(?:studies/)?(e\d+)/")
 GENESIS = "0" * 64
+EXAMPLES = 5
 
 
 @dataclass(frozen=True)
@@ -58,9 +72,23 @@ class LockEntry:
     frozen_at: str
 
 
+@dataclass(frozen=True)
+class LockVersion:
+    """``prereg/LOCK.json`` as committed in one commit (no entries if it was deleted)."""
+
+    commit: str
+    entries: tuple[LockEntry, ...]
+
+
 def entry_hash(prev: str, file: str, digest: str) -> str:
     """Return the chain hash for one entry."""
     return sha256_text(f"{prev}\n{file}\n{digest}")
+
+
+def parse_lock(text: str) -> list[LockEntry]:
+    """Parse the text of a ``LOCK.json``; raises ValueError, KeyError, or TypeError."""
+    data = json.loads(text)
+    return [LockEntry(**item) for item in data["entries"]]
 
 
 def load_lock(root: Path) -> list[LockEntry]:
@@ -68,8 +96,7 @@ def load_lock(root: Path) -> list[LockEntry]:
     path = root / LOCK
     if not path.is_file():
         return []
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return [LockEntry(**item) for item in data["entries"]]
+    return parse_lock(path.read_text(encoding="utf-8"))
 
 
 def write_lock(root: Path, entries: Sequence[LockEntry]) -> None:
@@ -92,6 +119,17 @@ def freeze(root: Path, rel: str, today: str) -> LockEntry:
     return entry
 
 
+def experiment_of(rel: str) -> str | None:
+    """Return the experiment id (for example ``e1``) of an artifact path, or None."""
+    match = EXPERIMENT.match(rel)
+    return match.group(1) if match else None
+
+
+def data_roots(experiment: str) -> tuple[str, str]:
+    """The directories whose files are an experiment's confirmatory data."""
+    return (f"artifacts/{experiment}/", f"artifacts/studies/{experiment}/runs/")
+
+
 @dataclass
 class VerifyResult:
     """Outcome of ``verify``."""
@@ -100,6 +138,7 @@ class VerifyResult:
     frozen: int = 0
     drafts: list[str] = field(default_factory=list)
     confirmatory_artifacts: list[str] = field(default_factory=list)
+    confirmatory_data: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -107,20 +146,78 @@ class VerifyResult:
         return not self.problems
 
 
-def _freeze_commit(root: Path, rel: str) -> str | None:
-    """Return the first commit whose LOCK.json lists ``rel``."""
-    shas = git(root, "log", "--format=%H", "--reverse", "--", LOCK).split()
+def _has_commits(root: Path) -> bool:
+    try:
+        git(root, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+    except GitError:
+        return False
+    return True
+
+
+def lock_history(root: Path, result: VerifyResult) -> list[LockVersion]:
+    """Return every committed version of ``LOCK.json``, oldest first.
+
+    A commit that deleted the file is a version with no entries. A version that
+    does not parse is reported as a problem and left out.
+    """
+    if not _has_commits(root):
+        return []
+    shas = git(root, "log", "--format=%H", "--reverse", "--topo-order", "--", LOCK).split()
+    versions: list[LockVersion] = []
     for sha in shas:
         try:
-            content = git(root, "show", f"{sha}:{LOCK}")
+            text = git(root, "show", f"{sha}:{LOCK}")
         except GitError:
+            versions.append(LockVersion(sha, ()))
             continue
-        if any(item.get("file") == rel for item in json.loads(content).get("entries", [])):
-            return sha
+        try:
+            versions.append(LockVersion(sha, tuple(parse_lock(text))))
+        except (KeyError, TypeError, ValueError) as exc:
+            result.problems.append(f"{LOCK} at commit {sha[:12]} is unreadable: {exc}")
+    return versions
+
+
+def _dropped(old: Sequence[LockEntry], new: Sequence[LockEntry]) -> list[str]:
+    """Return the files of ``old`` entries that ``new`` does not keep in place."""
+    for index, entry in enumerate(old):
+        if index >= len(new) or new[index] != entry:
+            return [e.file for e in old[index:]]
+    return []
+
+
+def _check_history(
+    history: Sequence[LockVersion], current: Sequence[LockEntry], result: VerifyResult
+) -> None:
+    previous: Sequence[LockEntry] = ()
+    for version in history:
+        dropped = _dropped(previous, version.entries)
+        if dropped:
+            result.problems.append(
+                f"{LOCK} at commit {version.commit[:12]} drops or rewrites frozen entries: "
+                + ", ".join(dropped)
+            )
+        previous = version.entries
+    dropped = _dropped(previous, current)
+    if dropped:
+        result.problems.append(
+            f"{LOCK} in the working tree drops or rewrites frozen entries: " + ", ".join(dropped)
+        )
+
+
+def _freeze_commit(history: Sequence[LockVersion], rel: str) -> str | None:
+    """Return the first commit whose LOCK.json lists ``rel``."""
+    for version in history:
+        if any(e.file == rel for e in version.entries):
+            return version.commit
     return None
 
 
-def _check_chain(root: Path, entries: Sequence[LockEntry], result: VerifyResult) -> None:
+def _check_chain(
+    root: Path,
+    entries: Sequence[LockEntry],
+    history: Sequence[LockVersion],
+    result: VerifyResult,
+) -> None:
     prev = GENESIS
     for entry in entries:
         if entry.prev != prev or entry.entry_hash != entry_hash(prev, entry.file, entry.sha256):
@@ -132,7 +229,7 @@ def _check_chain(root: Path, entries: Sequence[LockEntry], result: VerifyResult)
             continue
         if sha256_file(path) != entry.sha256:
             result.problems.append(f"{entry.file} changed after it was frozen")
-        freeze_sha = _freeze_commit(root, entry.file)
+        freeze_sha = _freeze_commit(history, entry.file)
         if freeze_sha is None:
             result.problems.append(f"{entry.file} is in LOCK.json but the lock is not committed")
             continue
@@ -171,8 +268,126 @@ def _iter_json_artifacts(root: Path) -> list[tuple[str, Any]]:
     return items
 
 
-def _check_artifacts(root: Path, entries: Sequence[LockEntry], result: VerifyResult) -> None:
+def _repo_files(root: Path, pathspecs: Sequence[str]) -> list[str]:
+    """Tracked files plus untracked files that are not ignored, present on disk."""
+    out = git(
+        root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", *pathspecs
+    )
+    return sorted({p for p in out.split("\0") if p and (root / p).is_file()})
+
+
+def _add_commits(root: Path, pathspecs: Sequence[str]) -> dict[str, list[str]]:
+    """Map each path under ``pathspecs`` to every commit that added it there.
+
+    Renames count as additions here (``--no-renames``); ``_rename_targets`` tells
+    which additions were renames, so their history can be followed.
+    """
+    if not _has_commits(root):
+        return {}
+    out = git(
+        root,
+        "log",
+        "--no-renames",
+        "--diff-filter=A",
+        "--name-only",
+        "-z",
+        "--format=%x01%H",
+        "--",
+        *pathspecs,
+    )
+    adds: dict[str, list[str]] = {}
+    for record in out.split("\x01"):
+        sha, _, names = record.partition("\0")
+        for name in names.split("\0"):
+            path = name.lstrip("\n")
+            if sha and path:
+                adds.setdefault(path, []).append(sha)
+    return adds
+
+
+def _rename_targets(root: Path, commit: str) -> set[str]:
+    """Return the paths that ``commit`` created by renaming another path."""
+    try:
+        out = git(
+            root,
+            "-c",
+            "diff.renameLimit=0",
+            "diff",
+            "--find-renames",
+            "--name-status",
+            "-z",
+            "--diff-filter=R",
+            f"{commit}^1",
+            commit,
+        )
+    except GitError:  # a root commit has no parent to rename from
+        return set()
+    # With --diff-filter=R every record is three fields: status, source, destination.
+    tokens = out.split("\0")
+    return {tokens[i + 2] for i in range(0, len(tokens) - 2, 3) if tokens[i].startswith("R")}
+
+
+def _listing(paths: Sequence[str]) -> str:
+    shown = ", ".join(paths[:EXAMPLES])
+    return shown + (f" and {len(paths) - EXAMPLES} more" if len(paths) > EXAMPLES else "")
+
+
+def _check_data(
+    root: Path,
+    experiment: str,
+    cited: str,
+    freeze_sha: str,
+    skip: set[str],
+    result: VerifyResult,
+) -> None:
+    """Require every raw data file of ``experiment`` to be first committed after the freeze."""
+    roots = data_roots(experiment)
+    files = [p for p in _repo_files(root, roots) if p not in skip]
+    adds = _add_commits(root, roots)
+    renamed: dict[str, set[str]] = {}
+    after: dict[str, bool] = {}
+    uncommitted: list[str] = []
+    early: list[str] = []
+    for path in files:
+        origins = list(adds.get(path, []))
+        if not origins:
+            uncommitted.append(path)
+            continue
+        for sha in list(origins):
+            if sha not in renamed:
+                renamed[sha] = _rename_targets(root, sha)
+            if path in renamed[sha]:
+                followed = first_commit(root, path)
+                if followed is not None:
+                    origins.append(followed)
+                break
+        for sha in origins:
+            if sha not in after:
+                after[sha] = is_strict_ancestor(root, freeze_sha, sha)
+        if not all(after[sha] for sha in origins):
+            early.append(path)
+        if path not in result.confirmatory_data:
+            result.confirmatory_data.append(path)
+    if uncommitted:
+        result.problems.append(
+            f"{len(uncommitted)} confirmatory data file(s) of {experiment} are not committed, "
+            f"so their timing cannot be verified: {_listing(uncommitted)}"
+        )
+    if early:
+        result.problems.append(
+            f"{len(early)} confirmatory data file(s) of {experiment} were first committed at or "
+            f"before {cited} was frozen: {_listing(early)}"
+        )
+
+
+def _check_artifacts(
+    root: Path,
+    entries: Sequence[LockEntry],
+    history: Sequence[LockVersion],
+    result: VerifyResult,
+) -> None:
     locked = {e.file: e for e in entries}
+    bounds: dict[str, set[tuple[str, str]]] = {}
     for rel, data in _iter_json_artifacts(root):
         if not (isinstance(data, dict) and data.get("confirmatory") is True):
             continue
@@ -184,11 +399,19 @@ def _check_artifacts(root: Path, entries: Sequence[LockEntry], result: VerifyRes
         if data.get("prereg_sha256") != locked[cited].sha256:
             result.problems.append(f"{rel} prereg_sha256 does not match {cited}")
         artifact_first = first_commit(root, rel)
-        freeze_sha = _freeze_commit(root, cited)
+        freeze_sha = _freeze_commit(history, cited)
         if artifact_first is None:
             result.problems.append(f"{rel} is not committed, so its timing cannot be verified")
         elif freeze_sha is None or not is_strict_ancestor(root, freeze_sha, artifact_first):
             result.problems.append(f"{rel} first commit does not come after {cited} was frozen")
+        experiment = experiment_of(rel)
+        if experiment is not None and freeze_sha is not None:
+            bounds.setdefault(experiment, set()).add((cited, freeze_sha))
+    skip = set(result.confirmatory_artifacts)
+    for experiment in sorted(bounds):
+        for cited, freeze_sha in sorted(bounds[experiment]):
+            _check_data(root, experiment, cited, freeze_sha, skip, result)
+    result.confirmatory_data.sort()
 
 
 def verify(root: Path) -> VerifyResult:
@@ -196,13 +419,21 @@ def verify(root: Path) -> VerifyResult:
     result = VerifyResult()
     try:
         entries = load_lock(root)
-    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+    except (OSError, KeyError, TypeError, ValueError) as exc:
         result.problems.append(f"{LOCK} is unreadable: {exc}")
         return result
     result.frozen = len(entries)
-    _check_chain(root, entries, result)
+    if git(root, "rev-parse", "--is-shallow-repository").strip() == "true":
+        result.problems.append(
+            "this is a shallow clone, so the preregistration history cannot be verified "
+            "(run git fetch --unshallow)"
+        )
+        return result
+    history = lock_history(root, result)
+    _check_history(history, entries, result)
+    _check_chain(root, entries, history, result)
     _check_amendments(root, {e.file for e in entries}, result)
-    _check_artifacts(root, entries, result)
+    _check_artifacts(root, entries, history, result)
     return result
 
 

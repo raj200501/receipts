@@ -120,7 +120,8 @@ def row(**over: object) -> dict[str, object]:
 
 def test_usage_within_caps(tmp_path: Path) -> None:
     path = tmp_path / "ledger.jsonl"
-    write_ledger(path, [row() for _ in range(30)] + [row(backend="local") for _ in range(5)])
+    local = row(backend="local", kind="local_call", model="qwen2.5-coder-7b-instruct-q4km")
+    write_ledger(path, [row() for _ in range(30)] + [local for _ in range(5)])
     records = budget.read_usage(path)
     assert budget.check_usage(records, caps()) == []
     assert budget.total_cash(records) == 0
@@ -183,3 +184,109 @@ def test_repo_launch_settings() -> None:
     effective = budget.load_caps(ROOT / "budget.toml").effective(0.2)
     assert effective.claude_review_runs_per_day == 1
     assert effective.claude_agent_runs_per_day == 6
+
+
+# ---------------------------------------------------------------- turns and model size (H42)
+# The ledgers below are small synthetic files under tmp_path, not real usage.
+
+
+def test_turn_cap_is_checked_per_claude_run(tmp_path: Path) -> None:
+    """A Claude run above its effective max-turns cap is a violation (H42)."""
+    path = tmp_path / "ledger.jsonl"
+    rows = [row(cap_share=0.2, num_turns=100) for _ in range(2)]
+    rows += [row(cap_share=0.2, num_turns=8), row(kind="review_run", num_turns=41)]
+    rows += [row(kind="agent_run"), row(kind="single_call"), row(cache_hit=True, num_turns=99)]
+    write_ledger(path, rows)
+    records = budget.read_usage(path)
+    assert budget.check_usage(records, caps()) == [
+        "2026-10-23: 2 agent_run run(s) took more than claude_agent_max_turns = 8 turns (max 100)",
+        "2026-10-23: 1 review_run run(s) took more than claude_agent_max_turns = 40 turns (max 41)",
+    ]
+    assert budget.runs_without_turns(records) == 1
+
+
+def test_local_model_size_is_checked(tmp_path: Path) -> None:
+    """Local calls must name a model whose size is within local_model_max_params_b."""
+    path = tmp_path / "ledger.jsonl"
+    local = {"backend": "local", "kind": "local_call"}
+    rows = [row(**local, model="qwen2.5-coder-7b-instruct-q4km") for _ in range(3)]
+    rows += [row(**local, model="qwen2.5-coder-1.5b-instruct-q4km")]
+    rows += [row(**local, model="llama-3.1-70b-instruct-q4km") for _ in range(2)]
+    rows += [row(**local, model="mystery-model"), row(**local, model="x-9b", cache_hit=True)]
+    write_ledger(path, rows)
+    problems = budget.check_usage(budget.read_usage(path), caps())
+    assert problems == [
+        "local model 'llama-3.1-70b-instruct-q4km' (70B) is above local_model_max_params_b = 8 "
+        "in 2 call(s)",
+        "local model 'mystery-model' has no total parameter count in its name (1 call(s))",
+    ]
+    assert budget.model_params_b("granite-3.3-8b-instruct-q4km") == 8
+    assert budget.model_params_b("qwen2.5-coder-1.5b-instruct-q4km") == 1.5
+    # 8x7b reads as 56 (an upper bound on the total); the largest reading wins.
+    assert budget.model_params_b("mixtral-8x7b-moe-47b") == 56
+
+
+def test_mixture_of_experts_names_are_read_by_their_total(tmp_path: Path) -> None:
+    """Review of H42: a mixture-of-experts name is judged by its total, never an expert size.
+
+    NxMb is N experts of M billion, so it reads as N times M. An active or effective
+    size (-a3b, e4b) is not a total, so a name with only that fails closed. The
+    ledger is a small synthetic file under tmp_path, not real usage. Before the
+    fix, 'mixtral-8x7b-v0.1' read as 7 and passed the 8B cap.
+    """
+    path = tmp_path / "ledger.jsonl"
+    local = {"backend": "local", "kind": "local_call"}
+    models = ("mixtral-8x7b-v0.1", "qwen1.5-moe-a2.7b-chat-q4km", "m:2x4b", "qwen3-30b-a3b")
+    write_ledger(path, [row(**local, model=m) for m in models])
+    assert budget.check_usage(budget.read_usage(path), caps()) == [
+        "local model 'mixtral-8x7b-v0.1' (56B) is above local_model_max_params_b = 8 in 1 call(s)",
+        "local model 'qwen1.5-moe-a2.7b-chat-q4km' has no total parameter count in its name "
+        "(1 call(s))",
+        "local model 'qwen3-30b-a3b' (30B) is above local_model_max_params_b = 8 in 1 call(s)",
+    ]
+    readings = {
+        "mixtral:8x7b": 56.0,
+        "mixtral-8x22b-instruct": 176.0,
+        "Mixtral-8X7B-v0.1-Q4_K_M.gguf": 56.0,
+        "moe-4\N{MULTIPLICATION SIGN}0.5b": 2.0,
+        "SmallThinker-21BA3B-Instruct": 21.0,
+        "Kimi-VL-A3B-Instruct": None,
+        "gemma-3n-e4b-it": None,
+        "big-1t-a3b": None,
+        # An expert count of its own (16E) makes the size beside it the active size.
+        "Llama-4-Scout-17B-16E-Instruct": None,
+        "moe-30b-a3b-128e": 30.0,
+        "tuned-7b-lr2e-5": 7.0,
+        # Not active sizes: a letter glued before the digits, training tokens (4e1t, 3T).
+        "openllama3b": 3.0,
+        "stablelm-3b-4e1t": 3.0,
+        "TinyLlama-1.1B-intermediate-step-1431k-3T": 1.1,
+        # Bits (4bit), context lengths (128k, 1m), and millions are not sizes.
+        "llama-3-8b-4bit": 8.0,
+        "glm-4-9b-chat-1m": 9.0,
+        "phi-3-mini-128k-instruct": None,
+        "smollm2-135m-instruct": None,
+    }
+    assert {name: budget.model_params_b(name) for name in readings} == readings
+
+
+def test_usage_record_rejects_bad_turns_and_model(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.jsonl"
+    for broken in (row(num_turns="3"), row(num_turns=True), row(num_turns=-1), row(model=3)):
+        write_ledger(bad, [broken])
+        with pytest.raises(budget.BudgetError):
+            budget.read_usage(bad)
+
+
+def test_repo_ledger_respects_caps() -> None:
+    """The real usage ledger in this checkout passes every ledger check."""
+    records = budget.read_usage(ROOT / "artifacts" / "usage" / "ledger.jsonl")
+    assert budget.check_usage(records, budget.load_caps(ROOT / "budget.toml")) == []
+
+
+def test_recorded_digest() -> None:
+    digest = "68dc9a82046277d5cf1d4d2aeff00577f85ff1e4c107077b51bae745e45ce531"
+    assert budget.recorded_digest(f"{digest}  BUILD_BRIEF.md\n") == digest
+    for text in ("", "not-a-digest  BUILD_BRIEF.md\n", digest.upper()):
+        with pytest.raises(budget.BudgetError):
+            budget.recorded_digest(text)

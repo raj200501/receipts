@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import bz2
+import gzip
+import hashlib
+import io
 import json
+import lzma
 import shutil
+import tarfile
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -39,12 +46,94 @@ def test_scan_text_rules_and_env_values() -> None:
     assert all(FAKE_GH not in r for r in rendered)
 
 
-def test_scan_files_skips_binary_and_missing(git_repo: Path, commit: Commit) -> None:
+def test_scan_files_fails_closed_on_unknown_binary(git_repo: Path, commit: Commit) -> None:
+    """H33: a binary file of unknown type is a finding, never a silent skip (synthetic)."""
     (git_repo / "a.txt").write_text(f"{FAKE_AWS}\n")
-    (git_repo / "b.bin").write_bytes(b"\0" + FAKE_AWS.encode())
+    (git_repo / "b.bin").write_bytes(b"\0\1\2\3" * 64 + FAKE_AWS.encode())
     commit(git_repo, "files")
     findings, scanned = secrets_scan.scan_files(git_repo, ["a.txt", "b.bin", "gone.txt"], {})
-    assert scanned == 1 and [f.rule for f in findings] == ["aws-access-key-id"]
+    assert scanned == 1
+    assert [str(f) for f in findings] == [
+        "a.txt:1: aws-access-key-id",
+        "b.bin:0: unscannable: binary file of unknown type",
+    ]
+
+
+# Built at runtime so this file never contains a secret-shaped literal.
+FAKE_ANT = "sk-" + "ant-api03-" + "A" * 30
+
+
+def test_scan_reads_large_utf16_utf32_and_compressed_files(tmp_path: Path) -> None:
+    """H33: large, UTF-16, UTF-32, gzip, bzip2, xz, zip, and tar files are all read (synthetic)."""
+    secret = f"key {FAKE_ANT}\n"
+    big = "".join(f'{{"run": {i}, "out": "{"x" * 80}"}}\n' for i in range(60_000)) + secret
+    assert len(big) > 5_000_000
+    (tmp_path / "runs.jsonl").write_text(big)
+    (tmp_path / "u16.txt").write_bytes(("line one\n" + secret).encode("utf-16"))
+    (tmp_path / "u16le.txt").write_bytes(("line one\n" + secret).encode("utf-16-le"))
+    (tmp_path / "u32.txt").write_bytes(("line one\n" + secret).encode("utf-32"))
+    (tmp_path / "t.jsonl.gz").write_bytes(gzip.compress(("{}\n" + secret).encode()))
+    (tmp_path / "t.txt.bz2").write_bytes(bz2.compress(secret.encode()))
+    (tmp_path / "t.txt.xz").write_bytes(lzma.compress(secret.encode()))
+    with zipfile.ZipFile(tmp_path / "a.zip", "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("inner/ok.txt", "nothing\n")
+        archive.writestr("inner/notes.txt", secret)
+    with tarfile.open(tmp_path / "b.tar.gz", "w:gz") as tar:
+        data = secret.encode()
+        info = tarfile.TarInfo("run/transcript.txt")
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+    names = sorted(p.name for p in tmp_path.iterdir())
+    report = secrets_scan.scan_report(tmp_path, names, {})
+    # The key-shaped string also matches the OpenAI-style rule; compare the Anthropic hits.
+    assert sorted(str(f) for f in report.findings if f.rule == "anthropic-key") == [
+        "a.zip!inner/notes.txt:1: anthropic-key",
+        "b.tar.gz!run/transcript.txt:1: anthropic-key",
+        "runs.jsonl:60001: anthropic-key",
+        "t.jsonl.gz:2: anthropic-key",
+        "t.txt.bz2:1: anthropic-key",
+        "t.txt.xz:1: anthropic-key",
+        "u16.txt:2: anthropic-key",
+        "u16le.txt:2: anthropic-key",
+        "u32.txt:2: anthropic-key",
+    ]
+    assert report.scanned == len(names)
+
+
+def test_scan_raw_types_unsupported_archives_and_bombs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Known binary types are read raw and listed; what cannot be read is a finding."""
+    png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR" + b"\0" * 32
+    (tmp_path / "plot.png").write_bytes(png)
+    (tmp_path / "leak.png").write_bytes(png + b"tEXt" + FAKE_ANT.encode())
+    (tmp_path / "x.zst").write_bytes(b"\x28\xb5\x2f\xfd" + b"\0" * 16)
+    (tmp_path / "bomb.gz").write_bytes(gzip.compress(b"a" * 5000))
+    (tmp_path / "menu.txt").write_text("x" * 256 + "mustard and more text\n")
+    monkeypatch.setattr(secrets_scan, "MAX_EXPANDED", 1000)
+    names = ["bomb.gz", "leak.png", "menu.txt", "plot.png", "x.zst"]
+    report = secrets_scan.scan_report(tmp_path, names, {})
+    assert [str(f) for f in report.findings if f.rule != "openai-style-key"] == [
+        "bomb.gz:0: unscannable: content expands past 1000 bytes",
+        "leak.png:3: anthropic-key",
+        "x.zst:0: unscannable: zstd archive",
+    ]
+    assert report.raw_only == ["leak.png", "plot.png"]
+
+
+def test_env_values_that_cannot_be_secrets_are_ignored() -> None:
+    """H50: git config key names and file paths in secret-named variables are not secrets."""
+    env = {
+        "GIT_CONFIG_KEY_0": "credential.interactive",
+        "GIT_CONFIG_KEY_1": "url.https://github.com/.insteadOf",
+        "CLAUDE_SESSION_INGRESS_TOKEN_FILE": "/home/claude/.session/ingress-token",
+        "GOOGLE_APPLICATION_CREDENTIALS": "/etc/gcloud/application-creds.json",
+        "MY_API_KEY": "my-long-env-secret-value-123",
+        "SERVICE_KEYS": "my-other-long-secret-value-456",
+    }
+    assert set(secrets_scan.env_secret_values(env)) == {"MY_API_KEY", "SERVICE_KEYS"}
+    line = "git -c credential.interactive=never fetch; see url.https://github.com/.insteadOf\n"
+    assert secrets_scan.scan_text("sandbox_git.sh", line, secrets_scan.env_secret_values(env)) == []
 
 
 def test_secrets_scan_main(
@@ -63,14 +152,41 @@ def test_secrets_scan_main(
     assert "SECRETS-SCAN: FAIL" in capsys.readouterr().out
 
 
+def test_secrets_scan_main_lists_raw_files_and_reads_links(
+    git_repo: Path,
+    commit: Commit,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Nothing is skipped silently, and the summary line keeps its format (synthetic repo)."""
+    monkeypatch.setattr(secrets_scan.os, "environ", {})
+    (git_repo / "plot.png").write_bytes(b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR")
+    (git_repo / "notes.txt").write_text("plain\n")
+    (git_repo / "link").symlink_to("notes.txt")
+    commit(git_repo, "files")
+    assert secrets_scan.main(["--root", str(git_repo)]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out == [
+        "read as raw bytes only (1): plot.png",
+        "SECRETS-SCAN: CLEAN (3 tracked text files)",
+    ]
+    (git_repo / "link").unlink()
+    (git_repo / "link").symlink_to(FAKE_ANT)
+    commit(git_repo, "a link whose target is key-shaped")
+    assert secrets_scan.main(["--root", str(git_repo)]) == 1
+    assert "link:1: anthropic-key" in capsys.readouterr().out
+
+
 def copy_budget_inputs(root: Path) -> None:
     (root / "docs").mkdir(exist_ok=True)
-    shutil.copy(ROOT / "docs" / "BUILD_BRIEF.md", root / "docs" / "BUILD_BRIEF.md")
+    for name in ("BUILD_BRIEF.md", "BUILD_BRIEF.sha256"):
+        shutil.copy(ROOT / "docs" / name, root / "docs" / name)
     shutil.copy(ROOT / "budget.toml", root / "budget.toml")
 
 
-def test_budget_report(git_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_budget_report(git_repo: Path, commit: Commit, capsys: pytest.CaptureFixture[str]) -> None:
     copy_budget_inputs(git_repo)
+    commit(git_repo, "bootstrap copy of the brief, its hash, and the caps")
     assert budget_report.main(["--root", str(git_repo)]) == 0
     out = capsys.readouterr().out
     assert "cash_usd = 0\n" in out and "BUDGET: OK" in out
@@ -82,6 +198,40 @@ def test_budget_report(git_repo: Path, capsys: pytest.CaptureFixture[str]) -> No
     assert "exceed claude_review_runs_per_day" in capsys.readouterr().out
     (git_repo / "budget.toml").write_text("cash_usd = 1\n")
     assert budget_report.main(["--root", str(git_repo)]) == 1
+
+
+def test_budget_report_anchors_the_brief(
+    git_repo: Path, commit: Commit, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """H43: raising a cap in both the brief and budget.toml fails (synthetic repo)."""
+    copy_budget_inputs(git_repo)
+    commit(git_repo, "bootstrap")
+    assert budget_report.main(["--root", str(git_repo)]) == 0
+    capsys.readouterr()
+    brief = git_repo / "docs" / "BUILD_BRIEF.md"
+    raised = "claude_agent_runs_per_day = 300"
+    brief.write_text(brief.read_text().replace("claude_agent_runs_per_day = 30 ", raised + " "))
+    toml = git_repo / "budget.toml"
+    toml.write_text(toml.read_text().replace("claude_agent_runs_per_day = 30", raised))
+    commit(git_repo, "raise a cap in both places")
+    assert budget_report.main(["--root", str(git_repo)]) == 1
+    out = capsys.readouterr().out
+    assert "violation: docs/BUILD_BRIEF.md does not match docs/BUILD_BRIEF.sha256" in out
+    digest = hashlib.sha256(brief.read_bytes()).hexdigest()
+    (git_repo / "docs" / "BUILD_BRIEF.sha256").write_text(f"{digest}  BUILD_BRIEF.md\n")
+    commit(git_repo, "rewrite the recorded hash too")
+    assert budget_report.main(["--root", str(git_repo)]) == 1
+    out = capsys.readouterr().out
+    assert "violation: docs/BUILD_BRIEF.sha256 changed after its first commit" in out
+    assert "does not match" not in out
+
+
+def test_budget_report_needs_a_committed_hash(
+    git_repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    copy_budget_inputs(git_repo)
+    assert budget_report.main(["--root", str(git_repo)]) == 1
+    assert "docs/BUILD_BRIEF.sha256 is not committed" in capsys.readouterr().out
 
 
 def review_doc(sha: str, **over: object) -> dict[str, object]:
@@ -129,6 +279,28 @@ def test_review_validate(git_repo: Path, commit: Commit) -> None:
     assert any(
         "SHIP or BLOCK" in p for p in review.validate(git_repo, review_doc(sha, verdict="?"))
     )
+
+
+def test_review_sees_code_moved_into_an_allowed_path(git_repo: Path, commit: Commit) -> None:
+    """H49: a rename into artifacts/review/ still counts as a code change (synthetic repo)."""
+    (git_repo / "docs").mkdir()
+    (git_repo / "docs" / "REVIEW_LOG.md").write_text("- N1: noted\n")
+    (git_repo / "src").mkdir()
+    (git_repo / "src" / "checkers.py").write_text("def check():\n    return True\n" * 20)
+    sha = commit(git_repo, "reviewed code")
+    (git_repo / "artifacts" / "review").mkdir(parents=True)
+    (git_repo / "src" / "checkers.py").rename(git_repo / "artifacts" / "review" / "old_checkers.py")
+    write_review(git_repo, review_doc(sha))
+    commit(git_repo, "move the code into the review directory")
+    problems = review.validate(git_repo, review_doc(sha))
+    assert problems == [f"code changed since the reviewed commit {sha[:12]}: src/checkers.py"], (
+        problems
+    )
+    (git_repo / "STATUS.md").write_text("status\n")
+    sha = commit(git_repo, "status only")
+    (git_repo / "artifacts" / "review" / "a file with spaces.json").write_text("{}\n")
+    commit(git_repo, "review notes")
+    assert review.validate(git_repo, review_doc(sha)) == []
 
 
 def test_review_main(

@@ -1,22 +1,53 @@
 """``make budget``: show that cash spend is 0 and every cap is respected (gate G14).
 
-Checks, in order: ``budget.toml`` parses; no cap is looser than the brief's
-defaults (docs/BUILD_BRIEF.md section 8); ``cash_usd`` is 0 in the config and in
-the usage ledger; and no day in ``artifacts/usage/ledger.jsonl`` exceeded a
-Claude cap after CAP_SHARE scaling.
+Checks, in order: ``budget.toml`` parses; docs/BUILD_BRIEF.md matches the SHA-256
+in docs/BUILD_BRIEF.sha256, and that record still holds the digest it had when it
+was first committed (so the caps cannot be raised by editing the brief and its
+hash together); no cap is looser than the brief's defaults (section 8);
+``cash_usd`` is 0 in the config and in the usage ledger; no day in
+``artifacts/usage/ledger.jsonl`` exceeded a Claude cap after CAP_SHARE scaling;
+no multi-turn Claude run recorded more turns than its cap; and every local model
+is within ``local_model_max_params_b``. A line before the verdict names what the
+ledger cannot show: ``disk_floor_gb`` governs downloads, and a Claude run whose
+record has no ``num_turns`` has unverified turns.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import sys
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
 
-from gitutil import repo_root
+from gitutil import GitError, first_commit, git, repo_root
 from receipts import budget
+
+BRIEF = "docs/BUILD_BRIEF.md"
+BRIEF_HASH = "docs/BUILD_BRIEF.sha256"
+
+
+def brief_problems(root: Path) -> list[str]:
+    """Return a violation unless the brief matches its recorded hash as first committed."""
+    recorded = budget.recorded_digest((root / BRIEF_HASH).read_text(encoding="utf-8"))
+    actual = hashlib.sha256((root / BRIEF).read_bytes()).hexdigest()
+    problems: list[str] = []
+    if actual != recorded:
+        problems.append(
+            f"{BRIEF} does not match {BRIEF_HASH} (sha256 {actual[:12]}, recorded {recorded[:12]})"
+        )
+    try:
+        added = first_commit(root, BRIEF_HASH)
+        original = git(root, "show", f"{added}:{BRIEF_HASH}") if added else None
+    except GitError:
+        added, original = None, None
+    if original is None:
+        problems.append(f"{BRIEF_HASH} is not committed, so the brief has no anchor")
+    elif budget.recorded_digest(original) != recorded:
+        problems.append(f"{BRIEF_HASH} changed after its first commit ({str(added)[:12]})")
+    return problems
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -28,9 +59,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     problems: list[str] = []
     try:
         caps = budget.load_caps(root / "budget.toml")
-        defaults = budget.parse_brief_defaults(
-            (root / "docs" / "BUILD_BRIEF.md").read_text(encoding="utf-8")
-        )
+        problems.extend(brief_problems(root))
+        defaults = budget.parse_brief_defaults((root / BRIEF).read_text(encoding="utf-8"))
         records = budget.read_usage(root / "artifacts" / "usage" / "ledger.jsonl")
     except (OSError, budget.BudgetError) as exc:
         print(f"BUDGET: FAIL {exc}")
@@ -57,6 +87,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(
         f"usage: {len(records)} logged calls over {len(days)} day(s); Claude calls by kind: "
         + (", ".join(f"{k}={v}" for k, v in sorted(kinds.items())) or "none")
+    )
+    models = Counter(r.model for r in records if r.backend == "local" and not r.cache_hit)
+    sizes = {m: budget.model_params_b(m) for m in models}
+    print(
+        "local models: "
+        + (
+            ", ".join(
+                f"{m} ({'?' if sizes[m] is None else f'{sizes[m]:g}'}B, {n} calls)"
+                for m, n in sorted(models.items())
+            )
+            or "none"
+        )
+    )
+    unverified = budget.runs_without_turns(records)
+    print(
+        "not shown by the ledger: disk_floor_gb (it governs downloads; make doctor checks free "
+        f"disk); turns of {unverified} Claude run(s) whose record has no num_turns"
     )
     for problem in problems:
         print(f"violation: {problem}")
