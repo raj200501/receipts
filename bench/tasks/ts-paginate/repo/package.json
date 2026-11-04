@@ -1,0 +1,15 @@
+{
+  "name": "pager",
+  "version": "1.4.0",
+  "description": "Pagination helpers for list endpoints: page numbers, query parsing, and link headers.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "main": "src/index.ts",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test --test-reporter=spec --test-concurrency=1 test/*.test.ts"
+  }
+}

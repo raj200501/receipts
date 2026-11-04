@@ -1,0 +1,15 @@
+{
+  "name": "todo-cli",
+  "version": "0.6.0",
+  "description": "A small command-line todo list kept in a JSON file.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test --test-reporter=spec --test-concurrency=1 test/*.test.ts",
+    "todo": "node --experimental-strip-types bin/todo.ts"
+  }
+}

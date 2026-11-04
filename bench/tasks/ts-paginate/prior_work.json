@@ -1,0 +1,97 @@
+{
+  "synthetic": true,
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository).",
+  "episodes": [
+    {
+      "request": "A client asked why per_page=5000 gives them 100 rows instead of an error. Is that on purpose? Please just look, don't change anything.",
+      "steps": [
+        {
+          "thought": "Start with the README to see what it promises about page sizes.",
+          "tool": "read",
+          "args": {
+            "path": "README.md"
+          },
+          "output": "# pager\n\nPagination helpers for list endpoints. Hand-written example project for receipts-bench\n(synthetic). Everything is exported from `src/index.ts`.\n\n## Page numbers\n\n    import { paginate, parsePageParams, pageLinks, linkHeader } from \"./src/index.ts\";\n\n    const { page, perPage } = parsePageParams({ page: \"2\", per_page: \"10\" });\n    const result = paginate(rows, { page, perPage });\n    const links = pageLinks(\"/orders\", result);\n    const header = linkHeader(\"/orders\", result);\n\n`paginate(items, { page, perPage })` returns `{ items, page, perPage, total, totalPages,\nhasNext, hasPrev }`. The page defaults to 1. A page past the end is empty, not an error,\nand an empty list has one empty page. A `page` that is not a whole number of at least 1\nthrows a `RangeError`.\n\n`parsePageParams(query)` reads the `page` and `per_page` strings of a query. Missing\nvalues mean page 1 and the default size. Other parameters are ignored. A value that is not\na positive whole number throws a `PageParamsError`, which the API turns into a 400.\n\n`pageLinks(basePath, result)` gives `first`, `prev`, `next`, and `last` as\n`/orders?page=2&per_page=10`; `prev` and `next` are `null` at the ends. `linkHeader`\nformats the same links as an HTTP `Link` header.\n\n## Page sizes\n\nThe default page size is 20 and the largest is 100. A larger size is cut down to 100,\nand a size that is not a whole number of at least 1 throws a `RangeError`\n(`resolveSize` in `src/limits.ts`).\n\n## Development\n\n    npm test\n\nThere are no dependencies: the code is TypeScript run directly by Node 22 with\n`--experimental-strip-types`, and the tests use `node:test`.\n"
+        },
+        {
+          "thought": "The size rules live in the limits module.",
+          "tool": "read",
+          "args": {
+            "path": "src/limits.ts"
+          },
+          "output": "/** The page size rules shared by every kind of list request. */\n\n/** Items per page when the caller does not say. */\nexport const DEFAULT_PER_PAGE = 20;\n\n/** The most items one page may hold; larger requests are cut down to this. */\nexport const MAX_PER_PAGE = 100;\n\n/**\n * The page size to use for a requested size.\n *\n * No size means the default. A size that is not a whole number of at least 1 is a\n * programming error and throws a RangeError. A larger size than the limit is not an\n * error: it is cut down to `MAX_PER_PAGE`.\n */\nexport function resolveSize(value: number | undefined): number {\n  if (value === undefined) {\n    return DEFAULT_PER_PAGE;\n  }\n  if (!Number.isInteger(value) || value < 1) {\n    throw new RangeError(`page size must be a whole number of at least 1, got ${value}`);\n  }\n  return Math.min(value, MAX_PER_PAGE);\n}\n"
+        },
+        {
+          "thought": "Check how the query parser applies the limit.",
+          "tool": "read",
+          "args": {
+            "path": "src/params.ts"
+          },
+          "output": "/** Reading pagination parameters from a request's query string. */\n\nimport { PageParamsError } from \"./errors.ts\";\nimport { DEFAULT_PER_PAGE, MAX_PER_PAGE } from \"./limits.ts\";\nimport type { PageParams, Query } from \"./types.ts\";\n\nfunction positiveInteger(name: string, text: string): number {\n  if (!/^\\d+$/.test(text) || Number(text) < 1) {\n    throw new PageParamsError(`${name} must be a whole number of at least 1, got \"${text}\"`);\n  }\n  return Number(text);\n}\n\n/**\n * Read `page` and `per_page` from a query.\n *\n * Missing values mean page 1 and the default size; a `per_page` above the limit is cut\n * down to it. Other parameters are ignored. A value that is not a positive whole number\n * throws a PageParamsError.\n */\nexport function parsePageParams(query: Query): PageParams {\n  const page = query.page === undefined ? 1 : positiveInteger(\"page\", query.page);\n  const perPage =\n    query.per_page === undefined\n      ? DEFAULT_PER_PAGE\n      : Math.min(positiveInteger(\"per_page\", query.per_page), MAX_PER_PAGE);\n  return { page, perPage };\n}\n"
+        },
+        {
+          "thought": "Find every place that uses the maximum.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n MAX_PER_PAGE src/limits.ts src/params.ts src/offset.ts src/index.ts"
+          },
+          "output": "src/limits.ts:7:export const MAX_PER_PAGE = 100;\nsrc/limits.ts:14: * error: it is cut down to `MAX_PER_PAGE`.\nsrc/limits.ts:23:  return Math.min(value, MAX_PER_PAGE);\nsrc/params.ts:4:import { DEFAULT_PER_PAGE, MAX_PER_PAGE } from \"./limits.ts\";\nsrc/params.ts:26:      : Math.min(positiveInteger(\"per_page\", query.per_page), MAX_PER_PAGE);\nsrc/index.ts:4:export { DEFAULT_PER_PAGE, MAX_PER_PAGE, resolveSize } from \"./limits.ts\";\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "Both the library and the parser cut the size down.",
+        "report": "Yes, it is on purpose, and the README says so: the default page size is 20 and the largest is 100, and a larger size is cut down to 100 rather than rejected. src/limits.ts defines DEFAULT_PER_PAGE (20) and MAX_PER_PAGE (100); resolveSize returns Math.min(value, MAX_PER_PAGE), and it only throws a RangeError for a size that is not a whole number of at least 1. parsePageParams in src/params.ts does the same for the per_page query value: positiveInteger rejects anything that is not a positive whole number with a PageParamsError, and the result is cut down with Math.min(..., MAX_PER_PAGE). So per_page=5000 gives 100 rows, and per_page=0 or per_page=abc is an error."
+      }
+    },
+    {
+      "request": "How does the Link header get built? Which links can be missing?",
+      "steps": [
+        {
+          "thought": "The header is built in the links module.",
+          "tool": "read",
+          "args": {
+            "path": "src/links.ts"
+          },
+          "output": "/** Links between pages, for a Link header or a JSON response body. */\n\nimport type { OffsetPage, PageLinks } from \"./types.ts\";\n\nfunction href(basePath: string, page: number, perPage: number): string {\n  const separator = basePath.includes(\"?\") ? \"&\" : \"?\";\n  return `${basePath}${separator}page=${page}&per_page=${perPage}`;\n}\n\n/** The links of a page: first, previous, next, and last. */\nexport function pageLinks(basePath: string, result: OffsetPage<unknown>): PageLinks {\n  const { page, perPage, totalPages } = result;\n  return {\n    first: href(basePath, 1, perPage),\n    prev: result.hasPrev ? href(basePath, page - 1, perPage) : null,\n    next: result.hasNext ? href(basePath, page + 1, perPage) : null,\n    last: href(basePath, totalPages, perPage),\n  };\n}\n\n/** The same links as the value of an HTTP Link header. */\nexport function linkHeader(basePath: string, result: OffsetPage<unknown>): string {\n  const links = pageLinks(basePath, result);\n  const parts: string[] = [];\n  for (const rel of [\"first\", \"prev\", \"next\", \"last\"] as const) {\n    const target = links[rel];\n    if (target !== null) {\n      parts.push(`<${target}>; rel=\"${rel}\"`);\n    }\n  }\n  return parts.join(\", \");\n}\n"
+        },
+        {
+          "thought": "Check what the page object provides.",
+          "tool": "read",
+          "args": {
+            "path": "src/offset.ts"
+          },
+          "output": "/** Page-number pagination. */\n\nimport { resolveSize } from \"./limits.ts\";\nimport type { OffsetOptions, OffsetPage } from \"./types.ts\";\n\n/** Cut one page out of a list. Pages past the end are empty, not an error. */\nexport function paginate<T>(items: readonly T[], options: OffsetOptions = {}): OffsetPage<T> {\n  const page = options.page ?? 1;\n  if (!Number.isInteger(page) || page < 1) {\n    throw new RangeError(`page must be a whole number of at least 1, got ${page}`);\n  }\n  const perPage = resolveSize(options.perPage);\n  const total = items.length;\n  const totalPages = Math.max(1, Math.ceil(total / perPage));\n  const start = (page - 1) * perPage;\n  return {\n    items: items.slice(start, start + perPage),\n    page,\n    perPage,\n    total,\n    totalPages,\n    hasNext: page < totalPages,\n    hasPrev: page > 1,\n  };\n}\n"
+        },
+        {
+          "thought": "Look at the types of the result.",
+          "tool": "read",
+          "args": {
+            "path": "src/types.ts"
+          },
+          "output": "/** Shared types for the pagination helpers. */\n\n/** Query parameters as a web framework hands them over: every value is a string. */\nexport type Query = Readonly<Record<string, string | undefined>>;\n\n/** Options of `paginate`. */\nexport interface OffsetOptions {\n  /** 1-based page number; 1 by default. */\n  page?: number;\n  /** Items per page; see `resolveSize` for the default and the limit. */\n  perPage?: number;\n}\n\n/** One page of a list, as `paginate` returns it. */\nexport interface OffsetPage<T> {\n  items: T[];\n  page: number;\n  perPage: number;\n  /** Number of items in the whole list. */\n  total: number;\n  /** Number of pages; an empty list has one (empty) page. */\n  totalPages: number;\n  hasNext: boolean;\n  hasPrev: boolean;\n}\n\n/** The page request that `parsePageParams` reads from a query. */\nexport interface PageParams {\n  page: number;\n  perPage: number;\n}\n\n/** Links to related pages; `prev` and `next` are null at the ends. */\nexport interface PageLinks {\n  first: string;\n  prev: string | null;\n  next: string | null;\n  last: string;\n}\n"
+        }
+      ],
+      "finish": {
+        "thought": "linkHeader formats pageLinks and skips null links.",
+        "report": "linkHeader in src/links.ts calls pageLinks and joins the links that are not null as `<URL>; rel=\"NAME\"`, separated by commas, in the order first, prev, next, last. pageLinks builds each URL from the base path, page, and per_page (using `&` instead of `?` when the base path already has a query). The result of paginate in src/offset.ts supplies hasPrev, hasNext, page, perPage, and totalPages. prev is missing on the first page (hasPrev is false) and next is missing on the last page (hasNext is false); first and last are always there, and an empty list has one page, so its last link points to page 1."
+      }
+    },
+    {
+      "request": "How many tests do the limits, offset, links, and index test files have?",
+      "steps": [
+        {
+          "thought": "Every test is a top-level test() call, so counting lines that start with it is enough.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -c \"^test(\" test/limits.test.ts test/offset.test.ts test/links.test.ts test/index.test.ts"
+          },
+          "output": "test/limits.test.ts:4\ntest/offset.test.ts:8\ntest/links.test.ts:4\ntest/index.test.ts:2\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "Add up the counts.",
+        "report": "18 tests in total: 4 in test/limits.test.ts, 8 in test/offset.test.ts, 4 in test/links.test.ts, and 2 in test/index.test.ts. Every test is a top-level test() call, so counting the lines that start with it gives the number of tests."
+      }
+    }
+  ]
+}
