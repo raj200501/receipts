@@ -72,14 +72,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("model", choices=sorted(LOCAL_MODELS))
     parser.add_argument("--slots", type=int, default=3)
     parser.add_argument("--nonce", required=True)
+    parser.add_argument("--include-llama-cpp-python", action="store_true")
     args = parser.parse_args(argv)
     model = LOCAL_MODELS[args.model]
     threads = os.cpu_count() or 4
     results = []
     engines: tuple[tuple[Engine, int, bool], ...] = (
-        ("llama-cpp-python", 1, False),
+        ("llama.cpp", args.slots, False),
         ("llama.cpp", args.slots, True),
     )
+    if args.include_llama_cpp_python:
+        engines = (("llama-cpp-python", 1, False), *engines)
     for engine, parallel, concurrent in engines:
         server = LocalServer(
             model,
@@ -92,14 +95,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         client = ModelClient(
             ROOT, {"local": LocalOpenAIBackend(server.base_url)}, ROOT / "runs" / "cache"
         )
-        with server:
-            tag = f"{args.nonce} {engine}"
+        tag = f"{args.nonce} {engine} {'concurrent' if concurrent else 'sequential'}"
+        try:
+            with server:
+                results.append(
+                    {
+                        "engine": engine,
+                        "parallel_slots": parallel,
+                        **batch(client, model.name, tag, args.slots, concurrent),
+                        "server": server.provenance(),
+                    }
+                )
+        except Exception as exc:  # a crashing engine is a result, recorded as such
             results.append(
                 {
                     "engine": engine,
                     "parallel_slots": parallel,
-                    **batch(client, model.name, tag, args.slots, concurrent),
-                    "server": server.provenance(),
+                    "concurrent": concurrent,
+                    "failed": f"{type(exc).__name__}: {exc}",
                 }
             )
     sha = subprocess.run(
@@ -119,7 +132,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     path = ROOT / "artifacts" / "env" / f"engine_benchmark_{model.name}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps([{k: r[k] for k in ("engine", "batch_wall_s")} for r in results]))
+    print(
+        json.dumps(
+            [
+                {k: r.get(k) for k in ("engine", "concurrent", "batch_wall_s", "failed")}
+                for r in results
+            ]
+        )
+    )
     return 0
 
 
