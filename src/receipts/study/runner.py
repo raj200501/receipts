@@ -243,6 +243,7 @@ def execute_run(
     git_sha: str,
     on_finish: Callable[[str], str | None] | None = None,
     keep_workspace: bool = False,
+    server_provenance: Mapping[str, Any] | None = None,
 ) -> RunRecord:
     """Execute one run and bank its artifacts under ``artifacts_dir / spec.run_id``."""
     check_conditions(spec.conditions)
@@ -301,6 +302,7 @@ def execute_run(
         "prompt_sha256": sha256_text(prompt),
         "environment": {"platform": platform.platform(), "python": platform.python_version()},
         "sandbox_backend": sandbox.backend,
+        "model_server": dict(server_provenance or {}),
     }
     record = RunRecord(
         run_id=spec.run_id,

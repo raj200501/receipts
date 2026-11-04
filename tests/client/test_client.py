@@ -309,3 +309,26 @@ def test_pinned_models_registry() -> None:
 
 def test_wrapper_module_exports() -> None:
     assert wrapper.ClientRefusedError is ClientRefusedError
+
+
+def test_llama_cpp_engine_command_and_lifecycle(tmp_path: Path) -> None:
+    fake = tmp_path / "llama-server"
+    fake.write_text(FAKE_SERVER)
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    gguf = tmp_path / "m.gguf"
+    gguf.write_bytes(b"weights")
+    model = server.LocalModel("m", "fam", gguf, server.file_sha256(gguf), "test", n_ctx=4096)
+    cmd = server.llama_server_command(model, 1234, 4, 3, fake)
+    assert cmd[cmd.index("--ctx-size") + 1] == "12288" and cmd[cmd.index("--parallel") + 1] == "3"
+    srv = server.LocalServer(
+        model,
+        port=free_port(),
+        engine="llama.cpp",
+        parallel=2,
+        llama_server=fake,
+        log_path=tmp_path / "log.txt",
+    )
+    with srv:
+        assert server.server_ready(srv.base_url)
+    prov = srv.provenance()
+    assert prov["engine"] == "llama.cpp" and prov["parallel_slots"] == 2

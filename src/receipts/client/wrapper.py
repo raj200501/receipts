@@ -21,6 +21,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -157,6 +158,7 @@ class ModelClient:
         self.env = dict(os.environ if env is None else env)
         self.clock = clock
         self.usage_path = root / "artifacts" / "usage" / "ledger.jsonl"
+        self._lock = threading.Lock()
         self._guard_check = guard_check or (lambda: guard.billing_guard_problems(repo=root))
 
     def caps(self) -> budget.Caps:
@@ -274,7 +276,7 @@ class ModelClient:
             "cache_key": request.cache_key(),
         }
         self.usage_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.usage_path.open("a", encoding="utf-8") as handle:
+        with self._lock, self.usage_path.open("a", encoding="utf-8") as handle:
             handle.write(canonical_json(record) + "\n")
 
 

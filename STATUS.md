@@ -3,7 +3,7 @@ STATE: ACTIVE
 
 # Status
 
-Updated 2026-10-23, goal_turn 1. History is in docs/LOG.md.
+Updated 2026-11-04, goal_turn 2 (resumed after Raj's pause; /goal cleared, work continues). History is in docs/LOG.md.
 
 ## Gates
 
@@ -28,19 +28,25 @@ Updated 2026-10-23, goal_turn 1. History is in docs/LOG.md.
 
 ## Now
 
-goal_turn 1, M1 in progress. A parallel workflow builds `receipts.ledger` parsers and
-recorder, `receipts.verify`, `receipts.claims`, `receipts.sandbox`, `receipts.analysis`,
-and the receipts-bench framework, each with one owner (D21), plus citation checks.
-Main session built: launch settings (D19, D20), `receipts.client` (the one model-call
-wrapper), minimal-agent core, doctor upgrades, `tools/provision.sh`, pinned local models.
+goal_turn 2. Integrated the interrupted ledger agent's work (221 tests, 100% coverage).
+Built the study runner, plans (2^(5-1) resolution V design, identical work across arms),
+aggregation into the G5, G6, and G7 artifact formats, E4 mitigation arms, receipts-hook
+install mode (`--ledger-dir`), the generic wrapper, the `receipts` CLI, docs/HOOK.md, the
+E0 protocol, the claim-type taxonomy, the real offline demo program, and draft
+preregistrations for E1 and E4. Two build workflows (claims and analysis; sandbox and the
+bench framework) and a multi-lens review of the gate harness are running.
+
+Pushes wait until `make ci` passes on a fresh clone (`tools/prepush.sh`, D27, D28); the
+offline demo needs recorded pilot runs first, so commits are local for now.
 
 ## Next three actions
 
-1. Integrate the workflow output: full `make lint typecheck test`, fix seams, commit.
-2. Build the offline demo from recorded fixtures with a golden output (G4), then
-   receipts-hook and the claude-code driver against docs/notes/claude_code_docs.md.
-3. Launch the task-authoring workflow over docs/BENCH_CATALOG.md (G6), then smoke runs
-   with the local models.
+1. Integrate claims, analysis, sandbox, and bench; fix every confirmed gate-harness finding.
+2. Launch the task-authoring workflows over docs/BENCH_CATALOG.md (G6) and run the pilot on
+   the `pilot-*` tasks; record two pilot runs as demo fixtures, write the golden output,
+   get `make ci` green, push.
+3. Smoke runs on every task (G6), claim-type counts, then E0 seeded reports (G5) and the
+   frozen preregistrations (G11) before any E1 run.
 
 ## Environment (`make doctor`, 2026-10-23)
 
@@ -56,6 +62,8 @@ wrapper), minimal-agent core, doctor upgrades, `tools/provision.sh`, pinned loca
   `CLAUDE_CODE_USE_CCR_V2` (D4)
 - Usable backends: local=yes (llama-cpp-python), claude=no, free_tier=no
 - `tools/provision.sh` recreates this environment in a fresh container
+- 2026-11-04: the container survived the pause (models, venvs, bubblewrap intact); the
+  Docker daemon was restarted and `docker run --network none` works again
 
 ## Usage to date
 
