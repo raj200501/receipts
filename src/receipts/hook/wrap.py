@@ -31,7 +31,11 @@ from receipts.ledger.snapshot import take_snapshot
 from receipts.sandbox.api import Sandbox
 from receipts.verify import Label, RunVerification, verify_run
 
-MARK = {Label.SUPPORTED: "ok", Label.CONTRADICTED: "CONTRADICTED", Label.UNVERIFIABLE: "unverifiable"}
+MARK = {
+    Label.SUPPORTED: "ok",
+    Label.CONTRADICTED: "CONTRADICTED",
+    Label.UNVERIFIABLE: "unverifiable",
+}
 
 
 def _git(workspace: Path, *args: str) -> str:
@@ -134,8 +138,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     workspace = args.workspace.resolve()
     ledger = args.ledger or workspace.parent / f".receipts-{workspace.name}.jsonl"
-    result = wrap(command, workspace, args.test_cmd, ledger, make_sandbox(workspace, SandboxPolicy()),
-                  report_file=args.report_file)
+    result = wrap(
+        command,
+        workspace,
+        args.test_cmd,
+        ledger,
+        make_sandbox(workspace, SandboxPolicy()),
+        report_file=args.report_file,
+    )
     sys.stdout.write(result.report)
     sys.stdout.write(result.annotation)
     return result.exit_code

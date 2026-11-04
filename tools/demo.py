@@ -28,7 +28,6 @@ MARK = {"supported": "SUPPORTED   ", "contradicted": "CONTRADICTED", "unverifiab
 def render_run(run_dir: Path) -> str:
     """The demo text for one recorded run."""
     from receipts.claims.extract import extract_claims
-
     from receipts.ledger.events import Ledger
     from receipts.verify import verify_run
 
