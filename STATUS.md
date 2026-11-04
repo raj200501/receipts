@@ -43,6 +43,10 @@ checkout instead of its temp directory and committed the whole working tree as
 as Raj, and a local pre-commit hook (.git/hooks, not tracked) now refuses any commit in
 this checkout not authored as Raj (D26).
 
+Pushed 2026-11-04 after `tools/prepush.sh` printed `PREPUSH: PASS make ci on fresh clone of
+623cc70` (D27, D28): the branch on origin is at 623cc70. Every later push repeats that check.
+The offline demo replays the banked pipeline-check run; pilot runs with reports will join it.
+
 ## Next three actions
 
 1. Integrate claims, analysis, sandbox, and bench; fix every confirmed gate-harness finding.
