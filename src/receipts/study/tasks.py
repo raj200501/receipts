@@ -25,6 +25,7 @@ def run_task_from_spec(spec: TaskSpec) -> RunTask:
         requirements=spec.requirement_texts(),
         command_timeout_s=float(spec.timeout_s),
         flaky_tools=spec.flaky_minimal_agent_tools,
+        memory_mb=spec.memory_mb,
     )
 
 

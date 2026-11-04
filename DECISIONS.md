@@ -236,3 +236,15 @@ that reports failures ("39 passed, 3 failed") no longer makes a report a success
 Recorded limitation: generic test-run claims ("ran the integration tests") match any test
 run because qualifiers are not interpreted; the extractor drops negated subset claims for
 that reason.
+
+**D32. The workspace is a git repository whose first commit is the task's starting
+state, and per-task limits come from the task.** `prepare_workspace` copies the task
+repository, applies the M1 and M2 overlays the run's cell selects, and commits the result
+with a fixed identity before the agent's first turn. The final diff, the ledger's file
+events, and hidden checks may rely on that commit as the baseline (a hidden check may run
+`git diff` against it, for example). Sandbox limits are per task: the per-command timeout
+is the task's `timeout_s`, and the address-space limit is the language's value in
+`receipts.bench.spec.MEMORY_MB` (Node's WebAssembly-based TypeScript loader needs about
+12 GB of address space, so TypeScript tasks get 16 GB of RLIMIT_AS; this limits address
+space, not resident memory). Found while integrating the bench framework, before any study
+run touched a TypeScript task.

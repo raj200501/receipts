@@ -133,6 +133,42 @@ def test_node_spec_reporter() -> None:
     ]
 
 
+def test_node_spec_suite_result_lines_are_not_tests() -> None:
+    """Node 22 ends each suite with a result line (\u2714/\u2716 title (ms)) at the suite's
+    indentation; it must close the suite, not count as one more test."""
+    run = parse_node_test(fixture("node/spec_nested_suites.txt"))
+    assert _counts(run) == (4, 3, 0, 0, 7)
+    assert run is not None
+    assert run["failing"] == [
+        "outer suite > fails",
+        "outer suite > inner suite > inner fails",
+        "top level fails",
+    ]
+    assert run.get("cases") == [
+        {"name": "outer suite > passes", "outcome": "passed"},
+        {"name": "outer suite > fails", "outcome": "failed"},
+        {"name": "outer suite > inner suite > inner passes", "outcome": "passed"},
+        {"name": "outer suite > inner suite > inner fails", "outcome": "failed"},
+        {"name": "all good > ok", "outcome": "passed"},
+        {"name": "top level fails", "outcome": "failed"},
+        {"name": "top level passes", "outcome": "passed"},
+    ]
+
+
+def test_node_spec_test_named_like_its_suite() -> None:
+    text = (
+        "\u25b6 dup\n  \u2714 dup (0.3ms)\n\u2714 dup (0.6ms)\n\u2714 dup (0.1ms)\n"
+        "\N{INFORMATION SOURCE} tests 2\n\N{INFORMATION SOURCE} pass 2\n"
+        "\N{INFORMATION SOURCE} fail 0\n"
+    )
+    run = parse_node_test(text)
+    assert run is not None
+    assert run.get("cases") == [
+        {"name": "dup > dup", "outcome": "passed"},
+        {"name": "dup", "outcome": "passed"},
+    ]
+
+
 def test_node_spec_ansi_and_npm_todo() -> None:
     ansi = parse_node_test(fixture("node/spec_ansi.txt"))
     assert _counts(ansi) == (1, 1, 0, 0, 2)

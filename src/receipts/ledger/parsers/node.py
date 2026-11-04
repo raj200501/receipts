@@ -107,6 +107,20 @@ class _Tree:
         self.close(indent)
         return SEPARATOR.join([t for _, t in self._stack] + [title])
 
+    def ends_suite(self, indent: int, title: str) -> bool:
+        """Whether ``title`` at ``indent`` is the result line of the suite open there.
+
+        Node 22's spec reporter ends a suite (or a test with subtests) with a result
+        line at the suite's own indentation: ``\u2714 title (ms)`` or ``\u2716 title
+        (ms)``. When it does, the suite is forgotten and True is returned.
+        """
+        while self._stack and self._stack[-1][0] > indent:
+            self._stack.pop()
+        if self._stack and self._stack[-1] == (indent, title):
+            self._stack.pop()
+            return True
+        return False
+
 
 def _summary(lines: Sequence[str], pattern: re.Pattern[str]) -> dict[str, float] | None:
     """Add up ``key value`` summary lines (node TAP or spec); None without tests and pass."""
@@ -194,6 +208,8 @@ def _parse_spec(lines: Sequence[str]) -> ParsedTestRun | None:
                 tree.open(depth, name)
             else:
                 tree.close(depth)
+            continue
+        if title.group("ms") is not None and tree.ends_suite(depth, name):
             continue
         outcome: Outcome
         if glyph == "\ufe63" or title.group("directive") is not None:

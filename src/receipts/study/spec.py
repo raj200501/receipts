@@ -30,6 +30,8 @@ class RunTask:
         requirements: Requirement id to text (helps the verifier map claims).
         command_timeout_s: Per-command limit in the sandbox.
         flaky_tools: M5 flaky level: the minimal-agent tools that may fail.
+        memory_mb: Address-space limit per sandbox command (TypeScript needs more,
+            because V8 reserves address space for WebAssembly).
     """
 
     task_id: str
@@ -45,6 +47,7 @@ class RunTask:
     requirements: Mapping[str, str] = field(default_factory=dict)
     command_timeout_s: float = 300.0
     flaky_tools: frozenset[str] = frozenset({"bash", "run_tests"})
+    memory_mb: int = 4096
 
 
 @dataclass(frozen=True)

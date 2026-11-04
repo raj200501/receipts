@@ -5,6 +5,10 @@ output format of the named tool and version. None of them was captured from a
 real run, and none of the numbers in them is a measured result. They exist only
 to test the parsers in `src/receipts/ledger/parsers/`.
 
+One file is copied from real tool output instead: `node/spec_nested_suites.txt` is
+Node v22's spec reporter run on a toy test file written for the fixture (stack frames
+removed). It is not a model run and holds no measured result.
+
 Where the file format allows it, the first line or a comment says so again
 (`[hand-written fixture ...]`). Parsers must ignore that line, the same way they
 ignore any other log text around a recognized summary. The one exception is

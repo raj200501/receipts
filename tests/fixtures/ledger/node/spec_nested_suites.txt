@@ -1,0 +1,56 @@
+[fixture copied from node v22 --test spec reporter output on a toy test file written for it, stack frames removed; not a model run]
+▶ outer suite
+  ✔ passes (0.667121ms)
+  ✖ fails (1.062978ms)
+  ▶ inner suite
+    ✔ inner passes (0.349532ms)
+    ✖ inner fails (0.109088ms)
+  ✖ inner suite (1.941998ms)
+✖ outer suite (4.712067ms)
+▶ all good
+  ✔ ok (0.124386ms)
+✔ all good (0.222823ms)
+✖ top level fails (15.226954ms)
+✔ top level passes (0.230796ms)
+ℹ tests 7
+ℹ suites 3
+ℹ pass 4
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 106.338965
+
+✖ failing tests:
+
+test at a.test.mjs:5:3
+✖ fails (1.062978ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  1 !== 2
+  
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 2,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at a.test.mjs:8:5
+✖ inner fails (0.109088ms)
+  Error: boom
+
+test at a.test.mjs:14:1
+✖ top level fails (15.226954ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(false)
+  
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

@@ -84,7 +84,9 @@ def one_run(
 ) -> bool:
     """Execute one run; on an infrastructure failure, log it and return False."""
     task = load_run_task(ROOT / "bench" / "tasks" / spec.task_id)
-    policy = with_toolchain(SandboxPolicy(timeout_s=task.command_timeout_s), toolchain())
+    policy = with_toolchain(
+        SandboxPolicy(timeout_s=task.command_timeout_s, memory_mb=task.memory_mb), toolchain()
+    )
     started = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     print(f"{started} start {spec.run_id} ({spec.config_id})", flush=True)
     try:
