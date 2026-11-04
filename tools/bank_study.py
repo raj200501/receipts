@@ -2,6 +2,7 @@
 
     python tools/bank_study.py smoke   # smoke_runs.json (G6) and claim_type_counts.json (G5)
     python tools/bank_study.py e1      # artifacts/e1/runs.jsonl
+    python tools/bank_study.py pilot   # artifacts/studies/pilot/summary.json (planning)
 
 Reads only banked ``artifacts/studies/<study>/runs/*/run.json`` files and writes the
 derived artifacts with provenance (git SHA, the command, the time, and the SHA-256 of the
@@ -48,7 +49,7 @@ def write_json(path: Path, data: object) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     """Derive the gate artifacts for one study."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("study", choices=("smoke", "e1"))
+    parser.add_argument("study", choices=("smoke", "e1", "pilot"))
     args = parser.parse_args(argv)
     runs = ROOT / "artifacts" / "studies" / args.study / "runs"
     records = aggregate.load_records(runs)
@@ -60,6 +61,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         write_json(
             ROOT / "artifacts/e0/claim_type_counts.json",
             aggregate.claim_type_counts_artifact(records, prov),
+        )
+    elif args.study == "pilot":
+        write_json(
+            ROOT / "artifacts/studies/pilot/summary.json",
+            aggregate.pilot_summary_artifact(records, prov),
         )
     else:
         aggregate.write_jsonl(ROOT / "artifacts/e1/runs.jsonl", aggregate.e1_rows(records))
