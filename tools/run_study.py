@@ -174,6 +174,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="list pending runs and exit")
     parser.add_argument("--engine", choices=("llama.cpp", "llama-cpp-python"), default="llama.cpp")
     parser.add_argument("--parallel", type=int, default=1, help="concurrent runs per model")
+    parser.add_argument(
+        "--request-timeout",
+        type=float,
+        default=3600.0,
+        help="seconds one model call may take (a cold prompt on a shared CPU can take minutes)",
+    )
     args = parser.parse_args(argv)
     plan = load_plan(args.plan)
     study_dir = args.plan.parent
@@ -208,9 +214,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             engine=args.engine,
             parallel=args.parallel,
         )
-        client = ModelClient(
-            ROOT, {"local": LocalOpenAIBackend(server.base_url)}, ROOT / "runs" / "cache"
-        )
+        backend = LocalOpenAIBackend(server.base_url, timeout_s=args.request_timeout)
+        client = ModelClient(ROOT, {"local": backend}, ROOT / "runs" / "cache")
         with server, ThreadPoolExecutor(max_workers=args.parallel) as pool:
             futures = [
                 pool.submit(one_run, plan, specs[r], client, artifacts, state, sha, server, code)
