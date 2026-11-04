@@ -460,3 +460,19 @@ later, so the real run gives `blindness`, `counts --agents`, and `merge --agents
 transcript paths in one session and keeps any clearances file under `artifacts/e0/`.
 Recorded gap (adds to D38): without `--agents`, a record edited by hand together with its
 lists is not detected.
+
+**D44. Model serving for the pilot and the confirmatory runs: slot pinning and three
+server threads.** Recorded before the pilot (rule 10). (1) The local backend sends every
+request of one worker thread to the same llama-server slot (`id_slot`), so each run's
+conversation stays in the slot that caches it. The smoke server log showed that without
+it a run's request could land on a slot holding another run's conversation, forcing the
+whole context to be read again (eleven such calls took 1.6 of the 2.5 hours of prompt
+processing), and that while one slot reads a long prompt the other slots' decoding nearly
+stops. (2) The server runs with 3 threads instead of 4, at real-time priority as before,
+leaving one core for the agents' own sandboxed commands and for test runs, which the
+4-thread server starved. Neither change alters what a model sees or the sampling
+settings; both change speed only, and the exact server command stays in each run's
+provenance. The smoke study was restarted with both at 13:48 UTC after 10 of its 40 runs;
+the runs in flight at the restart were discarded and run again from the start, as the
+runner does for any interrupted run. The pilot, E1, and E4 all use these settings, so the
+pilot's timing feeds the E1 budget (D41) under the conditions E1 runs in.
