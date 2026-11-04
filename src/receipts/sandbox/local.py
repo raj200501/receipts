@@ -59,6 +59,11 @@ class LocalTestSandbox(ProcessSandbox):
         super().__init__(workspace, policy, max_capture_bytes=max_capture_bytes)
         self._bash = find_executable("bash", "bash")
 
-    def launch(self, cmd: str, cwd: Path, *, interactive: bool = False) -> Launch:
-        """``bash -c -- <cmd>`` directly on the host, in ``cwd``, with the clean environment."""
+    def launch(
+        self, cmd: str, cwd: Path, *, interactive: bool = False, status_fd: int | None = None
+    ) -> Launch:
+        """``bash -c -- <cmd>`` directly on the host, in ``cwd``, with the clean environment.
+
+        There is no launcher, so ``status_fd`` is not used.
+        """
         return Launch(argv=(self._bash, "-c", "--", cmd), env=self._env, cwd=cwd)

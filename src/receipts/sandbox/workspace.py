@@ -6,10 +6,13 @@ path and base commit (the commit a run's diff is taken against):
 - A source that is not a git repository is copied and committed once, with a fixed
   identity and date, so the same files always give the same base commit.
 - A source that is a git repository keeps its history: it is cloned without
-  ``--local`` (no hooks, no configuration, no shared object files), its working tree
-  is then copied over the clone, and when that tree differs from ``HEAD`` it is
-  committed, so the base commit is exactly the state the agent starts from. The
-  ``origin`` remote is removed so nothing in the workspace can push to the source.
+  ``--local`` (no hooks, no configuration, no shared object files) and without a
+  checkout, its index is filled from ``HEAD`` (so every tracked file stays tracked,
+  including files that match ``.gitignore`` but were added with ``--force``), its
+  working tree is then copied over the clone, and when that tree differs from
+  ``HEAD`` it is committed, so the base commit is exactly the state the agent starts
+  from. The ``origin`` remote is removed so nothing in the workspace can push to the
+  source.
 
 Every git command here runs on the host, outside any sandbox, so none of them may run
 repository-controlled code: the system and global configuration are ignored, hooks
@@ -198,6 +201,9 @@ def create_workspace(
                 options=("-c", f"safe.directory={source}"),
             )
             _git(path, "remote", "remove", "origin")
+            head = _git(path, "rev-parse", "--verify", "--quiet", "HEAD^{commit}", check=False)
+            if head.returncode == 0:
+                _git(path, "read-tree", "HEAD")
         else:
             _git(path, "init", "--quiet", "--template=")
         copy_tree(source, path)
@@ -249,10 +255,13 @@ def remove_workspace(path: str | Path, root: str | Path) -> bool:
 
     Raises:
         ValueError: ``path`` (its parent directories resolved) is not strictly inside
-            ``root``.
+            ``root``, or its last component is empty or ``..`` (which would name a
+            parent, such as ``root`` itself).
     """
     root_path = Path(root).resolve()
     given = Path(path)
+    if given.name in ("", ".."):
+        raise ValueError(f"refusing to delete {path}: its last component names no workspace")
     target = given.parent.resolve() / given.name
     if root_path not in target.parents:
         raise ValueError(f"refusing to delete {given}: it is not inside {root_path}")
@@ -283,18 +292,21 @@ def temporary_workspace(
 ) -> Iterator[Workspace]:
     """Yield a workspace from :func:`create_workspace` and delete it afterwards.
 
-    With ``root`` None, a private temporary root is created and deleted as well.
+    With ``root`` None, a private temporary root is created and deleted as well, also
+    when the workspace cannot be created.
     """
     own_root = root is None
     if root is None:
         root_path = Path(tempfile.mkdtemp(prefix="receipts-workspaces-"))
     else:
         root_path = Path(root)
-    workspace = create_workspace(source_dir, root_path, name=name)
+    workspace: Workspace | None = None
     try:
+        workspace = create_workspace(source_dir, root_path, name=name)
         yield workspace
     finally:
-        remove_workspace(workspace.path, root_path)
+        if workspace is not None:
+            remove_workspace(workspace.path, root_path)
         if own_root:
             with suppress(OSError):
                 root_path.rmdir()

@@ -205,6 +205,7 @@ def test_an_unreadable_marker_means_rebuild(tmp_path: Path, marker: str) -> None
 
 
 def make_toolchain(path: Path) -> Toolchain:
+    """A synthetic, already built toolchain record at ``path`` (nothing is on disk)."""
     return Toolchain(
         path=path,
         python=path / "bin" / "python",

@@ -238,7 +238,7 @@ def cap_stream(text: str, limit: int = MAX_STREAM_CHARS) -> tuple[str, bool, str
         return text, False, digest
     half = limit // 2
     marker = f"\n[... {len(text) - 2 * half} chars elided by receipts ...]\n"
-    return text[:half] + marker + text[-half:], True, digest
+    return text[:half] + marker + text[len(text) - half :], True, digest
 
 
 @dataclass(frozen=True)

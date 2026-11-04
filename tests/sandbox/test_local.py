@@ -17,6 +17,7 @@ from .helpers import background_sleeper, unique_marker, wait_until_gone
 
 
 def local(workspace: Path, policy: SandboxPolicy | None = None, **kwargs: int) -> LocalTestSandbox:
+    """A LocalTestSandbox on ``workspace`` (no isolation; this suite's own fixtures)."""
     return LocalTestSandbox(workspace, policy, allow_unsandboxed_for_tests=True, **kwargs)
 
 

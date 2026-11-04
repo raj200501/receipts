@@ -12,8 +12,11 @@ from receipts.sandbox import select
 from receipts.sandbox.api import SandboxPolicy, SandboxUnavailableError
 from receipts.sandbox.base import BackendProbe, ProcessSandbox
 from receipts.sandbox.bwrap import BwrapSandbox
+from receipts.sandbox.docker import DEFAULT_IMAGE
 from receipts.sandbox.local import LocalTestSandbox
 from receipts.sandbox.select import (
+    CONFINES_WRITES,
+    DEFAULT_CHECK_CMD,
     DEFAULT_PREFERENCE,
     available_backends,
     make_sandbox,
@@ -58,6 +61,8 @@ def fake_factories(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str, obje
 
 def test_default_preference_follows_the_brief() -> None:
     assert DEFAULT_PREFERENCE == ("docker", "bwrap", "unshare")
+    assert DEFAULT_CHECK_CMD == "command -v git"
+    assert CONFINES_WRITES == {"docker": True, "bwrap": True, "unshare": False}
 
 
 def test_available_backends_keeps_preference_order(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -93,10 +98,25 @@ def test_make_sandbox_explains_why_nothing_works(
 ) -> None:
     fake_probes(monkeypatch, set())
     with pytest.raises(SandboxUnavailableError) as caught:
-        make_sandbox(workspace)
+        make_sandbox(workspace, allow_unconfined=True)
     message = str(caught.value)
     for name in DEFAULT_PREFERENCE:
         assert f"{name}: synthetic {name} failure" in message
+
+
+def test_unconfined_backends_need_explicit_permission(
+    monkeypatch: pytest.MonkeyPatch, workspace: Path
+) -> None:
+    asked = fake_probes(monkeypatch, {"unshare"})
+    built = fake_factories(monkeypatch)
+    with pytest.raises(SandboxUnavailableError) as caught:
+        make_sandbox(workspace)
+    message = str(caught.value)
+    assert "unshare: skipped because it does not confine writes" in message
+    assert "allow_unconfined=True" in message
+    assert asked == ["docker", "bwrap"] and built == []
+    make_sandbox(workspace, prefer=("unshare",), allow_unconfined=True)
+    assert built == [("unshare", DEFAULT_IMAGE, None)]
 
 
 def test_make_sandbox_honours_a_narrower_preference(
@@ -135,7 +155,8 @@ def test_make_sandbox_skips_backends_that_fail_the_check_command(
     fake_probes(monkeypatch, set(DEFAULT_PREFERENCE))
     tagged_factories(monkeypatch)
     check = 'test "$FAKE_BACKEND" = unshare || { echo "no tool in $FAKE_BACKEND" >&2; exit 3; }'
-    assert make_sandbox(workspace, check_cmd=check).env["FAKE_BACKEND"] == "unshare"
+    chosen = make_sandbox(workspace, check_cmd=check, allow_unconfined=True)
+    assert chosen.env["FAKE_BACKEND"] == "unshare"
     assert make_sandbox(workspace, check_cmd="true").env["FAKE_BACKEND"] == "docker"
     with pytest.raises(SandboxUnavailableError) as caught:
         make_sandbox(workspace, prefer=("docker", "bwrap"), check_cmd=check)
@@ -146,6 +167,90 @@ def test_make_sandbox_skips_backends_that_fail_the_check_command(
         make_sandbox(
             workspace, SandboxPolicy(timeout_s=0.2), prefer=("docker",), check_cmd="sleep 5"
         )
+
+
+def test_the_default_check_skips_a_backend_without_git(
+    monkeypatch: pytest.MonkeyPatch, workspace: Path, tmp_path: Path
+) -> None:
+    fake_probes(monkeypatch, set(DEFAULT_PREFERENCE))
+    no_git = tmp_path / "no-git-bin"
+    no_git.mkdir()
+
+    def factory_for(name: str) -> select.Factory:
+        """A LocalTestSandbox factory whose PATH has git, except for the fake docker."""
+
+        def factory(
+            ws: str | Path,
+            policy: SandboxPolicy | None,
+            image: str,
+            hide: Iterable[str | Path] | None,
+        ) -> ProcessSandbox:
+            path = str(no_git) if name == "docker" else "/usr/bin:/bin"
+            tagged = SandboxPolicy(env={"FAKE_BACKEND": name, "PATH": path})
+            return LocalTestSandbox(ws, tagged, allow_unsandboxed_for_tests=True)
+
+        return factory
+
+    for name in DEFAULT_PREFERENCE:
+        monkeypatch.setitem(select.FACTORIES, name, factory_for(name))
+    assert make_sandbox(workspace).env["FAKE_BACKEND"] == "bwrap"
+    assert make_sandbox(workspace, check_cmd=None).env["FAKE_BACKEND"] == "docker"
+    with pytest.raises(SandboxUnavailableError, match=r"docker: check command failed \(exit 1"):
+        make_sandbox(workspace, prefer=("docker",))
+
+
+def test_caller_errors_raise_before_any_backend_is_tried(
+    monkeypatch: pytest.MonkeyPatch, workspace: Path, tmp_path: Path
+) -> None:
+    asked = fake_probes(monkeypatch, set(DEFAULT_PREFERENCE))
+    fake_factories(monkeypatch)
+    bad = [
+        (tmp_path / "missing", None),
+        (workspace, SandboxPolicy(timeout_s=0)),
+        (workspace, SandboxPolicy(env={"GH_TOKEN": "synthetic"})),
+        (workspace, SandboxPolicy(readonly_paths=(tmp_path / "missing",))),
+    ]
+    for ws, policy in bad:
+        with pytest.raises(ValueError):
+            make_sandbox(ws, policy)
+    assert asked == []
+
+
+def test_a_backend_that_refuses_the_workspace_is_skipped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    odd = tmp_path / "task,1"
+    odd.mkdir()
+    fake_probes(monkeypatch, set(DEFAULT_PREFERENCE))
+    fake_factories(monkeypatch)
+
+    def refusing(
+        ws: str | Path,
+        policy: SandboxPolicy | None,
+        image: str,
+        hide: Iterable[str | Path] | None,
+    ) -> ProcessSandbox:
+        raise ValueError(f"synthetic: path cannot be bind-mounted by docker --mount: {ws}")
+
+    monkeypatch.setitem(select.FACTORIES, "docker", refusing)
+    box = make_sandbox(odd, check_cmd=None)
+    assert box.workspace == odd.resolve()
+    with pytest.raises(SandboxUnavailableError, match="docker: synthetic: path cannot"):
+        make_sandbox(odd, prefer=("docker",))
+
+
+def test_a_check_that_breaks_the_sandbox_is_a_reason(
+    monkeypatch: pytest.MonkeyPatch, workspace: Path
+) -> None:
+    fake_probes(monkeypatch, set(DEFAULT_PREFERENCE))
+    fake_factories(monkeypatch)
+
+    def broken_run(self: ProcessSandbox, cmd: str, **kwargs: object) -> object:
+        raise SandboxUnavailableError("fake: the sandbox did not start the command (synthetic)")
+
+    monkeypatch.setattr(LocalTestSandbox, "run", broken_run)
+    with pytest.raises(SandboxUnavailableError, match="docker: fake: the sandbox did not start"):
+        make_sandbox(workspace, prefer=("docker",))
 
 
 def test_make_sandbox_moves_on_when_a_backend_vanishes_after_its_probe(
@@ -177,6 +282,18 @@ def test_make_sandbox_builds_a_real_bwrap_sandbox(workspace: Path) -> None:
 @requires(bwrap_probe())
 def test_a_docker_image_without_git_falls_back_to_bwrap(workspace: Path) -> None:
     with pytest.raises(SandboxUnavailableError, match=r"docker: check command failed \(exit 1"):
-        make_sandbox(workspace, prefer=("docker",), check_cmd="command -v git")
-    box = make_sandbox(workspace, prefer=("docker", "bwrap"), check_cmd="command -v git")
-    assert isinstance(box, BwrapSandbox)
+        make_sandbox(workspace, prefer=("docker",))
+    assert isinstance(make_sandbox(workspace), BwrapSandbox)
+
+
+@requires(bwrap_probe())
+def test_a_real_docker_constructor_refusal_falls_back_to_bwrap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    odd = tmp_path / "task,1"
+    odd.mkdir()
+    monkeypatch.setitem(
+        select.PROBES, "docker", lambda image: BackendProbe("docker", True, "synthetic ok")
+    )
+    box = make_sandbox(odd, prefer=("docker", "bwrap"))
+    assert isinstance(box, BwrapSandbox) and box.run("echo ok").stdout == "ok\n"

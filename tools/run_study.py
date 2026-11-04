@@ -86,9 +86,10 @@ def pending(plan: Plan, artifacts: Path) -> list[str]:
     return [r.run_id for r in plan.ordered() if not (artifacts / r.run_id / "run.json").is_file()]
 
 
-#: Same sandbox backends and pinned toolchain as tools/bench_validate.py, so runs see the
-#: environment the tasks were validated in.
-BACKENDS: tuple[str, ...] = ("bwrap", "unshare")
+#: Subject runs use only a backend that confines writes (bubblewrap, D33); the unconfined
+#: ``unshare`` fallback is never used for an agent. Same pinned toolchain as
+#: tools/bench_validate.py, so runs see the environment the tasks were validated in.
+BACKENDS: tuple[str, ...] = ("bwrap",)
 TOOLCHAIN_DIR = ROOT / "runs" / "toolchains" / f"bench-py{TOOLCHAIN_PYTHON.replace('.', '')}"
 _TOOLCHAIN_LOCK = threading.Lock()
 _TOOLCHAIN: list[Toolchain] = []

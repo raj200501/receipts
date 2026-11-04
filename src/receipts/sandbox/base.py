@@ -11,10 +11,26 @@ Commands always run as ``bash -c -- <cmd>``. Backends that start a new PID names
 :func:`launcher_script`): it applies the policy's rlimits and then runs the command as
 a child, so the command is never PID 1 of its namespace (PID 1 ignores signals it has
 no handler for, which would change how ``kill`` and test suites behave).
+
+Telling a sandbox failure from a command failure: just before it runs the command,
+the launcher reports :data:`STARTED` on a status channel the command cannot reach (a
+pipe whose write end the launcher closes first, or for Docker the start of the
+client's stdout). When a launch ends without that report and without a timeout (for
+example bubblewrap could not set up a mount, or the Docker daemon refused the
+container), :meth:`ProcessSandbox.run` raises
+:class:`~receipts.sandbox.api.SandboxUnavailableError` instead of returning an outcome,
+so a broken sandbox is never recorded as the command's own exit status.
+
+Backends that run as host processes with a PID namespace (bubblewrap and unshare) also
+enforce ``max_procs`` with a per-command pids cgroup when one is available
+(:mod:`receipts.sandbox.cgroup`), since the kernel does not apply ``ulimit -u`` to the
+host's root user.
 """
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import math
 import os
 import re
@@ -22,16 +38,20 @@ import resource
 import shlex
 import shutil
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import ClassVar
+from types import TracebackType
+from typing import ClassVar, Literal
 
 from receipts.sandbox.api import CommandOutcome, SandboxPolicy, SandboxUnavailableError
+from receipts.sandbox.cgroup import PidsCgroup, pids_cgroup_parent
 from receipts.sandbox.env import DEFAULT_PATH, clean_env
 from receipts.sandbox.process import (
     DEFAULT_MAX_CAPTURE_BYTES,
+    MIN_OUTPUT_CHARS,
     Launch,
+    RawResult,
     not_run,
     run_launch,
     to_outcome,
@@ -43,6 +63,18 @@ LAUNCHER_ARG0 = "receipts-sandbox"
 #: Exit code of the launcher when the kernel refused the policy's rlimits.
 LIMITS_FAILED_EXIT_CODE = 125
 
+#: Exit code of the launcher when a setup step before the command failed.
+SETUP_FAILED_EXIT_CODE = 125
+
+#: Status the launcher reports just before it runs the command.
+STARTED = "receipts-sandbox-started"
+
+#: Status the launcher reports when a setup step (such as a mount) failed.
+SETUP_FAILED = "receipts-sandbox-setup-failed"
+
+#: Status the launcher reports when the kernel refused the policy's rlimits.
+LIMITS_FAILED = "receipts-sandbox-limits-failed"
+
 #: Longest command, in UTF-8 bytes, that fits in one argument of ``execve``: Linux
 #: limits each argument to 32 pages (``MAX_ARG_STRLEN``), terminating NUL included.
 MAX_COMMAND_BYTES = 32 * os.sysconf("SC_PAGE_SIZE") - 1
@@ -51,6 +83,10 @@ _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 #: Variables bash maintains itself; the launcher keeps them so every backend matches.
 SHELL_MANAGED_NAMES: frozenset[str] = frozenset({"PWD", "OLDPWD", "SHLVL"})
+
+#: How a backend's launcher reports that the command started: through a status pipe
+#: (``"fd"``), at the start of stdout (``"stdout"``), or not at all (``""``).
+StartReport = Literal["fd", "stdout", ""]
 
 
 class CwdError(ValueError):
@@ -74,13 +110,21 @@ class BackendProbe:
 
 
 def validate_policy(policy: SandboxPolicy) -> None:
-    """Raise ValueError unless every limit in ``policy`` is positive and finite."""
+    """Raise ValueError unless every limit in ``policy`` is positive and finite.
+
+    ``max_output_chars`` must be at least :data:`~receipts.sandbox.process.MIN_OUTPUT_CHARS`,
+    since the cap keeps a head and a tail of half the limit each.
+    """
     if not (math.isfinite(policy.timeout_s) and policy.timeout_s > 0):
         raise ValueError(f"timeout_s must be positive, got {policy.timeout_s!r}")
     for name in ("memory_mb", "cpu_s", "max_procs", "max_output_chars"):
         value = getattr(policy, name)
         if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
             raise ValueError(f"{name} must be a positive integer, got {value!r}")
+    if policy.max_output_chars < MIN_OUTPUT_CHARS:
+        raise ValueError(
+            f"max_output_chars must be at least {MIN_OUTPUT_CHARS}, got {policy.max_output_chars!r}"
+        )
 
 
 def check_workspace(workspace: str | Path) -> Path:
@@ -102,6 +146,17 @@ def check_readonly_paths(paths: Iterable[Path]) -> tuple[Path, ...]:
             raise ValueError(f"read-only path does not exist: {path}")
         resolved[real] = None
     return tuple(resolved)
+
+
+def require_paths(paths: Iterable[Path], what: str) -> None:
+    """Raise SandboxUnavailableError if a path checked at construction is gone now.
+
+    Backends call this before each launch: a read-only path that disappeared (for
+    example a toolchain being rebuilt) breaks the sandbox, not the command.
+    """
+    missing = [str(p) for p in paths if not p.exists()]
+    if missing:
+        raise SandboxUnavailableError(f"{what} no longer exist: {', '.join(missing)}")
 
 
 def resolve_cwd(workspace: Path, cwd: str) -> tuple[Path, str]:
@@ -180,7 +235,7 @@ def rlimit_values(policy: SandboxPolicy) -> dict[str, int]:
     is lowered to the current hard limit when that is smaller, because only root may
     raise a hard limit. The kernel does not apply the process limit to the host root
     user, and before Linux 5.14 it counts every process of the user, not only the
-    sandbox's.
+    sandbox's; :class:`ProcessSandbox` adds a pids cgroup where it can.
     """
     return {
         "v": _clamp(policy.memory_mb * 1024, resource.getrlimit(resource.RLIMIT_AS)[1], 1024),
@@ -189,22 +244,45 @@ def rlimit_values(policy: SandboxPolicy) -> dict[str, int]:
     }
 
 
+def _report(status_fd: int | None, status: str, code: int) -> str:
+    """Shell text that reports ``status`` (when there is a status channel) and exits."""
+    if status_fd is None:
+        return f"exit {code}"
+    return f"{{ printf '%s\\n' {status} >&{status_fd}; exit {code}; }}"
+
+
 def launcher_script(
-    bash: str, limits: dict[str, int] | None = None, keep: Iterable[str] | None = None
+    bash: str,
+    limits: dict[str, int] | None = None,
+    keep: Iterable[str] | None = None,
+    *,
+    status_fd: int | None = None,
+    prologue: Sequence[str] = (),
 ) -> str:
     """The bash script that applies ``limits`` and runs ``$1`` with ``bash -c --``.
 
-    The command runs as a child of the launcher (never PID 1) and its exit status is
-    passed through. With ``keep``, every exported variable not named in it (or in
-    :data:`SHELL_MANAGED_NAMES`) is unset first, since a container image may define
-    its own. The launcher's own stderr is discarded once the limits are set, so its
-    job notices (such as ``Killed``) never mix with the command's stderr, which goes
-    to the original stream. If the kernel refuses a limit, the launcher exits with
-    :data:`LIMITS_FAILED_EXIT_CODE` before running anything.
+    In order, the script:
+
+    1. with ``keep``, unsets every exported variable not named in it (or in
+       :data:`SHELL_MANAGED_NAMES`), since a container image may define its own;
+    2. runs each ``prologue`` line (setup steps such as mounts); if one fails it
+       reports :data:`SETUP_FAILED` and exits with :data:`SETUP_FAILED_EXIT_CODE`;
+    3. applies ``limits``; if the kernel refuses one it reports :data:`LIMITS_FAILED`
+       and exits with :data:`LIMITS_FAILED_EXIT_CODE` before running anything;
+    4. with ``status_fd``, writes :data:`STARTED` to that descriptor and, unless it is
+       stdout or stderr, closes it, so the command never holds it;
+    5. runs the command as a child (never PID 1) and passes its exit status through.
+
+    The launcher's own stderr is discarded once the limits are set, so its job notices
+    (such as ``Killed``) never mix with the command's stderr, which goes to the
+    original stream.
 
     Raises:
-        ValueError: A name in ``keep`` is not a shell identifier.
+        ValueError: A name in ``keep`` is not a shell identifier, or ``status_fd`` is
+            negative.
     """
+    if status_fd is not None and status_fd < 0:
+        raise ValueError(f"status_fd may not be negative, got {status_fd!r}")
     lines = []
     if keep is not None:
         names = sorted(set(keep) | SHELL_MANAGED_NAMES)
@@ -216,13 +294,81 @@ def launcher_script(
             "for _receipts_v in $(compgen -e); do case $_receipts_v in "
             f'{pattern}) ;; *) unset "$_receipts_v" ;; esac; done; unset _receipts_v'
         )
+    for step in prologue:
+        lines.append(f"{{ {step}; }} || {_report(status_fd, SETUP_FAILED, SETUP_FAILED_EXIT_CODE)}")
     if limits:
         sets = " && ".join(f"ulimit -S -H -{flag} {value}" for flag, value in limits.items())
-        lines.append(f"{sets} || exit {LIMITS_FAILED_EXIT_CODE}")
+        lines.append(f"{sets} || {_report(status_fd, LIMITS_FAILED, LIMITS_FAILED_EXIT_CODE)}")
+    if status_fd is not None:
+        lines.append(f"printf '%s\\n' {STARTED} >&{status_fd}")
+        if status_fd > 2:
+            lines.append(f"exec {status_fd}>&-")
     lines.append("exec 3>&2 2>/dev/null")
     lines.append(f'{shlex.quote(bash)} -c -- "$1" bash 2>&3 3>&-')
     lines.append("exit $?")
     return "\n".join(lines)
+
+
+def _high_fd(fd: int) -> int:
+    """``fd`` moved to a number above 2 (close-on-exec), so it never shadows a std stream."""
+    if fd > 2:
+        return fd
+    moved = fcntl.fcntl(fd, fcntl.F_DUPFD_CLOEXEC, 3)
+    os.close(fd)
+    return moved
+
+
+class StatusChannel:
+    """A pipe the launcher reports through (see :func:`launcher_script`).
+
+    Use it as a context manager; pass :attr:`write_fd` to the launch (it is inherited
+    through ``pass_fds``) and call :meth:`read` once the host process is gone.
+    """
+
+    def __init__(self) -> None:
+        self._read_fd = -1
+        self._write_fd = -1
+
+    def __enter__(self) -> StatusChannel:
+        """Open the pipe (both ends above descriptor 2, the read end non-blocking)."""
+        read_fd, write_fd = os.pipe()
+        self._read_fd, self._write_fd = _high_fd(read_fd), _high_fd(write_fd)
+        os.set_blocking(self._read_fd, False)
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        """Close both ends."""
+        self._close_write()
+        if self._read_fd >= 0:
+            os.close(self._read_fd)
+            self._read_fd = -1
+
+    @property
+    def write_fd(self) -> int:
+        """The descriptor the launcher writes to."""
+        return self._write_fd
+
+    def _close_write(self) -> None:
+        if self._write_fd >= 0:
+            os.close(self._write_fd)
+            self._write_fd = -1
+
+    def read(self, limit: int = 65536) -> str:
+        """Close this process's write end and return what the launcher reported."""
+        self._close_write()
+        data = b""
+        with contextlib.suppress(BlockingIOError):
+            while len(data) < limit:
+                chunk = os.read(self._read_fd, limit - len(data))
+                if not chunk:
+                    break
+                data += chunk
+        return data.decode("utf-8", errors="replace")
 
 
 class ProcessSandbox(ABC):
@@ -232,8 +378,8 @@ class ProcessSandbox(ABC):
         workspace: The workspace directory (resolved; it must exist).
         policy: Limits and allowances; the defaults of :class:`SandboxPolicy` if None.
         max_capture_bytes: Each of stdout and stderr may grow to this many bytes
-            before the command is stopped (the outcome is still capped at
-            ``policy.max_output_chars``).
+            before the command is stopped, and only this many bytes of each are kept
+            (the outcome is still capped at ``policy.max_output_chars``).
 
     Raises:
         ValueError: The workspace is not a directory, a policy limit is not positive,
@@ -244,6 +390,10 @@ class ProcessSandbox(ABC):
     backend_name: ClassVar[str] = ""
     #: Whether writes outside the workspace are blocked.
     confines_writes: ClassVar[bool] = True
+    #: How the backend's launcher reports that the command started.
+    start_report: ClassVar[StartReport] = ""
+    #: Whether ``max_procs`` is enforced with a per-command pids cgroup when possible.
+    uses_pids_cgroup: ClassVar[bool] = False
 
     def __init__(
         self,
@@ -259,6 +409,7 @@ class ProcessSandbox(ABC):
             raise ValueError(f"max_capture_bytes must be positive, got {max_capture_bytes!r}")
         self._max_capture_bytes = max_capture_bytes
         self._env = clean_env(self._workspace, self._policy, DEFAULT_PATH)
+        self._pids_parent = pids_cgroup_parent() if self.uses_pids_cgroup else None
 
     @property
     def backend(self) -> str:
@@ -280,11 +431,33 @@ class ProcessSandbox(ABC):
         """A copy of the environment every command starts with."""
         return dict(self._env)
 
+    @property
+    def process_limit(self) -> str:
+        """How ``policy.max_procs`` is enforced here.
+
+        ``"cgroup"`` (a per-command pids cgroup), ``"rlimit"`` (``ulimit -u`` alone,
+        which binds a user other than root), or ``"none"`` (this backend applies no
+        process limit, or it runs as the host's root user and no pids cgroup is
+        available). Backends with their own mechanism override this.
+        """
+        if self._pids_parent is not None:
+            return "cgroup"
+        if self.uses_pids_cgroup and os.geteuid() != 0:
+            return "rlimit"
+        return "none"
+
     @abstractmethod
-    def launch(self, cmd: str, cwd: Path, *, interactive: bool = False) -> Launch:
+    def launch(
+        self, cmd: str, cwd: Path, *, interactive: bool = False, status_fd: int | None = None
+    ) -> Launch:
         """Return the host command line that runs ``cmd`` in host directory ``cwd``.
 
-        ``interactive`` is True when the command gets standard input.
+        ``interactive`` is True when the command gets standard input. ``status_fd`` is
+        the status pipe's write end for backends whose ``start_report`` is ``"fd"``.
+
+        Raises:
+            SandboxUnavailableError: The sandbox cannot be set up any more (for
+                example a read-only path is gone).
         """
 
     def run(
@@ -307,6 +480,8 @@ class ProcessSandbox(ABC):
         Raises:
             CwdError: ``cwd`` is absolute, escapes the workspace, or is not a directory.
             ValueError: ``timeout_s`` is not positive.
+            SandboxUnavailableError: The sandbox itself failed before the command
+                started (see the module docstring), so there is no outcome to report.
             OSError: The backend's host process could not be started.
         """
         limit = self._policy.timeout_s if timeout_s is None else timeout_s
@@ -315,17 +490,60 @@ class ProcessSandbox(ABC):
         host_cwd, rel_cwd = resolve_cwd(self._workspace, cwd)
         problem = command_problem(cmd) or _stdin_problem(stdin)
         if problem is not None:
-            raw = not_run(problem)
+            raw = not_run(problem, max_output_chars=self._policy.max_output_chars)
         else:
-            launch = self.launch(cmd, host_cwd, interactive=stdin is not None)
-            raw = run_launch(
-                launch, timeout_s=limit, stdin=stdin, max_capture_bytes=self._max_capture_bytes
-            )
+            raw = self._execute(cmd, host_cwd, limit, stdin)
         return to_outcome(
             raw,
             cmd=cmd,
             cwd=rel_cwd,
             backend=self.backend,
-            max_output_chars=self._policy.max_output_chars,
             max_capture_bytes=self._max_capture_bytes,
+        )
+
+    def _execute(self, cmd: str, host_cwd: Path, timeout_s: float, stdin: str | None) -> RawResult:
+        """Launch ``cmd`` (in a pids cgroup when there is one) and check that it started."""
+        with contextlib.ExitStack() as stack:
+            channel = stack.enter_context(StatusChannel()) if self.start_report == "fd" else None
+            launch = self.launch(
+                cmd,
+                host_cwd,
+                interactive=stdin is not None,
+                status_fd=channel.write_fd if channel is not None else None,
+            )
+            if self._pids_parent is not None:
+                bash = find_executable("bash", "bash")
+                cgroup = stack.enter_context(
+                    PidsCgroup(self._pids_parent, self._policy.max_procs, bash)
+                )
+                launch = cgroup.wrap(launch)
+            raw = run_launch(
+                launch,
+                timeout_s=timeout_s,
+                stdin=stdin,
+                max_capture_bytes=self._max_capture_bytes,
+                max_output_chars=self._policy.max_output_chars,
+            )
+            status = channel.read() if channel is not None else ""
+        self._check_started(raw, status)
+        return raw
+
+    def _check_started(self, raw: RawResult, status: str) -> None:
+        """Raise SandboxUnavailableError when the launcher never started the command."""
+        if not self.start_report or raw.timed_out:
+            return
+        reported = status.split()
+        started = raw.marker_seen if self.start_report == "stdout" else STARTED in reported
+        if started:
+            return
+        lines = raw.stderr.text.strip().splitlines()
+        detail = f"exit code {raw.exit_code}" + (f": {lines[-1]}" if lines else "")
+        if LIMITS_FAILED in reported:
+            raise SandboxUnavailableError(
+                f"{self.backend}: the kernel refused the sandbox's limits ({detail})"
+            )
+        if SETUP_FAILED in reported:
+            raise SandboxUnavailableError(f"{self.backend}: the sandbox setup failed ({detail})")
+        raise SandboxUnavailableError(
+            f"{self.backend}: the sandbox did not start the command ({detail})"
         )

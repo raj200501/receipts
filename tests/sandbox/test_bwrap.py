@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import pwd
+import shutil
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -10,21 +12,24 @@ from pathlib import Path
 import pytest
 
 from receipts.sandbox import bwrap as bwrap_module
-from receipts.sandbox.api import Sandbox, SandboxPolicy, SandboxUnavailableError
+from receipts.sandbox.api import CommandOutcome, Sandbox, SandboxPolicy, SandboxUnavailableError
 from receipts.sandbox.base import LAUNCHER_ARG0, MAX_COMMAND_BYTES, CwdError, rlimit_values
 from receipts.sandbox.bwrap import (
     SYSTEM_CREDENTIAL_PATHS,
     BwrapSandbox,
     default_hidden_paths,
+    home_directories,
     mount_args,
     probe_bwrap,
     project_root,
 )
+from receipts.sandbox.cgroup import pids_cgroup_parent
 from receipts.sandbox.env import DEFAULT_PATH
 from receipts.sandbox.process import TIMEOUT_EXIT_CODE
 
 from .helpers import (
     CONNECT_CMD,
+    FORK_CMD,
     background_sleeper,
     bwrap_probe,
     requires,
@@ -101,6 +106,43 @@ def test_default_hidden_paths_find_credentials_and_the_project(tmp_path: Path) -
     assert len(hidden) == len(set(hidden))
 
 
+def test_every_home_directory_is_scanned_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first, second = tmp_path / "home" / "first", tmp_path / "home" / "second"
+    (first / ".ssh").mkdir(parents=True)
+    (second / ".claude").mkdir(parents=True)
+    (second / ".gitconfig").write_text("synthetic", encoding="utf-8")
+    monkeypatch.setattr(bwrap_module, "home_directories", lambda: (first, second))
+    hidden = default_hidden_paths(project=tmp_path / "no-project")
+    for path in (first / ".ssh", second / ".claude", second / ".gitconfig"):
+        assert path.resolve() in hidden
+
+
+def test_home_directories_lists_home_entries_and_password_homes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home_root = tmp_path / "home"
+    for name in ("alice", "bob"):
+        (home_root / name).mkdir(parents=True)
+    (home_root / "note.txt").write_text("not a home", encoding="utf-8")
+    service = tmp_path / "var" / "lib" / "service"
+    service.mkdir(parents=True)
+    homes = home_directories(home_root, [str(service), "", "relative/home", "/nonexistent/x"])
+    assert homes[0] == Path.home().resolve() and Path("/root").resolve() in homes
+    for path in (home_root / "alice", home_root / "bob", service):
+        assert path.resolve() in homes
+    assert (home_root / "note.txt").resolve() not in homes
+    assert len(homes) == len(set(homes))
+    assert home_directories(tmp_path / "missing", [])[0] == Path.home().resolve()
+
+    class Entry:
+        pw_dir = str(service)
+
+    monkeypatch.setattr(pwd, "getpwall", lambda: [Entry()])
+    assert service.resolve() in home_directories(tmp_path / "missing")
+
+
 def test_system_credential_locations_are_hidden_when_present(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -159,11 +201,73 @@ def test_command_line_isolates_and_rebuilds_the_environment(workspace: Path) -> 
 
 @needs_bwrap
 def test_probe_and_protocol(workspace: Path) -> None:
-    assert probe_bwrap().ok
+    probe = probe_bwrap()
+    assert probe.ok
     box = BwrapSandbox(workspace)
+    assert f"process limit: {box.process_limit}" in probe.detail
     assert isinstance(box, Sandbox)
     assert (box.backend, box.confines_writes) == ("bwrap", True)
     assert Path(box.executable).is_absolute()
+
+
+@needs_bwrap
+def test_other_homes_credentials_are_hidden_inside(workspace: Path, tmp_path: Path) -> None:
+    other = tmp_path / "home" / "other"
+    (other / ".ssh").mkdir(parents=True)
+    (other / ".ssh" / "id_synthetic").write_text("synthetic-key", encoding="utf-8")
+    (other / ".gitconfig").write_text("[user]\n\tname = synthetic\n", encoding="utf-8")
+    hidden = default_hidden_paths([other], tmp_path / "no-project")
+    outcome = BwrapSandbox(workspace, hide_paths=hidden).run(
+        f"ls -A {other / '.ssh'} | wc -l; stat -c %s {other / '.gitconfig'}"
+    )
+    assert outcome.stdout.split() == ["0", "0"]
+
+
+@needs_bwrap
+def test_max_procs_is_enforced(workspace: Path) -> None:
+    box = BwrapSandbox(workspace, SandboxPolicy(max_procs=10, timeout_s=60))
+    if box.process_limit == "none":
+        pytest.skip("running as root without a writable pids cgroup: max_procs is not enforced")
+    started, failed = map(int, box.run(FORK_CMD).stdout.split())
+    assert started < 10 and failed > 50
+    parent = pids_cgroup_parent()
+    if box.process_limit == "cgroup" and parent is not None:
+        # /sys is read-only inside, so the command cannot move itself to the parent.
+        escape = box.run(f"echo $$ > {parent / 'cgroup.procs'} && echo ESCAPED")
+        assert "ESCAPED" not in escape.stdout
+        assert "Read-only file system" in escape.stderr
+
+
+@needs_bwrap
+def test_a_vanished_readonly_path_is_a_sandbox_failure(workspace: Path, tmp_path: Path) -> None:
+    tools = tmp_path / "toolchain"
+    tools.mkdir()
+    box = BwrapSandbox(workspace, SandboxPolicy(readonly_paths=(tools,)))
+    assert box.run("true").exit_code == 0
+    shutil.rmtree(tools)
+    with pytest.raises(SandboxUnavailableError, match="read-only paths no longer exist"):
+        box.run("true")
+
+
+@needs_bwrap
+def test_a_vanished_hidden_path_is_skipped(workspace: Path, tmp_path: Path) -> None:
+    secret = tmp_path / "secret"
+    secret.mkdir()
+    box = BwrapSandbox(workspace, hide_paths=[secret])
+    secret.rmdir()
+    assert box.run("echo ok").stdout == "ok\n"
+
+
+def test_a_bwrap_that_never_starts_the_command_raises(workspace: Path, tmp_path: Path) -> None:
+    fake = tmp_path / "bwrap"
+    fake.write_text(
+        '#!/bin/sh\necho "bwrap: Can\'t find source path /synthetic" >&2\nexit 1\n',
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    box = BwrapSandbox(workspace, bwrap=str(fake), hide_paths=())
+    with pytest.raises(SandboxUnavailableError, match=r"did not start the command.*synthetic"):
+        box.run("true")
 
 
 @needs_bwrap
@@ -348,3 +452,28 @@ def test_probe_reports_a_failing_bwrap(tmp_path: Path) -> None:
 def test_project_root_is_none_outside_a_checkout(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(bwrap_module, "__file__", "/nonexistent/a/b/c/bwrap.py")
     assert project_root() is None
+
+
+def failing_true(self: object, cmd: str, **kwargs: object) -> CommandOutcome:
+    """A synthetic outcome for a sandbox that started ``true`` and saw it fail."""
+    return CommandOutcome(
+        cmd=cmd,
+        cwd=".",
+        exit_code=3,
+        stdout="",
+        stderr="synthetic: true failed\n",
+        duration_s=0.0,
+        timed_out=False,
+        stdout_truncated=False,
+        stderr_truncated=False,
+        stdout_sha256="",
+        stderr_sha256="",
+        backend="synthetic",
+    )
+
+
+@needs_bwrap
+def test_probe_reports_a_trivial_command_that_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(BwrapSandbox, "run", failing_true)
+    probe = probe_bwrap()
+    assert not probe.ok and probe.detail == "bubblewrap fails here: synthetic: true failed"

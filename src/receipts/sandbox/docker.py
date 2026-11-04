@@ -23,9 +23,20 @@ can otherwise leave a container the daemon created after the first removal (seen
 here with a 0.2 second timeout). The ``docker`` client itself runs with only the
 variables it needs to find the daemon.
 
+The launcher writes :data:`~receipts.sandbox.base.STARTED` as the first line of the
+container's stdout before it runs the command, and that line is removed from the
+captured stream. Output a command writes inside the container can only follow it, so
+when the client's stdout does not begin with it, the container never ran the command
+(the daemon refused it, or a mount source is gone):
+:meth:`~receipts.sandbox.base.ProcessSandbox.run` then raises
+:class:`~receipts.sandbox.api.SandboxUnavailableError` instead of reporting the
+client's exit status (125 for daemon errors) as the command's. Read-only paths are
+checked again before each command for the same reason.
+
 The default image has bash and Python but neither git nor pytest; commands that need
-them want another locally cached image, or :func:`receipts.sandbox.select.make_sandbox`
-with a ``check_cmd`` so that a backend without them is skipped.
+them want another locally cached image. :func:`receipts.sandbox.select.make_sandbox`
+runs a check command (by default ``command -v git``) so that a backend without the
+tools is skipped.
 """
 
 from __future__ import annotations
@@ -42,15 +53,21 @@ from typing import ClassVar
 from receipts.sandbox.api import SandboxPolicy, SandboxUnavailableError
 from receipts.sandbox.base import (
     LAUNCHER_ARG0,
+    STARTED,
     BackendProbe,
     ProcessSandbox,
+    StartReport,
     check_readonly_paths,
     find_executable,
     launcher_script,
+    require_paths,
 )
 from receipts.sandbox.process import DEFAULT_MAX_CAPTURE_BYTES, Launch
 
 DEFAULT_IMAGE = "python:3.11-slim"
+
+#: The first bytes of the client's stdout once the container's launcher has started.
+STARTED_MARKER = f"{STARTED}\n".encode()
 
 #: Host variables the ``docker`` client may see (to find and talk to the daemon).
 CLIENT_ENV_NAMES: tuple[str, ...] = (
@@ -111,6 +128,7 @@ class DockerSandbox(ProcessSandbox):
 
     backend_name: ClassVar[str] = "docker"
     confines_writes: ClassVar[bool] = True
+    start_report: ClassVar[StartReport] = "stdout"
 
     def __init__(
         self,
@@ -149,6 +167,11 @@ class DockerSandbox(ProcessSandbox):
     def image(self) -> str:
         """The image every container runs."""
         return self._image
+
+    @property
+    def process_limit(self) -> str:
+        """``"docker"``: ``max_procs`` is the container's ``--pids-limit``."""
+        return "docker"
 
     def command(self, cmd: str, cwd: Path, name: str, *, interactive: bool = False) -> list[str]:
         """The ``docker run`` command line for ``cmd`` in container ``name``."""
@@ -194,7 +217,7 @@ class DockerSandbox(ProcessSandbox):
             argv += ["--env", f"{key}={value}"]
         if interactive:
             argv.append("--interactive")
-        script = launcher_script("bash", keep=self._env)
+        script = launcher_script("bash", keep=self._env, status_fd=1)
         argv += [self._image, "bash", "-c", script, LAUNCHER_ARG0, cmd]
         return argv
 
@@ -212,14 +235,25 @@ class DockerSandbox(ProcessSandbox):
                 env=self._client_env,
             )
 
-    def launch(self, cmd: str, cwd: Path, *, interactive: bool = False) -> Launch:
-        """A ``docker run`` launch whose stop step removes the container."""
+    def launch(
+        self, cmd: str, cwd: Path, *, interactive: bool = False, status_fd: int | None = None
+    ) -> Launch:
+        """A ``docker run`` launch whose stop step removes the container.
+
+        ``status_fd`` is not used: descriptors do not reach a container, so the
+        launcher reports on stdout (:data:`STARTED_MARKER`).
+
+        Raises:
+            SandboxUnavailableError: A read-only path no longer exists.
+        """
+        require_paths(self._readonly, "read-only paths")
         name = f"receipts-{uuid.uuid4().hex[:16]}"
         return Launch(
             argv=tuple(self.command(cmd, cwd, name, interactive=interactive)),
             env=self._client_env,
             cwd=self._workspace,
             stop=lambda: self.stop_container(name),
+            stdout_marker=STARTED_MARKER,
         )
 
 

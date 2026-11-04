@@ -248,3 +248,18 @@ is the task's `timeout_s`, and the address-space limit is the language's value i
 12 GB of address space, so TypeScript tasks get 16 GB of RLIMIT_AS; this limits address
 space, not resident memory). Found while integrating the bench framework, before any study
 run touched a TypeScript task.
+
+**D33. Sandbox hardening from the independent review.** Three rules the sandbox now
+enforces, each stricter than the original contract. (1) Credential-like environment
+names are refused by whole words (TOKEN, SECRET, PASSWORD, CREDENTIALS, PAT, qualified
+keys such as `API_KEY` and `PRIVATE_KEY`, proxy settings other than `NO_PROXY`, agent and
+daemon sockets, credential helpers, and model-provider prefixes such as `ANTHROPIC_` and
+`OPENAI_`), even when a policy names them explicitly; names like `SECRET_KEY` stay refused
+because they say they hold a secret. (2) Backends that do not confine writes (`unshare`)
+are opt-in (`allow_unconfined=True`), and `make_sandbox` runs a check command (default
+`command -v git`) inside each candidate before choosing it; study runs use bubblewrap only
+(`tools/run_study.py`), so a bubblewrap failure stops the run instead of falling back.
+(3) `max_procs` is enforced by a per-command pids cgroup under `/sys/fs/cgroup/pids`
+(it binds root, unlike `ulimit -u`); where no cgroup can be created it falls back to the
+rlimit and `process_limit` reports the weaker mode. Leftover processes are killed through
+a pidfd and the cgroup is removed.

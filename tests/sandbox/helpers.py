@@ -29,6 +29,27 @@ PLANTED_SECRETS: dict[str, str] = {
 #: Python one-liner that tries to open a TCP connection to a public resolver.
 CONNECT_CMD = "python3 -c \"import socket; socket.create_connection(('1.1.1.1', 53), timeout=3)\""
 
+#: Command that tries to fork 60 children and prints how many forks succeeded and
+#: failed (``"<started> <failed>"``); the children exit once the parent is done.
+FORK_CMD = (
+    "python3 -c 'import os\n"
+    "r, w = os.pipe()\n"
+    "started = failed = 0\n"
+    "for _ in range(60):\n"
+    "    try:\n"
+    "        pid = os.fork()\n"
+    "    except OSError:\n"
+    "        failed += 1\n"
+    "        continue\n"
+    "    if pid == 0:\n"
+    "        os.close(w)\n"
+    "        os.read(r, 1)\n"
+    "        os._exit(0)\n"
+    "    started += 1\n"
+    "os.close(w)\n"
+    "print(started, failed)'"
+)
+
 
 @functools.cache
 def bwrap_probe() -> BackendProbe:

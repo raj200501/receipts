@@ -81,6 +81,13 @@ def test_cap_stream_keeps_head_and_tail_and_hashes_the_full_text() -> None:
     assert "[... 88 chars elided by receipts ...]" in capped
 
 
+def test_cap_stream_with_a_limit_below_two_keeps_no_tail() -> None:
+    text = "abcdef"
+    capped, truncated, _ = cap_stream(text, limit=1)
+    assert truncated
+    assert capped == "\n[... 6 chars elided by receipts ...]\n"
+
+
 def test_cap_stream_default_limit() -> None:
     text = "q" * (MAX_STREAM_CHARS + 1)
     capped, truncated, _ = cap_stream(text)

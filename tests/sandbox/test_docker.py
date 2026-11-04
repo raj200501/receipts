@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from receipts.sandbox.api import Sandbox, SandboxPolicy, SandboxUnavailableError
-from receipts.sandbox.base import LAUNCHER_ARG0, MAX_COMMAND_BYTES
+from receipts.sandbox.api import CommandOutcome, Sandbox, SandboxPolicy, SandboxUnavailableError
+from receipts.sandbox.base import LAUNCHER_ARG0, MAX_COMMAND_BYTES, STARTED
 from receipts.sandbox.docker import (
     CLIENT_ENV_NAMES,
     DEFAULT_IMAGE,
@@ -33,16 +33,27 @@ from .helpers import CONNECT_CMD, docker_probe, requires
 
 FAKE_DOCKER = """#!/bin/bash
 # Synthetic stand-in for the docker client, written by tests/sandbox/test_docker.py.
-{{ printf '%s ' "$@" | tr '\n' ' '; echo; }} >> {log}
+# "run" emulates a container by running the launcher locally (no isolation; the
+# commands are this test file's own fixtures), unless a failure mode is enabled.
+{{ printf '%s ' "$@" | tr '\\n' ' '; echo; }} >> {log}
 case "$1" in
   info) if [ -f {root}/info_ok ]; then echo 99.0.0-synthetic; exit 0; fi
         echo "Cannot connect to the Docker daemon" >&2; exit 1 ;;
   image) [ -f {root}/image_ok ] && exit 0; exit 1 ;;
   rm) exit 0 ;;
   run) if [ -f {root}/run_sleeps ]; then exec sleep 30; fi
-       if [ -f {root}/run_ok ]; then exit 0; fi
        if [ -f {root}/run_silent ]; then exit 3; fi
-       echo out; echo err >&2; exit 7 ;;
+       if [ -f {root}/daemon_error ]; then
+         echo "docker: Error response from daemon: synthetic" >&2; exit 125
+       fi
+       args=("$@")
+       for ((i = 0; i + 4 < ${{#args[@]}}; i++)); do
+         if [ "${{args[i]}}" = bash ] && [ "${{args[i+1]}}" = -c ] \\
+            && [ "${{args[i+3]}}" = receipts-sandbox ]; then
+           exec bash -c "${{args[i+2]}}" receipts-sandbox "${{args[i+4]}}"
+         fi
+       done
+       exit 2 ;;
 esac
 exit 2
 """
@@ -56,12 +67,19 @@ class FakeDocker:
 
     @property
     def path(self) -> str:
+        """The fake client's executable."""
         return str(self.root / "docker")
 
     def enable(self, name: str) -> None:
+        """Turn on the synthetic behaviour ``name`` (for example ``"info_ok"``)."""
         (self.root / name).touch()
 
+    def disable(self, name: str) -> None:
+        """Turn off the synthetic behaviour ``name``."""
+        (self.root / name).unlink(missing_ok=True)
+
     def calls(self) -> list[str]:
+        """Each call's arguments, joined by spaces, in order."""
         log = self.root / "calls.log"
         lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
         return [line.strip() for line in lines]
@@ -69,6 +87,7 @@ class FakeDocker:
 
 @pytest.fixture
 def fake_docker(tmp_path: Path) -> FakeDocker:
+    """A fake docker client under this test's temporary directory."""
     root = tmp_path / "fake-docker"
     root.mkdir()
     script = root / "docker"
@@ -78,10 +97,12 @@ def fake_docker(tmp_path: Path) -> FakeDocker:
 
 
 def value_after(argv: list[str], flag: str) -> str:
+    """The argument right after the first ``flag`` in ``argv``."""
     return argv[argv.index(flag) + 1]
 
 
 def values_after(argv: list[str], flag: str) -> list[str]:
+    """The argument after each ``flag`` in ``argv``, in order."""
     return [argv[i + 1] for i, arg in enumerate(argv) if arg == flag]
 
 
@@ -123,6 +144,7 @@ def test_command_line_has_every_isolation_flag(
     assert argv[image_at + 1 : image_at + 3] == ["bash", "-c"]
     assert argv[-2:] == [LAUNCHER_ARG0, "echo hi"]
     assert "compgen -e" in argv[-3]
+    assert f"printf '%s\\n' {STARTED} >&1" in argv[-3]
 
 
 def test_interactive_and_network_options(workspace: Path, fake_docker: FakeDocker) -> None:
@@ -138,6 +160,7 @@ def test_constructor_checks(workspace: Path, tmp_path: Path, fake_docker: FakeDo
     box = DockerSandbox(workspace, docker=fake_docker.path)
     assert isinstance(box, Sandbox)
     assert (box.backend, box.confines_writes, box.image) == ("docker", True, DEFAULT_IMAGE)
+    assert box.process_limit == "docker"
     assert box.executable == fake_docker.path
     with pytest.raises(ValueError, match="cpus"):
         DockerSandbox(workspace, docker=fake_docker.path, cpus=0)
@@ -175,10 +198,38 @@ def test_client_env_drops_credentials(planted_secrets: dict[str, str]) -> None:
 
 
 def test_run_through_the_client(workspace: Path, fake_docker: FakeDocker) -> None:
-    outcome = DockerSandbox(workspace, docker=fake_docker.path).run("echo hi", cwd="sub")
+    box = DockerSandbox(workspace, docker=fake_docker.path)
+    outcome = box.run("echo out; echo err >&2; exit 7", cwd="sub")
     assert (outcome.exit_code, outcome.stdout, outcome.stderr) == (7, "out\n", "err\n")
     assert (outcome.backend, outcome.cwd) == ("docker", "sub")
     assert fake_docker.calls()[0].startswith("run --rm --name receipts-")
+
+
+def test_a_command_exiting_125_is_its_own_outcome(workspace: Path, fake_docker: FakeDocker) -> None:
+    outcome = DockerSandbox(workspace, docker=fake_docker.path).run("echo hi; exit 125")
+    assert (outcome.exit_code, outcome.stdout) == (125, "hi\n")
+
+
+def test_a_daemon_error_is_a_sandbox_failure(workspace: Path, fake_docker: FakeDocker) -> None:
+    fake_docker.enable("daemon_error")
+    box = DockerSandbox(workspace, docker=fake_docker.path)
+    with pytest.raises(SandboxUnavailableError) as caught:
+        box.run("true")
+    message = str(caught.value)
+    assert "docker: the sandbox did not start the command" in message
+    assert "exit code 125: docker: Error response from daemon: synthetic" in message
+
+
+def test_a_vanished_readonly_path_is_a_sandbox_failure(
+    workspace: Path, tmp_path: Path, fake_docker: FakeDocker
+) -> None:
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    box = DockerSandbox(workspace, SandboxPolicy(readonly_paths=(tools,)), docker=fake_docker.path)
+    assert box.run("true").exit_code == 0
+    tools.rmdir()
+    with pytest.raises(SandboxUnavailableError, match="read-only paths no longer exist"):
+        box.run("true")
 
 
 def test_timeout_kills_the_container(workspace: Path, fake_docker: FakeDocker) -> None:
@@ -211,11 +262,14 @@ def test_probe_docker_reports_each_failure(fake_docker: FakeDocker) -> None:
     uncached = probe_docker(fake_docker.path, image="local/img:1")
     assert not uncached.ok and "local/img:1" in uncached.detail
     fake_docker.enable("image_ok")
+    fake_docker.enable("daemon_error")
     broken = probe_docker(fake_docker.path)
-    assert not broken.ok and "containers do not run here: err" in broken.detail
+    assert not broken.ok and "containers do not run here" in broken.detail
+    assert "Error response from daemon: synthetic" in broken.detail
+    fake_docker.disable("daemon_error")
     fake_docker.enable("run_silent")
     assert "exit code 3" in probe_docker(fake_docker.path).detail
-    fake_docker.enable("run_ok")
+    fake_docker.disable("run_silent")
     ready = probe_docker(fake_docker.path)
     assert ready.ok and "99.0.0-synthetic" in ready.detail
     runs = [call for call in fake_docker.calls() if call.startswith("run ")]
@@ -242,6 +296,34 @@ def test_probe_docker_survives_a_hung_client(
 
     monkeypatch.setattr("receipts.sandbox.docker.subprocess.run", hung)
     assert not probe_docker(fake_docker.path).ok
+
+
+def failing_true(self: object, cmd: str, **kwargs: object) -> CommandOutcome:
+    """A synthetic outcome for a sandbox that started ``true`` and saw it fail."""
+    return CommandOutcome(
+        cmd=cmd,
+        cwd=".",
+        exit_code=3,
+        stdout="",
+        stderr="synthetic: true failed\n",
+        duration_s=0.0,
+        timed_out=False,
+        stdout_truncated=False,
+        stderr_truncated=False,
+        stdout_sha256="",
+        stderr_sha256="",
+        backend="synthetic",
+    )
+
+
+def test_probe_docker_reports_a_trivial_command_that_fails(
+    fake_docker: FakeDocker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_docker.enable("info_ok")
+    fake_docker.enable("image_ok")
+    monkeypatch.setattr(DockerSandbox, "run", failing_true)
+    probe = probe_docker(fake_docker.path)
+    assert not probe.ok and probe.detail == "containers do not run here: synthetic: true failed"
 
 
 # Real containers --------------------------------------------------------------------

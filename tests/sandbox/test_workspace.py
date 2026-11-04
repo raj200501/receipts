@@ -6,6 +6,7 @@ import os
 import shutil
 import stat
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,7 @@ from receipts.sandbox.workspace import (
 
 
 def git(repo: Path, *args: str) -> str:
+    """Run git in ``repo`` with the workspace module's host environment; return stdout."""
     return subprocess.run(
         ["git", "-C", str(repo), *args],
         capture_output=True,
@@ -163,6 +165,45 @@ def test_dirty_repository_state_becomes_the_base(repo: tuple[Path, str], tmp_pat
         "outside-link",
         "pkg/mod.py",
     ]
+
+
+def make_ignored_repo(src: Path) -> str:
+    """A synthetic repository tracking files its own ``.gitignore`` matches; returns HEAD."""
+    (src / "build").mkdir(parents=True)
+    (src / ".gitignore").write_text("*.log\nbuild/\n", encoding="utf-8")
+    (src / "app.py").write_text("x = 1\n", encoding="utf-8")
+    (src / "fixtures.log").write_text("synthetic fixture\n", encoding="utf-8")
+    (src / "build" / "vendored.js").write_text("// synthetic\n", encoding="utf-8")
+    git(src, "init", "--quiet", "--template=")
+    git(src, "add", ".gitignore", "app.py")
+    git(src, "add", "--force", "fixtures.log", "build/vendored.js")
+    git(src, "-c", "user.name=T", "-c", "user.email=t@example.invalid", "commit", "-qm", "m")
+    return git(src, "rev-parse", "HEAD")
+
+
+def test_tracked_files_that_match_gitignore_stay_tracked(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    head = make_ignored_repo(src)
+    ws = create_workspace(src, tmp_path / "root")
+    assert ws.base_commit == head
+    assert sorted(git(ws.path, "ls-files").splitlines()) == [
+        ".gitignore",
+        "app.py",
+        "build/vendored.js",
+        "fixtures.log",
+    ]
+    assert git(ws.path, "status", "--porcelain") == ""
+
+
+def test_edits_to_tracked_ignored_files_reach_the_base_commit(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    head = make_ignored_repo(src)
+    (src / "fixtures.log").write_text("edited before the run\n", encoding="utf-8")
+    (src / "new.log").write_text("untracked and ignored\n", encoding="utf-8")
+    ws = create_workspace(src, tmp_path / "root")
+    assert git(ws.path, "rev-parse", "HEAD^") == head
+    assert git(ws.path, "diff", "--name-status", head, ws.base_commit) == "M\tfixtures.log"
+    assert "new.log" not in git(ws.path, "ls-files").splitlines()
 
 
 def test_empty_repository_gets_a_base_commit(tmp_path: Path) -> None:
@@ -310,6 +351,31 @@ def test_remove_workspace_never_leaves_the_root(tmp_path: Path) -> None:
     assert remove_workspace(root / "file.txt", root) is True
 
 
+@pytest.mark.parametrize("tail", ["..", "../.."])
+def test_remove_workspace_refuses_a_path_naming_a_parent(tmp_path: Path, tail: str) -> None:
+    root = tmp_path / "root"
+    for name in ("ws-a", "ws-b", "other-run"):
+        (root / name).mkdir(parents=True)
+    with pytest.raises(ValueError, match="names no workspace"):
+        remove_workspace(root / "ws-a" / tail, root)
+    with pytest.raises(ValueError, match="names no workspace"):
+        remove_workspace(f"{root}/ws-a/{tail}", root)
+    with pytest.raises(ValueError):
+        remove_workspace(".", root)
+    assert sorted(p.name for p in root.iterdir()) == ["other-run", "ws-a", "ws-b"]
+
+
+@pytest.mark.parametrize("spelling", ["{root}/ws-a/", "{root}/ws-a/.", "{root}/./ws-a"])
+def test_remove_workspace_accepts_other_spellings_of_one_workspace(
+    tmp_path: Path, spelling: str
+) -> None:
+    root = tmp_path / "root"
+    for name in ("ws-a", "ws-b"):
+        (root / name).mkdir(parents=True)
+    assert remove_workspace(spelling.format(root=root), root) is True
+    assert [p.name for p in root.iterdir()] == ["ws-b"]
+
+
 def test_make_tree_writable(tmp_path: Path) -> None:
     locked = tmp_path / "a" / "b"
     locked.mkdir(parents=True)
@@ -350,6 +416,26 @@ def test_remove_all_workspaces(task_dir: Path, tmp_path: Path) -> None:
     assert sorted(p.name for p in root.iterdir()) == ["link", "note.txt"]
     assert task_dir.is_dir()
     assert remove_all_workspaces(tmp_path / "missing") == 0
+
+
+def test_temporary_workspace_removes_its_root_when_creation_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    made: list[Path] = []
+    real = tempfile.mkdtemp
+
+    def recording(prefix: str | None = None) -> str:
+        path = real(prefix=prefix)
+        made.append(Path(path))
+        return path
+
+    monkeypatch.setattr(tempfile, "mkdtemp", recording)
+    with (
+        pytest.raises(ValueError, match="not a directory"),
+        temporary_workspace(tmp_path / "missing-source"),
+    ):
+        pass
+    assert len(made) == 1 and not made[0].exists()
 
 
 def test_temporary_workspace_with_and_without_a_root(task_dir: Path, tmp_path: Path) -> None:

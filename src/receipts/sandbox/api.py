@@ -95,7 +95,13 @@ class Sandbox(Protocol):
     def run(
         self, cmd: str, *, cwd: str = ".", timeout_s: float | None = None, stdin: str | None = None
     ) -> CommandOutcome:
-        """Run ``cmd`` with ``bash -c`` in ``cwd`` (relative to the workspace)."""
+        """Run ``cmd`` with ``bash -c`` in ``cwd`` (relative to the workspace).
+
+        Raises :class:`SandboxUnavailableError` when the sandbox fails before the command
+        starts (setup, limits, or mounts), so a setup failure is never reported as the
+        command's own exit code. The outcome's stdout and stderr hashes cover the first
+        ``max_capture_bytes`` (64 MiB) of each stream.
+        """
         ...
 
 
