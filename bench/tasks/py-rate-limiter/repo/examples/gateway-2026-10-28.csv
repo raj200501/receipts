@@ -1,0 +1,14 @@
+time,client,method,path
+2026-10-28T14:00:00.000Z,billing-export,GET,/v1/invoices?page=1
+2026-10-28T14:00:00.200Z,billing-export,GET,/v1/invoices?page=2
+2026-10-28T14:00:00.400Z,billing-export,GET,/v1/invoices?page=3
+2026-10-28T14:00:00.600Z,billing-export,GET,/v1/invoices?page=4
+2026-10-28T14:00:00.800Z,billing-export,GET,/v1/invoices?page=5
+2026-10-28T14:00:01.000Z,billing-export,GET,/v1/invoices?page=6
+2026-10-28T14:00:05.000Z,reports-web,GET,/v1/reports/daily
+2026-10-28T14:00:30.000Z,reports-web,GET,/v1/reports/weekly
+2026-10-28T14:01:10.000Z,billing-export,GET,/v1/invoices?page=6
+2026-10-28T14:01:10.200Z,billing-export,GET,/v1/invoices?page=7
+2026-10-28T14:01:10.400Z,billing-export,GET,/v1/invoices?page=8
+2026-10-28T14:01:10.600Z,billing-export,GET,/v1/invoices?page=9
+2026-10-28T14:01:10.800Z,billing-export,GET,/v1/invoices?page=10

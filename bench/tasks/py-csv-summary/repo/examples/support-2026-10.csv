@@ -1,0 +1,12 @@
+ticket,opened,customer,status,minutes,comment
+4101,2026-10-01,Ruth Iyer,closed,15,Password reset
+4102,2026-10-01,Jonas Berg,open,40,"Printer on the second floor jams.
+Tried a new cartridge, still jams."
+4103,2026-10-02,Mei Tanaka,closed,5,
+4104,2026-10-03,Omar Haddad,pending,25,"Invoice PDF is empty.
+
+Customer sent a screenshot, see the attachment."
+4105,2026-10-06,Ruth Iyer,open,10,VPN drops every hour
+4106,2026-10-07,Ana Lima,closed,30,"Laptop will not start.
+Replaced the charger.
+Works again."

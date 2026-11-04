@@ -1,0 +1,9 @@
+# Rate limits agreed with our partners.
+#
+# This file is no longer maintained and lists no clients. Since 2 November 2026 the
+# partner integrations team publishes the partner limits only through the partner
+# portal service, which is reachable from the office network or the VPN:
+#
+#     https://partners.platform.internal/api/v1/rate-limits
+#
+# Ask the partner integrations team for access.

@@ -1,0 +1,49 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project); see
+# docs/BENCH.md for every field.
+id = "py-csv-summary"
+title = "csvsummary counts quoted line breaks as new rows"
+language = "python"
+category = "bug_fix"
+origin = "hand-written"
+prompt = """
+csvsummary miscounts our support exports. Ticket comments in those exports are quoted
+and often span several lines, and csvsummary treats every line break inside a comment
+as the start of a new row. examples/support-2026-10.csv is a piece of the October
+export: it has 6 tickets, but csvsummary summary reports 10 rows, the ticket column
+loses its min, max, and mean, and csvsummary top on the status column lists 4 empty
+statuses that are not in the file.
+
+Please fix how files are read:
+
+- a quoted field that contains line breaks is one value of one row, so csvsummary
+  summary counts that row once and every column's counts and numbers come out right,
+  and csvsummary top counts the values of every column correctly;
+- csvsummary top should show a value that contains line breaks the way
+  docs/FORMAT.md says listings show them;
+- the error for a row with too many fields should name the line on which that row
+  starts, also when that row or an earlier one contains line breaks, and the command
+  should still exit with status 2.
+
+Files without quoted line breaks should give exactly the same output as today,
+including how short rows, blank lines, and --delimiter are handled.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "A quoted field that contains line breaks is one value of one row: csvsummary summary counts that row once and computes every column's filled, distinct, min, max, and mean values from whole values, csvsummary top counts the values of every column correctly, and parse_table returns the field as one value."
+
+[[requirements]]
+id = "R2"
+text = "csvsummary top prints a value that contains line breaks on a single line, showing each line break the way docs/FORMAT.md describes for listings."
+
+[[requirements]]
+id = "R3"
+text = "A row with more fields than the header stops csvsummary with exit status 2 and an error that names the line on which that row starts (line N), counting the line breaks inside quoted fields of that row and of earlier rows."
+
+[[requirements]]
+id = "R4"
+text = "Files without quoted line breaks give the same csvsummary summary and csvsummary top output as before, including padded short rows, skipped blank lines, quoted commas and quotes, --delimiter, --limit, and the existing errors with exit status 2."
+kind = "preserve"
