@@ -28,34 +28,32 @@ Updated 2026-11-04, goal_turn 3 (Raj cleared /goal and said continue). History i
 
 ## Now
 
-goal_turn 3, 2026-11-04 11:40 UTC. Pushed through e9fc3bc (prepush PASS, D28); later
-commits are local until the next prepush.
+Paused 2026-11-04 17:00 UTC at Raj's request (clean stop). Origin has every commit; the
+working tree is clean.
 
-- **G6 smoke study** (one unmanipulated `ma-qwen7b` run per task, seed 0) is running from a
-  code snapshot of e9fc3bc with the D39 scaffold (16 turns, then one final-report
-  request): 8 of 40 banked and committed, 4 in flight, about 12 runs an hour.
-  `runs/chain-pilot.sh` starts the pilot (32 runs, `pilot-*` tasks only) the moment the
-  smoke study exits with all 40 banked.
-- **E1 sample size:** `tools/power_e1.py` (committed) implements the prereg 0001 section 8
-  rule; it runs on the banked pilot and writes `artifacts/power/e1_power.json`.
-- **Preregistrations:** an agent is folding the two code owners' gap lists into prereg
-  0001 (E1, E2) and 0002 (E4) and drafting 0003 (E3 judges). I review the text before the
-  freeze; the freeze waits for the pilot and the power run.
-- **E0:** the blind-label claim-type counting (D34) is being built and reviewed; the writer,
-  adjudicator, and labeler runs start once every smoke run is banked. Smoke reports are
-  short (zero to four claims each), so the writer volume needs a decision (next actions).
-- **G9:** an agent is writing the scripted hook demo (`tools/hook_demo.py`); hook latency is
-  measured on the smoke runs once all are banked.
+- **G6 smoke study:** 20 of 40 runs banked and pushed (all `py-*` tasks done; `ts-*` next).
+  Restart with `PYTHONPATH=$(bash tools/snapshot_code.sh 4ae76bb) uv run --no-sync python
+  tools/run_study.py --plan artifacts/studies/smoke/plan.json --port 8090 --threads 3
+  --parallel 4 --request-timeout 3600` (restart-safe; banked runs are skipped).
+- **Scaffold and serving fixes this session** (all for every arm, before any pilot or E1
+  run): slot pinning and 3 server threads (D44), lenient JSON actions with specific parse
+  errors (D45), a JSON-action grammar with 1024 output tokens (D46). Three runs that had
+  looped for hours then finished in 3 to 17 turns.
+- **Pre-freeze work in progress, parked as a patch:** `docs/notes/prefreeze-wip-2026-11-04.patch`
+  (`git apply` it; it applies cleanly to HEAD). It holds the D42 re-verification module
+  (`src/receipts/study/rescore.py`), new E1/E4 rows, analysis, E3 sampling, gate changes,
+  the run_study retry cap, the power-search fix, the three prereg drafts (0003 is new),
+  and the hook demo. Reviewed by six lenses with 55 confirmed findings, partly fixed;
+  the fix stage stopped mid-way, so the patch is unverified (tests may fail).
 
 ## Next three actions
 
-1. When the smoke study is complete: bank `smoke_runs.json` (G6), build the E0 writer
-   packets, run the blind labelers for the claim-type counts and the writer and
-   adjudicator subagents (D40 sets the volume), then split and commit the held-out
-   manifest.
-2. When the pilot is banked: run `tools/power_e1.py`, write the E1 and E4 plans, fill the
-   TO FIX fields, review, and freeze prereg 0001, 0002, and 0003 together before any E1 run.
-3. Integrate the blind-label tooling and the hook demo, run `tools/prepush.sh`, push.
+1. Apply the patch, finish the fix stage (banking: instrument record binds claims,
+   verify, ledger only; e3, e4-analysis, gates fixers), then run `make ci` and push.
+2. Finish the smoke study, bank `smoke_runs.json`, run the E0 labelers, writers, and
+   adjudicators (workflow drafts in the session notes, D40, D43), and the pilot.
+3. Power run, E1/E4 plans, fill TO FIX fields, review, freeze 0001 to 0003, launch E1 with
+   `runs/launch-study.sh` semantics (freeze-commit snapshot).
 
 ## Environment (`make doctor`, 2026-10-23)
 
