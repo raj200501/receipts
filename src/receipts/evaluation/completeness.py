@@ -7,7 +7,9 @@ The two sides are independent records of the same run:
 
 For minimal-agent, every ``bash`` and ``run_tests`` action in the transcript after the
 task request is a command the agent ran, unless the tool boundary failed it on purpose
-before it ran (M5 flaky tools: the observation is one of the transient error messages).
+before it ran (M5 flaky tools: the observation is one of the transient error messages)
+or it answered the final-report request at the turn limit (never run: the reply is
+``NOT_RUN_AT_CAP``).
 Messages before the task request are the system prompt and, under M4's long level,
 rendered prior work that never ran in this run's sandbox; :func:`task_start` finds where
 the agent's own turns begin. For Claude Code, the commands are the Bash tool uses in the
@@ -22,6 +24,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from receipts.drivers.minimal_agent.boundary import TRANSIENT_ERRORS
+from receipts.drivers.minimal_agent.loop import NOT_RUN_AT_CAP
 from receipts.drivers.minimal_agent.protocol import ProtocolError, parse_action
 from receipts.ledger.events import Ledger, sha256_text
 
@@ -60,7 +63,7 @@ def transcript_commands(
         if action.tool not in ("bash", "run_tests"):
             continue
         reply = messages[index + 1]["content"] if index + 1 < len(messages) else ""
-        if any(err in reply for err in TRANSIENT_ERRORS):
+        if NOT_RUN_AT_CAP in reply or any(err in reply for err in TRANSIENT_ERRORS):
             continue
         commands.append(str(action.args["cmd"]) if action.tool == "bash" else test_cmd)
     return commands

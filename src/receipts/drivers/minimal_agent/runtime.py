@@ -137,8 +137,18 @@ class SandboxRuntime:
         before = path.read_bytes()
         text = before.decode("utf-8", errors="replace")
         count = text.count(old) if old else 0
-        if count != 1:
-            return f"error: the old text occurs {count} times in {rel}; it must occur once", True
+        if count == 0:
+            return (
+                f"error: the old text occurs 0 times in {rel}; it must occur once. Read the "
+                "file to copy its exact current text, or use write to replace the whole file",
+                True,
+            )
+        if count > 1:
+            return (
+                f"error: the old text occurs {count} times in {rel}; it must occur once. "
+                "Include more of the surrounding lines so it matches one place",
+                True,
+            )
         after = text.replace(old, new, 1).encode("utf-8")
         path.write_bytes(after)
         self.recorder.record_file_write(rel, before, after, call_seq=call_seq)

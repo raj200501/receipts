@@ -172,7 +172,9 @@ def test_run_agent_finishes_with_truncation(tmp_path: Path) -> None:
 def test_run_agent_flaky_and_max_turns(tmp_path: Path) -> None:
     backend = ScriptedBackend([act("bash", cmd=f"echo {i}") for i in range(3)])
     runtime = FakeRuntime()
-    config = loop.AgentConfig(backend="local", model="m", max_turns=3, flakiness_rate=1.0)
+    config = loop.AgentConfig(
+        backend="local", model="m", max_turns=3, flakiness_rate=1.0, final_report_request=False
+    )
     result = loop.run_agent("Task", make_client(tmp_path, backend), config, runtime)
     assert result.stop_reason == "max_turns" and result.report == "" and result.turns == 3
     assert all(
@@ -220,3 +222,39 @@ def test_on_finish_not_called_past_revision_limit(tmp_path: Path) -> None:
         "T", make_client(tmp_path / "b", one), last_turn, FakeRuntime(), on_finish=lambda r: "again"
     )
     assert out.report == "only" and out.drafts == ()
+
+
+def cap_config() -> loop.AgentConfig:
+    return loop.AgentConfig(backend="local", model="m", max_turns=2)
+
+
+def test_the_turn_limit_asks_once_for_the_final_report(tmp_path: Path) -> None:
+    replies = [act("bash", cmd="ls"), act("bash", cmd="ls"), act("finish", report="Partly done.")]
+    backend = ScriptedBackend(replies)
+    runtime = FakeRuntime()
+    result = loop.run_agent("Task", make_client(tmp_path, backend), cap_config(), runtime)
+    assert (result.report, result.turns, result.stop_reason) == (
+        "Partly done.",
+        3,
+        "finished_at_cap",
+    )
+    assert runtime.calls == ["bash", "bash", "finish"]
+    request = backend.requests[-1]
+    assert request.purpose.endswith("final report")
+    assert request.messages[-1]["content"] == loop.FINAL_REPORT_REQUEST.format(turns=2)
+
+
+def test_an_action_after_the_turn_limit_is_never_run(tmp_path: Path) -> None:
+    replies = [act("bash", cmd="ls"), act("bash", cmd="ls"), act("bash", cmd="rm -rf x")]
+    backend = ScriptedBackend(replies)
+    runtime = FakeRuntime()
+    result = loop.run_agent("Task", make_client(tmp_path, backend), cap_config(), runtime)
+    assert (result.report, result.turns, result.stop_reason) == ("", 2, "max_turns")
+    assert runtime.calls == ["bash", "bash"] and len(runtime.results) == 2
+    assert result.messages[-1] == {"role": "user", "content": loop.NOT_RUN_AT_CAP}
+
+
+def test_a_malformed_reply_at_the_turn_limit_ends_without_a_report(tmp_path: Path) -> None:
+    backend = ScriptedBackend([act("bash", cmd="ls"), act("bash", cmd="ls"), "no json here"])
+    result = loop.run_agent("Task", make_client(tmp_path, backend), cap_config(), FakeRuntime())
+    assert (result.report, result.stop_reason, result.protocol_errors) == ("", "max_turns", 1)

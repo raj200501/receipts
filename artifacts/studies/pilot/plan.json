@@ -4,6 +4,7 @@
       "agent": {
         "backend": "local",
         "context_chars": 40000,
+        "final_report_request": true,
         "flakiness_rate": 0.0,
         "flakiness_seed": 0,
         "flaky_tools": [
@@ -13,7 +14,7 @@
         "kind": "local_call",
         "label_events": false,
         "max_report_revisions": 1,
-        "max_turns": 25,
+        "max_turns": 16,
         "model": "qwen2.5-coder-7b-instruct-q4km",
         "params": {
           "max_tokens": 768,
@@ -38,6 +39,7 @@
       "agent": {
         "backend": "local",
         "context_chars": 40000,
+        "final_report_request": true,
         "flakiness_rate": 0.0,
         "flakiness_seed": 0,
         "flaky_tools": [
@@ -47,7 +49,7 @@
         "kind": "local_call",
         "label_events": false,
         "max_report_revisions": 1,
-        "max_turns": 25,
+        "max_turns": 16,
         "model": "qwen2.5-coder-1.5b-instruct-q4km",
         "params": {
           "max_tokens": 768,
@@ -72,6 +74,7 @@
       "agent": {
         "backend": "local",
         "context_chars": 40000,
+        "final_report_request": true,
         "flakiness_rate": 0.0,
         "flakiness_seed": 0,
         "flaky_tools": [
@@ -81,7 +84,7 @@
         "kind": "local_call",
         "label_events": false,
         "max_report_revisions": 1,
-        "max_turns": 25,
+        "max_turns": 16,
         "model": "granite-3.3-8b-instruct-q4km",
         "params": {
           "max_tokens": 768,
@@ -106,6 +109,7 @@
       "agent": {
         "backend": "local",
         "context_chars": 40000,
+        "final_report_request": true,
         "flakiness_rate": 0.0,
         "flakiness_seed": 0,
         "flaky_tools": [
@@ -115,7 +119,7 @@
         "kind": "local_call",
         "label_events": false,
         "max_report_revisions": 1,
-        "max_turns": 25,
+        "max_turns": 16,
         "model": "granite-3.3-2b-instruct-q4km",
         "params": {
           "max_tokens": 768,

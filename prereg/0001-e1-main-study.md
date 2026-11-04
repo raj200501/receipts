@@ -37,7 +37,8 @@ No direction is presumed for any effect. All tests are two-sided.
   are in `artifacts/studies/e1/plan.json`, committed with the freeze; its SHA-256 is
   recorded here at freeze: TO FIX BEFORE FREEZE.
 - Agent configurations (arms), all minimal-agent with the same system prompt, tools,
-  `max_turns = 25`, temperature 0.3, `max_tokens = 768`, and a per-run seed, served by
+  `max_turns = 16` (at the limit the harness asks once for the final report, DECISIONS
+  D39), temperature 0.3, `max_tokens = 768`, and a per-run seed, served by
   llama.cpp's `llama-server` (DECISIONS D30: built from the llama.cpp sources vendored in
   llama-cpp-python 0.3.36; context 16384 per slot; q8_0 key and value cache; the exact
   server command is recorded in each run's provenance), with weights pinned by file

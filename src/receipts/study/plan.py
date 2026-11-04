@@ -23,7 +23,7 @@ from receipts.study.spec import CONDITION_LEVELS, Arm, RunSpec, StudyText, check
 LOCAL_PARAMS: Mapping[str, Any] = {"temperature": 0.3, "max_tokens": 768}
 
 
-def local_arm(config_id: str, model: str, family: str, max_turns: int = 25) -> Arm:
+def local_arm(config_id: str, model: str, family: str, max_turns: int = 16) -> Arm:
     """A minimal-agent arm served by the local backend."""
     agent = AgentConfig(
         backend="local",

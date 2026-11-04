@@ -59,3 +59,16 @@ def test_complete_and_incomplete_runs(tmp_path: Path) -> None:
     gap = completeness.check_run("r2", MESSAGES, ledger(tmp_path / "b", ["ls -la"]), "pytest -q")
     assert gap.missing == ["echo last", "pytest -q"]
     assert gap.to_dict()["ledger_commands"] == ["ls -la"]
+
+
+def test_an_action_answering_the_final_report_request_is_not_a_command() -> None:
+    from receipts.drivers.minimal_agent import loop
+
+    messages = [
+        {"role": "assistant", "content": '{"tool": "bash", "args": {"cmd": "ls"}}'},
+        {"role": "user", "content": "Result of bash:\nfile\n"},
+        {"role": "user", "content": loop.FINAL_REPORT_REQUEST.format(turns=1)},
+        {"role": "assistant", "content": '{"tool": "bash", "args": {"cmd": "rm -rf x"}}'},
+        {"role": "user", "content": loop.NOT_RUN_AT_CAP},
+    ]
+    assert completeness.transcript_commands(messages, "pytest -q") == ["ls"]

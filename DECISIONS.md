@@ -275,3 +275,97 @@ and a verbatim quote. `artifacts/e0/claim_type_counts.json` records `method: bli
 the per-run labels (every real smoke run, empty reports included), and counts that G5
 recomputes from those labels. Extractor counts may be reported beside them as
 descriptive output only.
+
+
+**D35. Gate-harness interpretations for G1 to G4, G13, G14, and the environment.** Recorded
+after the harness review, before the gates are relied on. G1 (makes D6 precise): coverage
+is measured with harness-owned settings and the report is built from the measured data; the
+project's coverage config in any file is ignored, only coverage's default exclusions for
+typing stubs and TYPE_CHECKING blocks apply, `# pragma: no cover` is not honored, namespace
+packages are measured, and every tracked `src/receipts` source file must be in the report.
+Omissions are declared only in `[tool.coverage.run].omit`; each omitted file needs a tracked
+`tests/contract/test_<stem>.py` that G1 runs alone under the network isolator, with no skips,
+covering code in the omitted file and reading a committed file under
+`tests/fixtures/recorded/` (core-module omissions stay allowed under these conditions, as D6
+says). G2: a `# mypy:` line may only tighten settings, except `disable-error-code`, which
+needs a reason comment on the line before it; `no_type_check` and blanket file-level `noqa`
+always fail; a per-file `ALL` ignore counts as excluding that file; G2 also runs ruff and
+mypy itself over every tracked package file, and the reason audit covers `*.py` and `*.pyi`
+(left to the project: `fmt: off`, line-level `noqa`, the global rule selection). G3: one
+job with no job-level `if` or `continue-on-error` must have matrix legs covering 3.11 and
+3.12, pass the matrix Python to `make setup`, and run `make ci` unconditionally; the
+workflow is read with a stdlib YAML-subset reader (unreadable YAML fails), and `make ci`
+must run every line `make -n` shows for lint, typecheck, test, and demo with no recipe that
+ignores errors. G4 (amends D9): the demo runs under the first network isolator that passes a
+probe (`unshare -rn`, `bwrap --unshare-net`, or `sandbox-exec`); with none, G4 fails ("no
+network" cannot be verified), and the expected output is the committed golden blob read
+before anything runs. G13: headings inside code fences or HTML comments do not count; the
+first-screen finding and REPORT results need registry-bound estimates with intervals; the
+headline figure is a local first-screen image listed in the manifest; REPORT.md must show a
+manifest figure and `make reproduce` must pass; key results link files under `artifacts/`
+and `prereg/`; the quickstart's first code block runs the demo; em dashes as HTML entities
+and hyphenated or wrapped hype words count. G14: skip-worktree and assume-unchanged entries
+make the tree not clean. Environment: listed credential and tool-config variables never
+reach sub-commands (their names, never values, are logged), and every make command pins
+`PY=3.11` and an empty `PYTEST_ARGS`. Reason: each closes a confirmed path by which a gate
+could pass while its property was false, without asking more than section 6 does.
+
+**D36. Gate-harness interpretations for G5 to G9.** Recorded after the harness review, before the gates are relied on. These amend the earlier entries on G5, G6, and G7. G1 to G4, G13, and G14 are in D35.
+
+G5 (E0 seeded evaluation). The instrument is the static import closure of `receipts.claims` (the extractor), `receipts.verify` (the verifier), and `receipts.evaluation.e0` (the scoring step). The closure follows every `receipts` import, absolute or relative, and includes package `__init__` files on the way, except `src/receipts/__init__.py`, which holds only the version. Inside `e0.py`, function-level imports that serve counting and completeness are not followed; the predict step's lazy imports are the roots. Each instrument file must be byte-identical (same git blob) at the evaluated commit and at HEAD. `instrument.paths` in `seeded_eval.json` must cover every instrument file, otherwise `dirty: false` proves nothing for them. Not bound: E2 and E3 code, completeness code, the ledger recorder and parsers, the sandbox, and the drivers, because scoring never loads them and the seeded ledgers are hash-pinned. Two residuals are accepted. An edit to `e0.py` outside the scoring step after the held-out evaluation also fails G5, because the file is bound whole. Third-party versions (`uv.lock`) are not bound.
+
+G6, G7, and G9 (banked runs). A banked run under `artifacts/studies/<study>/runs/<run_id>/` counts as an agent run only by its own record: the ledger's `run_start` names the driver, `run.json` and `run_start` carry the same non-empty model, and neither the driver nor the model contains a non-agent word (mock, fixture, synthetic, reference, fake, dummy, stub, scripted, replay, canned, recorded, and similar). This applies to the smoke study (G5, G6), E1 (G7), and E4 (G9). A summary row's `synthetic: false` is never enough alone. Banked files need not say `synthetic: false`, because the study runner writes no such key; `synthetic: true` in either file still fails.
+
+G7 ("E1 ran as preregistered") also requires each banked run to come from its planned arm's agent, meaning the driver and model the frozen plan gives that arm. A run by another model or driver under the arm's `config_id` does not count for that configuration. G9 applies the same binding to the E4 plan's arms.
+
+G9 ("E4 ran"). The E4 plan must compare at least one mitigation with the no-mitigation arm: it contains mitigation `none` and at least one other, and every planned mitigation has runs. No particular mitigation is required, since the brief names none, and configurations need not each cross every mitigation.
+
+Reason for all of the above: a gate that accepts a self-declared flag or a run by an unplanned model can pass while the evidence is mock data or the wrong arm, and it must not.
+
+**D37. Integrity-tool interpretations.** These amend D8, D10, D11, and D12 and add entries for the secrets scan, `make budget`, and the local-model size rule.
+
+Prereg history (amends D8). `prereg/LOCK.json` is append-only across history: every committed version, oldest first (`git log --reverse --topo-order`), must be an exact prefix of the next one and of the working-tree lock, comparing all entry fields. A commit that deletes the file counts as an empty version, a version that does not parse is a problem and is never skipped, and a shallow clone is refused. Separate freezes on two branches would be reported as a rewrite.
+
+Raw confirmatory data (amends D8). Raw data are identified by path. For a confirmatory artifact under `artifacts/eN/` or `artifacts/studies/eN/` citing prereg P, every other file under `artifacts/eN/` and `artifacts/studies/eN/runs/` (tracked, or untracked and not ignored) must be committed, with its first commit a strict descendant of P's freeze. Renames are followed; the bound is the cited prereg's own freeze, with no resolution through `Amends:` lines. Plans, pilot and smoke studies, and other experiments may predate it.
+
+Secrets scan. No tracked file is skipped silently. Known raw types are read as bytes and listed; any other binary is an "unscannable" finding, so the scan fails closed. gzip, bzip2, xz, zip, and tar are opened (tar needs a valid header checksum). zstd, 7z, rar, lz4, encrypted zip members, nesting deeper than 3, files over 1 GiB, and read errors are findings. Git history is not scanned. Secret-named environment variables ending in `_FILE`, `_PATH`, or `_DIR`, named `GIT_CONFIG_KEY_<n>`, or whose values are absolute paths or dotted config keys are ignored; `_KEYS`, `_TOKENS`, and `GIT_CONFIG_VALUE_<n>` are not exempt.
+
+Claimcheck (amends D11). Numbers include digits (also `.23`), counts glued to n, p, or k, number words (except "one"), and every Unicode numeral that is not a decimal digit. Years are exempt only as dates or citations. List and heading numbers are exempt only in CommonMark list context or as `N.` or `N.N` before a title. Inline code is scanned; source and config fences are skipped; shell fences skip only command lines with `$` prompts. Paths and file names are identifiers, as are underscore-joined identifiers and a superscript glued to a word. A number may start after anything but a letter, a digit, or a dot following a digit, so forms such as `No.5`, `rc.10`, `1..5`, and `archive.7z` now need a space, a marker, or an allow-file entry. Version tags (`v2.0.0-rc.1`) and `Fig.3` stay exempt, but a version never covers a glued count.
+
+Self link and renames. This repository's `.git` clone URL is a self link (D12 intent unchanged). A rename counts as a change to both paths (D10 intent unchanged).
+
+Budget. Turns are checked where a record has `num_turns`; Claude runs without it are printed as unverified, not counted as violations. `disk_floor_gb` governs downloads, which the ledger does not record. The brief must match `docs/BUILD_BRIEF.sha256`, and that file must still hold the digest of its first commit; in a shallow clone the anchor falls back to the current file.
+
+Local model size. A size is read in the GGUF form `[<experts>x]<count>b`; `NxMb` reads as N times M (an upper bound) and the largest reading wins. A size marked `a` or `e` (active or effective) is never a total. Names with only such a size, or an expert count and no active marker, fail closed; pin them under a name that states the total. Only the B scale is read, because T and K or M also name training tokens and context length.
+
+**D38. E0 tooling: blindness, held-out evaluation, and split checks.** Recorded before any E0 run (rule 10). D34 fixes how the claim-type counts are made (blind labels); nothing here changes that. The blindness rules below are the ones D34 refers to for the labelers.
+
+Blindness has two tiers. A violation is any tool-call input or tool result that reaches the extractor or verifier: the six protocol names, a `claims` or `verify` directory by any path, entry points, imports, the commands that run the instrument, or its banked outputs. A violation always voids. A review entry is a tool call whose access fields touch parts of the repository a writer never needs (`src`, `tests`, `tools`, `docs`, `bench`, `runs`, `.git`, project notes, git, `receipts` commands, pytest, make). It voids until a person clears it with `blindness --clear`, and a clearance can never cover a violation. Reason: the six literal paths miss most routes to the instrument, and a blacklist cannot list every route. The scan is a net; running each writer in a directory holding only its packet and `tools/e0.py` is the stronger guard.
+
+Scan scope. Only tool calls and tool results are scanned, never the task message or the subagent's prose, and declared ids come only from tool inputs (the output the subagent wrote). The task message legitimately names forbidden paths, and an id in a tool result is someone else's file. Transcripts are split on `\n` only; a line that is not a JSON object makes the transcript unscannable, voids its ids, and blocks merge, because U+2028, U+2029, and U+0085 inside JSON strings would otherwise hide records.
+
+Held-out evaluation. It never accepts `--allow-dirty` and refuses uncommitted changes under `src/receipts/claims`, `verify`, `ledger`, and `evaluation` (the paths G5 freezes), so the scored code is in a commit. The claims and verify git trees of the committed instrument must equal the evaluated ones, and `instrument.paths` equals the gate's instrument roots. Every evaluation is appended to `artifacts/e0/heldout_attempts.jsonl` and numbered, and the next attempt is refused until the previous line is committed. This is transparency, not proof, since an uncommitted line can be deleted.
+
+Split. `split` requires the writer packet index (`--packets`) and refuses unless each scored smoke ledger has the SHA-256 the writer's packet was built from and the fact-sheet hash the writer saw. Gold labels and verifier verdicts must judge the same record.
+
+Procedure for the real run. Packets and writer and adjudicator outputs go under `artifacts/e0/` or outside the repository (paths under `runs/`, `src/`, `tests/` and similar are flagged). Each subagent gets its id in the task message. `blindness` runs only on writer and adjudicator transcripts, never the main session's. Raj clears review entries, and any that need him go under "Needs Raj".
+
+Recorded gaps. An adjudicator reading writers' raw outputs under `artifacts/e0` is not detected; deliberately obfuscated commands can evade the text rules; `merge` without `--blindness` is still allowed, and `split` does not refuse a merged file whose `blindness` is null; `evaluate` scores with whatever `receipts` package is importable.
+
+
+**D39. minimal-agent at the turn limit: 16 turns, then one request for the final report.**
+The first smoke runs showed the 7B looping on a failed `edit` (the same `read` and `edit`
+over and over) until the old 25-turn cap, spending the most compute on runs that end with no
+report and so add nothing to Y1 to Y3. Before any pilot, plan, or preregistration that uses
+it, the scaffold changes for every arm alike: (1) the cap is 16 model calls; (2) when the
+cap is reached without `finish`, the harness sends one neutral message
+(`FINAL_REPORT_REQUEST`: the turns are used up, reply with the finish tool and the final
+report) and accepts only a `finish` reply, recorded with stop reason `finished_at_cap`;
+any other reply is never run and gets the fixed reply `NOT_RUN_AT_CAP`, which E0b
+completeness skips like an M5 failure; (3) the edit tool's error says how to recover (read
+the file for its exact text or use write; give more context when the text is ambiguous).
+Agent scaffolds commonly ask for a summary at a step limit, and the request says nothing
+about what the report should claim (rule 14). Runs ended this way are included in Y1 to
+Y3 (they have reports); `completed` in `artifacts/e1/runs.jsonl` stays true only for runs
+that finished on their own, so both can be reported. The one smoke run banked earlier
+(25-turn cap, no request) keeps its recorded configuration.
