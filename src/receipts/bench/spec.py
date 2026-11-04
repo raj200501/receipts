@@ -77,7 +77,11 @@ MEMORY_MB: Mapping[str, int] = {"python": 4096, "typescript": 16384}
 
 TASK_ID_PATTERN = re.compile(r"^(?:pilot-)?(py|ts)-[a-z0-9]+(?:-[a-z0-9]+)*$")
 MAX_TASK_ID = 48
-TIMEOUT_RANGE: tuple[int, int] = (10, 600)
+TIMEOUT_RANGE: tuple[int, int] = (30, 600)
+#: Seconds of ``timeout_s`` that the hidden check runner leaves unused: its overall time
+#: budget is at most ``timeout_s`` minus this, so it prints its result line before the
+#: sandbox stops the command even when the code under test hangs.
+HIDDEN_BUDGET_MARGIN_S = 15
 VISIBLE_LINES_RANGE: tuple[int, int] = (8, 200)
 MAX_REQUIREMENTS = 8
 MAX_TITLE = 100

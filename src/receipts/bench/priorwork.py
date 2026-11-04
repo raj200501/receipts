@@ -28,9 +28,17 @@ running the steps in a sandbox, and :func:`compare_outputs` checks them again
 (receipts.bench.validate does this on the plain starting repository and on the
 one with both overlays applied, so the transcript stays true in every condition).
 
-Prior work only reads: tools are ``read`` and ``bash`` with read-only viewer
-programs (:data:`PRIOR_WORK_PROGRAMS`), never ``git``, writes, or the test suite
-(whose output M2 changes).
+Prior work only reads, and only the repository: tools are ``read`` and ``bash`` with
+read-only viewer programs (:data:`PRIOR_WORK_PROGRAMS`), never ``git``, writes, or the
+test suite (whose output M2 changes). Every file a step names, as a ``read`` path, a
+command's operand, or the value of an option that reads a file, is a relative path
+inside the repository (no ``/`` or ``~`` at the start, no ``..``, nothing under ``.git``
+or ``.receipts_hidden``), and a recursive search names the directories it searches (a
+search of the whole workspace would read ``.git``). The rules know each program's
+options, so the forms that write (``sort -o``, ``uniq IN OUT``), wait forever
+(``tail -f``), or run programs (``find -exec``, ``sort --compress-program``) are refused
+while read-only ones such as ``grep -o`` and ``find ... -o ...`` are not. Shell
+expansions the rules cannot see through (``$``, backticks, braces) are refused too.
 """
 
 from __future__ import annotations
@@ -90,6 +98,119 @@ _STEP_KEYS = frozenset({"thought", "tool", "args", "output"})
 _FINISH_KEYS = frozenset({"thought", "report"})
 _SEPARATORS = frozenset({";", "&&", "||", "|"})
 _LOCALE_PREFIX = re.compile(r"^(?:LC_ALL|LC_COLLATE|LANG)=C(?:\.UTF-8)?$")
+_HIDDEN_DIR = ".receipts_hidden"
+_GLOB_CHARS = frozenset("*?[")
+
+
+@dataclass(frozen=True)
+class _Syntax:
+    """How one prior-work program reads its arguments (GNU coreutils and grep).
+
+    Only options that always take a value are listed as taking one, so a word the
+    rules cannot place is checked as a path (the strict reading).
+
+    Attributes:
+        takes_value: Short options followed by a value (attached or the next word).
+        path_values: Those of them whose value is a file the program reads.
+        forbidden: Short options that write files, wait forever, or run programs.
+        long_values: Long options that take a value (``--name=value`` or the next word).
+        long_paths: Those of them whose value is a file the program reads.
+        long_forbidden: Long options refused like ``forbidden``.
+        recursive: Short options that search directories recursively.
+        long_recursive: Long options that do.
+        pattern: Short options that give the pattern, so no operand is the pattern.
+        long_pattern: Long options that do.
+        operands: ``paths`` (every operand is a file), ``pattern`` (grep: the first
+            operand is the pattern unless an option gave it), ``sets`` (tr: no files),
+            or ``one`` (uniq: one input file; a second operand would be written).
+    """
+
+    takes_value: str = ""
+    path_values: str = ""
+    forbidden: str = ""
+    long_values: frozenset[str] = frozenset()
+    long_paths: frozenset[str] = frozenset()
+    long_forbidden: frozenset[str] = frozenset()
+    recursive: str = ""
+    long_recursive: frozenset[str] = frozenset()
+    pattern: str = ""
+    long_pattern: frozenset[str] = frozenset()
+    operands: str = "paths"
+
+
+_SYNTAX: Mapping[str, _Syntax] = {
+    "ls": _Syntax(
+        takes_value="ITw",
+        long_values=frozenset(
+            {"block-size", "format", "hide", "ignore", "quoting-style", "sort", "tabsize"}
+            | {"time", "time-style", "width", "indicator-style"}
+        ),
+        recursive="R",
+        long_recursive=frozenset({"recursive"}),
+    ),
+    "cat": _Syntax(),
+    "head": _Syntax(takes_value="cn", long_values=frozenset({"bytes", "lines"})),
+    "tail": _Syntax(
+        takes_value="cns",
+        forbidden="fF",
+        long_values=frozenset({"bytes", "lines", "sleep-interval", "pid", "max-unchanged-stats"}),
+        long_forbidden=frozenset({"follow", "retry"}),
+    ),
+    "wc": _Syntax(long_values=frozenset({"files0-from"}), long_paths=frozenset({"files0-from"})),
+    "grep": _Syntax(
+        takes_value="efmABCdD",
+        path_values="f",
+        long_values=frozenset(
+            {"regexp", "file", "max-count", "after-context", "before-context", "context"}
+            | {"include", "exclude", "exclude-dir", "exclude-from", "label", "binary-files"}
+            | {"devices", "directories", "group-separator"}
+        ),
+        long_paths=frozenset({"file", "exclude-from"}),
+        recursive="rR",
+        long_recursive=frozenset({"recursive", "dereference-recursive"}),
+        pattern="ef",
+        long_pattern=frozenset({"regexp", "file"}),
+        operands="pattern",
+    ),
+    "sort": _Syntax(
+        takes_value="kStT",
+        forbidden="oT",
+        long_values=frozenset(
+            {"key", "buffer-size", "field-separator", "files0-from", "random-source"}
+            | {"batch-size", "parallel", "sort"}
+        ),
+        long_paths=frozenset({"files0-from", "random-source"}),
+        long_forbidden=frozenset({"output", "temporary-directory", "compress-program"}),
+    ),
+    "uniq": _Syntax(
+        takes_value="fsw",
+        long_values=frozenset({"skip-fields", "skip-chars", "check-chars"}),
+        operands="one",
+    ),
+    "cut": _Syntax(
+        takes_value="bcdf",
+        long_values=frozenset({"bytes", "characters", "delimiter", "fields", "output-delimiter"}),
+    ),
+    "nl": _Syntax(
+        takes_value="bdfhilnsvw",
+        long_values=frozenset(
+            {"body-numbering", "section-delimiter", "footer-numbering", "header-numbering"}
+            | {"line-increment", "join-blank-lines", "number-format", "number-separator"}
+            | {"starting-line-number", "number-width"}
+        ),
+    ),
+    "tr": _Syntax(operands="sets"),
+}
+#: find primaries that take a value; those in _FIND_PATH_VALUES name a file it reads.
+_FIND_VALUES = frozenset(
+    {"-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename", "-regex", "-iregex"}
+    | {"-regextype", "-type", "-xtype", "-maxdepth", "-mindepth", "-size", "-perm", "-user"}
+    | {"-group", "-uid", "-gid", "-links", "-inum", "-mtime", "-mmin", "-atime", "-amin"}
+    | {"-ctime", "-cmin", "-used", "-printf", "-lname", "-ilname", "-fstype", "-context"}
+)
+_FIND_PATH_VALUES = frozenset({"-newer", "-anewer", "-cnewer", "-samefile", "-files0-from"})
+_FIND_OPERATORS = frozenset({"!", ",", "-o", "-or", "-a", "-and", "-not"})
+_FIND_LEADING = frozenset({"-H", "-L", "-P"})
 
 
 class PriorWorkError(ValueError):
@@ -305,11 +426,43 @@ def rendered_chars(work: PriorWork) -> int:
     return sum(len(message["content"]) for message in render_messages(work))
 
 
+def _expansion_problems(cmd: str) -> list[str]:
+    """Shell expansions the step rules cannot see through: ``$``, backticks, and braces.
+
+    Text in single quotes is literal, so ``grep -n 'end$' x`` is fine; ``$`` and backticks
+    are refused elsewhere (also in double quotes), and braces outside quotes.
+    """
+    problems: set[str] = set()
+    quote = ""
+    escaped = False
+    for char in cmd:
+        if escaped:
+            escaped = False
+        elif quote == "'":
+            quote = "" if char == "'" else quote
+        elif char == "\\":
+            escaped = True
+        elif char in "$`":
+            problems.add(
+                "variable expansion and command substitution ($, backticks) are not allowed "
+                "(quote a literal $ in single quotes)"
+            )
+        elif quote == '"':
+            quote = "" if char == '"' else quote
+        elif char in "'\"":
+            quote = char
+        elif char in "{}":
+            problems.add("brace expansion is not allowed (quote a literal brace)")
+    return sorted(problems)
+
+
 def _command_problems(cmd: str) -> list[str]:
+    """Every rule a ``bash`` step's command breaks (see the module docstring)."""
     if "\n" in cmd.strip():
         return ["must be one line"]
-    if "$(" in cmd or "`" in cmd:
-        return ["command substitution is not allowed"]
+    expansions = _expansion_problems(cmd)
+    if expansions:
+        return expansions
     lexer = shlex.shlex(cmd, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     try:
@@ -317,31 +470,149 @@ def _command_problems(cmd: str) -> list[str]:
     except ValueError:
         return ["cannot be parsed as a shell command"]
     problems: list[str] = []
-    expecting = True
-    for token in tokens:
+    words: list[str] = []
+    for token in [*tokens, ";"]:
         if token in _SEPARATORS:
-            expecting = True
-            continue
-        if set(token) <= set("();<>|&") and (">" in token or "&" in token):
-            problems.append(f"redirection or background operator {token!r} is not allowed")
-            continue
-        if token in FORBIDDEN_FIND_OPTIONS or token.startswith("--output") or token == "-o":
-            problems.append(f"option {token!r} is not allowed (it writes or runs commands)")
-        if expecting and _LOCALE_PREFIX.match(token):
-            continue
-        if expecting:
-            expecting = False
-            if token not in PRIOR_WORK_PROGRAMS:
-                allowed = ", ".join(sorted(PRIOR_WORK_PROGRAMS))
-                problems.append(f"program {token!r} is not allowed in prior work ({allowed})")
+            if words:
+                problems.extend(_simple_command_problems(words))
+            words = []
+        elif set(token) <= set("();<>|&"):
+            problems.append(
+                f"redirection, background, or grouping operator {token!r} is not allowed"
+            )
+        else:
+            words.append(token)
+    return problems
+
+
+def _simple_command_problems(words: list[str]) -> list[str]:
+    """The rules one simple command (a program and its arguments) breaks."""
+    while words and _LOCALE_PREFIX.match(words[0]):
+        words = words[1:]
+    if not words:
+        return ["a locale setting must be followed by a program"]
+    program, args = words[0], words[1:]
+    if program not in PRIOR_WORK_PROGRAMS:
+        allowed = ", ".join(sorted(PRIOR_WORK_PROGRAMS))
+        return [f"program {program!r} is not allowed in prior work ({allowed})"]
+    if program == "find":
+        return _find_problems(args)
+    return _option_problems(program, _SYNTAX[program], args)
+
+
+def _not_inside(value: str, what: str) -> str:
+    return (
+        f"{what} {value!r} is not a relative path inside the repository (no / or ~ at the "
+        "start, no .., nothing under .git or .receipts_hidden, no glob that can match them)"
+    )
+
+
+_WHOLE_WORKSPACE = (
+    "a recursive search of the whole workspace also reads .git; name the directories to "
+    "search instead"
+)
+
+
+def _option_problems(program: str, syntax: _Syntax, args: Sequence[str]) -> list[str]:
+    """Options, option values, and operands of one program other than find."""
+    problems: list[str] = []
+    operands: list[str] = []
+    recursive = pattern_given = False
+    index = 0
+    while index < len(args):
+        word = args[index]
+        index += 1
+        if word == "-" or not word.startswith("-"):
+            operands.append(word)
+        elif word == "--":
+            operands.extend(args[index:])
+            break
+        elif word.startswith("--"):
+            name, has_value, value = word[2:].partition("=")
+            if name in syntax.long_forbidden:
+                problems.append(
+                    f"option --{name} of {program} is not allowed (it writes, waits, or runs "
+                    "a program)"
+                )
+            recursive |= name in syntax.long_recursive
+            pattern_given |= name in syntax.long_pattern
+            if not has_value and name in syntax.long_values and index < len(args):
+                value, has_value = args[index], "="
+                index += 1
+            reads_file = name in syntax.long_paths or name not in syntax.long_values
+            if has_value and reads_file and not _path_ok(value):
+                problems.append(_not_inside(value, f"the value of --{name}"))
+        else:
+            for position, letter in enumerate(word[1:], start=1):
+                if letter in syntax.forbidden:
+                    problems.append(
+                        f"option -{letter} of {program} is not allowed (it writes, waits, or "
+                        "runs a program)"
+                    )
+                    break
+                recursive |= letter in syntax.recursive
+                pattern_given |= letter in syntax.pattern
+                if letter in syntax.takes_value:
+                    value = word[position + 1 :]
+                    if not value and index < len(args):
+                        value = args[index]
+                        index += 1
+                    if letter in syntax.path_values and not _path_ok(value):
+                        problems.append(_not_inside(value, f"the value of -{letter}"))
+                    break
+    if syntax.operands == "sets":
+        return problems
+    files = operands[1:] if syntax.operands == "pattern" and not pattern_given else operands
+    problems.extend(_not_inside(op, "operand") for op in operands if not _path_ok(op))
+    if syntax.operands == "one" and len(operands) > 1:
+        problems.append(f"{program} writes its second operand; give it one input file at most")
+    if recursive and (not files or any(not PurePosixPath(f).parts for f in files)):
+        problems.append(_WHOLE_WORKSPACE)
+    return problems
+
+
+def _find_problems(args: Sequence[str]) -> list[str]:
+    """Starting points and the expression of a find command."""
+    problems: list[str] = []
+    index = 0
+    while index < len(args) and args[index] in _FIND_LEADING:
+        index += 1
+    roots: list[str] = []
+    while index < len(args) and not args[index].startswith("-") and args[index] not in ("!", ","):
+        roots.append(args[index])
+        index += 1
+    problems.extend(_not_inside(root, "starting point") for root in roots if not _path_ok(root))
+    if not roots or any(not PurePosixPath(root).parts for root in roots):
+        problems.append(_WHOLE_WORKSPACE)
+    while index < len(args):
+        word = args[index]
+        index += 1
+        if word in FORBIDDEN_FIND_OPTIONS:
+            problems.append(f"option {word!r} is not allowed (it writes or runs commands)")
+        elif word in _FIND_PATH_VALUES or word.startswith("-newer"):
+            value = args[index] if index < len(args) else ""
+            index += 1
+            if not _path_ok(value):
+                problems.append(_not_inside(value, f"the value of {word}"))
+        elif word in _FIND_VALUES:
+            index += 1
+        elif word not in _FIND_OPERATORS and not word.startswith("-") and not _path_ok(word):
+            problems.append(_not_inside(word, "argument"))
     return problems
 
 
 def _path_ok(path: str) -> bool:
+    """True for a relative path inside the repository that is not under .git or the checks.
+
+    ``.`` (the repository itself) is inside. A glob whose component starts with ``.``
+    could match ``.git``, so it is refused.
+    """
     if not path or path.startswith(("/", "~")):
         return False
     parts = PurePosixPath(path).parts
-    return ".." not in parts and parts[0] not in (".git", ".receipts_hidden")
+    if ".." in parts or (parts and parts[0] in (".git", _HIDDEN_DIR)):
+        return False
+    return not any(part.startswith(".") and _GLOB_CHARS & set(part) for part in parts)
 
 
 def prior_work_problems(work: PriorWork) -> list[str]:

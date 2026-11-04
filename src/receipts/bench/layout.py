@@ -1,4 +1,4 @@
-"""Static rules on a benchmark task's file tree (no code is run).
+"""Static rules on a benchmark task's file tree (no task code is run).
 
 :func:`check_layout` returns one plain sentence per broken rule, each starting
 with the path it is about (relative to the task directory, or to the repository
@@ -9,12 +9,19 @@ root for shared files). docs/BENCH.md explains every rule; in short:
   ``prior_work.json`` when M4 uses it;
 - every file is UTF-8 text without NUL bytes or em dashes, at most
   :data:`MAX_FILE_BYTES` (the whole task at most :data:`MAX_TASK_BYTES`); there are
-  no symlinks, no empty directories, and no names the repository's ``.gitignore``
-  drops (git would silently leave them out of every clone, changing the task);
+  no symlinks, no empty directories, and no file that git ignores: neither a name
+  from the list of caches and build output below nor a path that any ignore rule
+  matches (the root ``.gitignore``, a ``.gitignore`` inside the task such as
+  ``repo/.gitignore``, ``.git/info/exclude``, or the user's excludes file), because
+  git would silently leave it out of every commit and clone, changing the task;
+  :func:`git_ignored` asks git itself, on file paths only;
 - ``repo/`` is a small realistic repository: a README, a ``.gitignore`` for test
   caches, 3 to 10 source files, visible tests, no third-party dependencies
   (Python: the standard library and pytest; TypeScript: ``node:`` built-ins and
   relative imports only);
+- the hidden entry script sets an overall time budget (``BUDGET_S`` or
+  ``BUDGET_MS``) that leaves :data:`receipts.bench.spec.HIDDEN_BUDGET_MARGIN_S`
+  of ``timeout_s`` unused;
 - the overlays (``reference/``, ``variants/m1/``, ``variants/m2/``) touch pairwise
   disjoint files, so any combination of them can be applied in any order.
 """
@@ -25,14 +32,16 @@ import ast
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 import tomllib
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from receipts.bench.spec import PRIOR_WORK_FILE, TaskSpec
+from receipts.bench.spec import HIDDEN_BUDGET_MARGIN_S, PRIOR_WORK_FILE, TaskSpec
 
 MAX_FILE_BYTES = 200_000
 MAX_TASK_BYTES = 2_000_000
@@ -71,9 +80,35 @@ NPM_DEPENDENCY_KEYS: tuple[str, ...] = (
     "bundledDependencies",
 )
 EM_DASH = "\N{EM DASH}"
+#: How the hidden entry script states its overall time budget (an integer literal on a
+#: line of its own): seconds for Python runners, milliseconds for TypeScript runners.
+HIDDEN_BUDGET_PATTERNS: Mapping[str, re.Pattern[str]] = {
+    "python": re.compile(r"^BUDGET_S = (\d+)[ \t]*(?:#.*)?$", re.MULTILINE),
+    "typescript": re.compile(r"^const BUDGET_MS = (\d[\d_]*);[ \t]*(?://.*)?$", re.MULTILINE),
+}
+HIDDEN_BUDGET_FORMS: Mapping[str, str] = {
+    "python": "BUDGET_S = <seconds>",
+    "typescript": "const BUDGET_MS = <milliseconds>;",
+}
+GIT_TIMEOUT_S = 60.0
+_GIT_LOCATION_VARS = frozenset(
+    {
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_COMMON_DIR",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_NAMESPACE",
+        "GIT_PREFIX",
+        "GIT_CEILING_DIRECTORIES",
+        "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+    }
+)
 
 # Names the repository's .gitignore drops at any depth (a fresh clone would lack
-# them), plus caches, version-control data, and lint configuration.
+# them), plus caches, version-control data, and lint configuration. This list holds
+# even where git is not available; git_ignored adds every other ignore rule.
 _IGNORED_DIRS = frozenset(
     {
         "__pycache__",
@@ -135,6 +170,103 @@ def forbidden_reason(rel: Path | PurePosixPath, *, is_dir: bool) -> str | None:
     if name in _OTHER_FILES:
         return "version-control data, lint configuration, or a reserved name"
     return None
+
+
+def _forbidden_here_or_above(rel: PurePosixPath) -> bool:
+    """True when :func:`forbidden_reason` already rejects ``rel`` or a directory above it."""
+    if forbidden_reason(rel, is_dir=False):
+        return True
+    return any(
+        forbidden_reason(parent, is_dir=True)
+        for parent in rel.parents
+        if parent != PurePosixPath(".")
+    )
+
+
+def _git(argv: Sequence[str], *, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+    """Run host git on file paths only (never task code), ignoring an inherited repository.
+
+    Variables that point git at a repository (set, for example, inside a git hook) are
+    removed, so ``-C`` and ``--git-dir`` decide which repository is asked.
+    """
+    env = {key: value for key, value in os.environ.items() if key not in _GIT_LOCATION_VARS}
+    return subprocess.run(
+        ["git", *argv],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=GIT_TIMEOUT_S,
+        env=env,
+    )
+
+
+def git_ignored(work_tree: Path, paths: Sequence[str]) -> dict[str, str] | None:
+    """Which of ``paths`` git ignores, each with the rule that ignores it.
+
+    Asks git (``git check-ignore --no-index``), so every ignore rule counts: the
+    ``.gitignore`` files in the tree (the root one and any inside a task), and, when
+    ``work_tree`` is inside a git repository, its ``.git/info/exclude``, plus the user's
+    excludes file. Outside a repository a temporary empty one is used, so the tree's
+    ``.gitignore`` files still count. Only file paths are passed to git; nothing in the
+    tree runs.
+
+    Args:
+        work_tree: The directory the paths are relative to.
+        paths: POSIX paths relative to ``work_tree``.
+
+    Returns:
+        ``{path: "<ignore file>:<line>: <pattern>"}`` for every ignored path (empty
+        when none is), or None when git cannot answer (it is not installed or it failed).
+    """
+    if not paths:
+        return {}
+    try:
+        with tempfile.TemporaryDirectory(prefix="receipts-bench-git-") as scratch:
+            where = ["-C", str(work_tree)]
+            inside = _git([*where, "rev-parse", "--is-inside-work-tree"])
+            if inside.returncode != 0 or inside.stdout.strip() != "true":
+                if _git(["init", "-q", scratch]).returncode != 0:
+                    return None
+                where = [f"--git-dir={scratch}/.git", f"--work-tree={work_tree}", *where]
+            proc = _git(
+                [*where, "check-ignore", "--no-index", "--verbose", "-z", "--stdin"],
+                stdin="".join(f"{path}\0" for path in paths),
+            )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode not in (0, 1):
+        return None
+    fields = proc.stdout.split("\0")
+    ignored: dict[str, str] = {}
+    for index in range(0, len(fields) - 3, 4):
+        source, line, pattern, path = fields[index : index + 4]
+        if not pattern.startswith("!"):  # a negated pattern matching means "not ignored"
+            ignored[path] = f"{source}:{line}: {pattern}"
+    return ignored
+
+
+def _check_git_ignored(task: TaskSpec, out: list[str]) -> None:
+    """Report task files that git ignores, beyond the names :func:`forbidden_reason` rejects."""
+    try:
+        prefix = task.root.relative_to(task.project_root).as_posix()
+        work_tree = task.project_root
+    except ValueError:  # a task outside the project: only its own ignore files count
+        prefix, work_tree = ".", task.root
+    files = [
+        entry.rel
+        for entry in _walk(task.root)
+        if not entry.is_dir and not entry.is_symlink and not _forbidden_here_or_above(entry.rel)
+    ]
+    paths = {(PurePosixPath(prefix) / rel).as_posix(): rel for rel in files}
+    ignored = git_ignored(work_tree, sorted(paths))
+    for path, rule in sorted((ignored or {}).items()):
+        rel = paths.get(path)
+        if rel is not None:
+            out.append(
+                f"{rel.as_posix()}: ignored by git ({rule}), so git would leave it out of "
+                "every commit and clone (rename it or change the ignore rule)"
+            )
 
 
 def _walk(root: Path) -> list[_Entry]:
@@ -244,20 +376,36 @@ def _in_test_dir(rel: PurePosixPath) -> bool:
     return any(part in ("test", "tests") for part in rel.parts[:-1])
 
 
+def is_test_file(rel: PurePosixPath, language: str) -> bool:
+    """True for a visible test file: ``test_*.py``/``*_test.py`` or ``*.test.ts``/``*.test.mts``."""
+    if language == "python":
+        return rel.suffix == ".py" and _is_python_test(rel)
+    return rel.suffix in (".ts", ".mts") and _is_ts_test(rel)
+
+
+def is_source_file(rel: PurePosixPath, language: str) -> bool:
+    """True for a source file of the task's language (what :data:`SOURCE_FILES_RANGE` counts).
+
+    Test files, files in a ``test`` or ``tests`` directory, and ``conftest.py`` are not
+    source files.
+    """
+    suffixes = (".py",) if language == "python" else (".ts", ".mts")
+    return (
+        rel.suffix in suffixes
+        and not is_test_file(rel, language)
+        and not _in_test_dir(rel)
+        and rel.name != "conftest.py"
+    )
+
+
 def _count_sources(files: Iterable[PurePosixPath], language: str) -> tuple[int, int]:
     """Return (source files, visible test files) of a repository."""
     sources = tests = 0
     for rel in files:
-        if language == "python" and rel.suffix == ".py":
-            if _is_python_test(rel):
-                tests += 1
-            elif not _in_test_dir(rel) and rel.name != "conftest.py":
-                sources += 1
-        elif language == "typescript" and rel.suffix in (".ts", ".mts"):
-            if _is_ts_test(rel):
-                tests += 1
-            elif not _in_test_dir(rel):
-                sources += 1
+        if is_test_file(rel, language):
+            tests += 1
+        elif is_source_file(rel, language):
+            sources += 1
     return sources, tests
 
 
@@ -406,6 +554,63 @@ def _check_imports(task: TaskSpec, out: list[str]) -> None:
                         )
 
 
+def hidden_budget_s(task: TaskSpec) -> float | None:
+    """The overall time budget, in seconds, that the hidden entry script declares.
+
+    None when the script is missing or does not declare one in the form of
+    :data:`HIDDEN_BUDGET_PATTERNS`.
+    """
+    script = task.hidden_script
+    if not script.is_file():
+        return None
+    try:
+        text = script.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return None
+    match = HIDDEN_BUDGET_PATTERNS[task.language].search(text)
+    if match is None:
+        return None
+    value = int(match.group(1).replace("_", ""))
+    return float(value) if task.language == "python" else value / 1000
+
+
+def with_hidden_budget(text: str, language: str, seconds: int) -> str:
+    """``text``, a hidden entry script, with its declared time budget set to ``seconds``.
+
+    Only the number on the first line of the :data:`HIDDEN_BUDGET_PATTERNS` form changes
+    (milliseconds for TypeScript). The validator's hang phase runs a copy changed this way.
+
+    Raises:
+        ValueError: The script declares no budget in that form.
+    """
+    match = HIDDEN_BUDGET_PATTERNS[language].search(text)
+    if match is None:
+        raise ValueError(f"no line of the form {HIDDEN_BUDGET_FORMS[language]!r}")
+    value = str(seconds) if language == "python" else str(seconds * 1000)
+    return text[: match.start(1)] + value + text[match.end(1) :]
+
+
+def _check_hidden_budget(task: TaskSpec, out: list[str]) -> None:
+    script = task.hidden_script
+    if not script.is_file():
+        return  # reported by _check_entries
+    where = script.relative_to(task.root).as_posix()
+    budget = hidden_budget_s(task)
+    limit = task.timeout_s - HIDDEN_BUDGET_MARGIN_S
+    if budget is None:
+        out.append(
+            f"{where}: no overall time budget (declare {HIDDEN_BUDGET_FORMS[task.language]} "
+            f"on a line of its own, at most timeout_s minus {HIDDEN_BUDGET_MARGIN_S} s, as the "
+            "pilot runners do)"
+        )
+    elif not 0 < budget <= limit:
+        out.append(
+            f"{where}: the overall time budget of {budget:g} s must be more than 0 and at most "
+            f"{limit} s (timeout_s {task.timeout_s} minus {HIDDEN_BUDGET_MARGIN_S} s), so the "
+            "result line is printed before the sandbox stops the command"
+        )
+
+
 def _check_overlays(task: TaskSpec, out: list[str]) -> None:
     files = {name: set(_files_under(task.root / name)) for name in OVERLAYS}
     names = list(OVERLAYS)
@@ -434,8 +639,10 @@ def check_layout(task: TaskSpec) -> list[str]:
     out: list[str] = []
     _check_entries(task, out)
     _check_tree(task, out)
+    _check_git_ignored(task, out)
     if task.repo_dir.is_dir():
         _check_repo(task, out)
+    _check_hidden_budget(task, out)
     _check_imports(task, out)
     _check_overlays(task, out)
     return out

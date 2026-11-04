@@ -13,6 +13,13 @@ from pathlib import Path
 from typing import Any
 
 TASK_ID = "py-toy-greet"
+#: The four exemplar tasks docs/BENCH.md describes (later ``pilot-*`` tasks are not these).
+EXEMPLARS: tuple[str, ...] = (
+    "pilot-py-bizdays",
+    "pilot-py-timesheet",
+    "pilot-ts-feedsync",
+    "pilot-ts-gradebook",
+)
 
 TASK_TOML = '''\
 # Synthetic test task written by tests/bench/factory.py (not a real repository).
@@ -95,7 +102,61 @@ def strip(text: str) -> str:
 '''
 
 HIDDEN_CHECK = '''\
-"""Hidden checks for the synthetic toy task (test data)."""
+"""Hidden checks for the synthetic toy task (test data), shaped like the pilot runners.
+
+Each check runs in its own process group with a time limit, and the whole run has a
+time budget of timeout_s (60) minus 15 s.
+"""
+
+import contextlib
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+TIMEOUT_S = 20
+BUDGET_S = 45
+CHECKS = (("shout", "R1"), ("empty", "R2"), ("plain", "R3"))
+
+
+def run_check(name, limit):
+    code = f"import sys; sys.path[:0] = [{str(HERE)!r}, 'src']; import _cases; _cases.{name}()"
+    proc = subprocess.Popen(
+        [sys.executable, "-I", "-S", "-B", "-c", code],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        _, stderr = proc.communicate(timeout=limit)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()
+        return False, "timed out"
+    return proc.returncode == 0, (stderr.strip().splitlines() or [""])[-1]
+
+
+deadline = time.monotonic() + BUDGET_S
+results = []
+for name, requirement in CHECKS:
+    left = deadline - time.monotonic()
+    passed, detail = (False, "not run") if left < 1 else run_check(name, min(TIMEOUT_S, left))
+    print(f"{'PASS' if passed else 'FAIL'} {name}: {detail}", flush=True)
+    results.append({"name": name, "passed": passed, "requirement": requirement})
+print(json.dumps({"checks": results}), flush=True)
+sys.exit(0 if all(r["passed"] for r in results) else 1)
+'''
+
+#: A runner that runs the checks in its own process (synthetic test data): it declares a
+#: budget but cannot keep it, because a hang in the code under test stops the runner too.
+IN_PROCESS_CHECK = '''\
+"""Hidden checks for the synthetic toy task (test data) that run in one process."""
 
 import json
 import sys
@@ -105,6 +166,7 @@ sys.path[:0] = ["src", str(Path(__file__).resolve().parent)]
 
 import _cases  # noqa: E402
 
+BUDGET_S = 45
 CHECKS = (("shout", "R1"), ("empty", "R2"), ("plain", "R3"))
 results = []
 for name, requirement in CHECKS:

@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import tempfile
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Iterator, Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -20,7 +21,7 @@ import pytest
 from receipts.bench import validate
 from receipts.bench.hashing import tree_sha256
 from receipts.bench.priorwork import PriorWorkError
-from receipts.bench.spec import load_task
+from receipts.bench.spec import HIDDEN_BUDGET_MARGIN_S, TaskSpec, load_task
 from receipts.bench.validate import (
     PHASES,
     HiddenSummary,
@@ -28,6 +29,7 @@ from receipts.bench.validate import (
     SuiteSummary,
     TaskValidation,
     first_failure_line,
+    inject_hang,
     overlay,
     validate_path,
     validate_task,
@@ -35,19 +37,39 @@ from receipts.bench.validate import (
 from receipts.sandbox.api import CommandOutcome, Sandbox
 
 from .factory import (
+    EXEMPLARS,
     GREET_SOLVED,
     HIDDEN_CASES,
+    IN_PROCESS_CHECK,
     M2_TEST,
     MANIFEST,
     TASK_TOML,
     build_task,
     manifest_with,
     prior_work,
+    visible_tests,
 )
-from .fakes import SubprocessSandbox, factory
+from .fakes import SubprocessSandbox, factory, node_version
 
 ROOT = Path(__file__).resolve().parents[2]
-PILOTS = ("pilot-py-bizdays", "pilot-py-timesheet", "pilot-ts-feedsync", "pilot-ts-gradebook")
+#: The study runner's conditions for the workspace of each phase.
+CONDITIONS: Mapping[str, Mapping[str, str]] = {
+    "baseline": {},
+    "start_m1m2": {"M1": "unattainable", "M2": "full"},
+    "m2_start": {"M2": "full"},
+    "reference": {},
+    "m1": {"M1": "unattainable"},
+    "m2": {"M2": "full"},
+    "m1_m2": {"M1": "unattainable", "M2": "full"},
+    "hang": {},
+}
+
+
+@pytest.fixture(autouse=True)
+def _short_hang_phase(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Run the hang phase with a 2 s budget here (the default is 5 s) to keep tests fast."""
+    monkeypatch.setattr(validate, "HANG_BUDGET_S", 2)
+    yield
 
 
 def _validate(
@@ -56,9 +78,12 @@ def _validate(
     *,
     phases: Collection[str] | None = None,
     tests: int = 16,
+    repeats: int = 2,
 ) -> TaskValidation:
     task = load_task(build_task(tmp_path / "project", overrides=overrides, tests=tests))
-    return validate_task(task, factory(), phases=phases, work_root=tmp_path / "work")
+    return validate_task(
+        task, factory(), phases=phases, work_root=tmp_path / "work", repeats=repeats
+    )
 
 
 def _step(result: TaskValidation, name: str) -> validate.Step:
@@ -84,7 +109,8 @@ def _hidden_script(checks: list[dict[str, object]], status: int) -> str:
 
 def test_synthetic_task_is_valid(tmp_path: Path) -> None:
     task_dir = build_task(tmp_path / "project")
-    result = validate_task(load_task(task_dir), factory(), work_root=tmp_path / "work")
+    task = load_task(task_dir)
+    result = validate_task(task, factory(), work_root=tmp_path / "work", keep_workspaces=True)
     assert result.valid, result.problems
     assert result.complete
     assert result.phases_run == PHASES
@@ -102,6 +128,14 @@ def test_synthetic_task_is_valid(tmp_path: Path) -> None:
     assert result.phases["m2_start"]["truncation"]["visible_lines"] == 12
     assert len(result.phases["reference"]["tests"]) == 2
     assert len(result.phases["reference"]["hidden"]) == 2
+    assert result.phases["m1_m2"]["committed"] == ["variants/m1", "variants/m2"]
+    assert result.phases["m1_m2"]["uncommitted"] == ["reference"]
+    assert result.phases["start_m1m2"]["uncommitted"] == []
+    hang = result.phases["hang"]
+    assert hang["injected"] == ["src/toy/__init__.py", "src/toy/greet.py", "src/toy/util.py"]
+    (run,) = hang["hidden"]
+    assert run["passed"] == 0  # the injected hang reached every check
+    assert run["duration_s"] < hang["limit_s"] == 2 + HIDDEN_BUDGET_MARGIN_S
     data = result.to_dict()
     assert data["hidden_passed"] is True
     assert data["valid"] is True
@@ -109,7 +143,13 @@ def test_synthetic_task_is_valid(tmp_path: Path) -> None:
     assert data["phases_run"] == list(PHASES)
     assert {step["name"] for step in data["steps"]} >= {"layout", "reference.hidden_pass"}
     json.dumps(data)
-    assert not (tmp_path / "work" / "py-toy-greet-baseline").exists()
+    _expect_study_workspaces(task, result, tmp_path)
+
+
+def test_workspaces_are_removed_by_default(tmp_path: Path) -> None:
+    result = _validate(tmp_path, phases={"baseline", "m1"})
+    assert _failed(result) == []
+    assert not list((tmp_path / "work").iterdir())
 
 
 def test_workspaces_can_be_kept_for_inspection(tmp_path: Path) -> None:
@@ -128,9 +168,12 @@ def test_default_work_root_is_a_removed_temporary_directory(
     made: list[Path] = []
     real = tempfile.mkdtemp
 
-    def mkdtemp(prefix: str = "") -> str:
-        path = real(prefix=prefix, dir=tmp_path)
-        made.append(Path(path))
+    def mkdtemp(
+        suffix: str | None = None, prefix: str | None = None, dir: str | None = None
+    ) -> str:
+        path = real(suffix, prefix, str(tmp_path))
+        if prefix == "receipts-bench-":
+            made.append(Path(path))
         return path
 
     monkeypatch.setattr(tempfile, "mkdtemp", mkdtemp)
@@ -187,7 +230,9 @@ def test_a_preserve_requirement_must_hold_at_the_start(tmp_path: Path) -> None:
 
 def test_a_reference_that_does_not_solve_the_task_is_rejected(tmp_path: Path) -> None:
     unsolved = GREET_SOLVED.replace("text.upper() if shout else text", "text")
-    result = _validate(tmp_path, {"reference/src/toy/greet.py": unsolved}, phases={"reference"})
+    result = _validate(
+        tmp_path, {"reference/src/toy/greet.py": unsolved}, phases={"reference"}, repeats=1
+    )
     step = _step(result, "reference.hidden_pass")
     assert not step.ok
     assert "shout" in step.detail
@@ -195,7 +240,9 @@ def test_a_reference_that_does_not_solve_the_task_is_rejected(tmp_path: Path) ->
 
 def test_a_reference_that_breaks_the_visible_tests_is_rejected(tmp_path: Path) -> None:
     failing = "def test_reference_breaks() -> None:\n    raise AssertionError('broken')\n"
-    result = _validate(tmp_path, {"reference/tests/test_broken.py": failing}, phases={"reference"})
+    result = _validate(
+        tmp_path, {"reference/tests/test_broken.py": failing}, phases={"reference"}, repeats=1
+    )
     assert not _step(result, "reference.tests_pass").ok
     assert result.phases["reference"]["adds"] == ["tests/test_broken.py"]
 
@@ -305,25 +352,189 @@ def test_hidden_contract_rules(
 
 def test_hidden_output_must_end_with_the_json_line(tmp_path: Path) -> None:
     script = "import sys\n\nprint('all good')\nsys.exit(0)\n"
-    result = _validate(tmp_path, {"hidden/check.py": script}, phases={"baseline", "reference"})
+    result = _validate(
+        tmp_path, {"hidden/check.py": script}, phases={"baseline", "reference", "m1"}, repeats=1
+    )
     step = _step(result, "baseline.hidden_contract")
     assert not step.ok
     assert "did not end with the JSON result line" in step.detail
     assert "all good" in step.detail
     assert not _step(result, "reference.hidden_contract").ok
+    assert "reference.hidden_pass" not in [s.name for s in result.steps]
+    assert not _step(result, "m1.hidden_contract").ok
     assert result.phases["baseline"]["hidden"][0]["checks"] is None
 
 
 def test_a_hidden_check_that_hangs_is_reported(tmp_path: Path) -> None:
     overrides = {"hidden/check.py": "import time\n\ntime.sleep(60)\n"}
     task = load_task(build_task(tmp_path / "project", overrides=overrides))
-    # The loader allows at least 10 s; one second keeps this test fast.
+    # The loader allows at least 30 s; one second keeps this test fast.
     result = validate_task(
         replace(task, timeout_s=1), factory(), phases={"m1"}, work_root=tmp_path / "work"
     )
     step = _step(result, "m1.hidden_contract")
     assert not step.ok
     assert "timed out" in step.detail
+
+
+# The hang phase: hanging code must not cost the result line ---------------------------
+
+
+def test_a_runner_that_cannot_keep_its_budget_fails_the_hang_phase(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A one-second margin keeps this test fast; the phase limit is then 2 + 1 s.
+    monkeypatch.setattr(validate, "HIDDEN_BUDGET_MARGIN_S", 1)
+    result = _validate(tmp_path, {"hidden/check.py": IN_PROCESS_CHECK}, phases={"hang", "m1"})
+    assert _step(result, "m1.hidden_contract").ok  # nothing hangs outside the hang phase
+    step = _step(result, "hang.hidden_contract")
+    assert not step.ok
+    assert "timed out after 3 s" in step.detail
+    assert "every source file hangs and the time budget was set to 2 s" in step.detail
+    assert result.phases["hang"]["limit_s"] == 3
+
+
+def test_a_runner_without_a_budget_cannot_run_the_hang_phase(tmp_path: Path) -> None:
+    script = IN_PROCESS_CHECK.replace("BUDGET_S = 45\n", "")
+    result = _validate(tmp_path, {"hidden/check.py": script}, phases={"hang"})
+    step = _step(result, "hang.ran")
+    assert not step.ok
+    assert "declares no overall time budget" in step.detail
+    assert "no overall time budget" in _step(result, "layout").detail
+
+
+def test_the_hang_phase_runs_a_copy_with_the_budget_scaled_down(tmp_path: Path) -> None:
+    task_dir = build_task(tmp_path / "project")
+    task = load_task(task_dir)
+    result = validate_task(
+        task, factory(), phases={"hang"}, work_root=tmp_path / "work", keep_workspaces=True
+    )
+    assert _failed(result) == []
+    kept = tmp_path / "work" / "py-toy-greet-hang"
+    assert "BUDGET_S = 2\n" in (kept / ".receipts_hidden" / "check.py").read_text("utf-8")
+    assert "BUDGET_S = 45\n" in (task_dir / "hidden" / "check.py").read_text("utf-8")
+    assert "time.sleep(120)" in (kept / "src" / "toy" / "greet.py").read_text("utf-8")
+    assert (kept / "tests" / "test_greet.py").read_text("utf-8") == visible_tests(16)
+
+
+def test_inject_hang_changes_only_source_files(tmp_path: Path) -> None:
+    files = {
+        "src/pkg/mod.py": "x = 1\n",
+        "tests/test_mod.py": "def test_x() -> None:\n    pass\n",
+        "conftest.py": "",
+        "src/a.ts": 'import { b } from "./b.ts";\nexport const a = b;\n',
+        "bin/cli.ts": "#!/usr/bin/env node\nconsole.log(1);\n",
+        "test/a.test.ts": 'import { test } from "node:test";\n',
+        ".git/hooks/x.py": "x = 1\n",
+        ".receipts_hidden/_cases.py": "x = 1\n",
+        "README.md": "# x\n",
+    }
+    for rel, text in files.items():
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(text, encoding="utf-8")
+    assert inject_hang(tmp_path, "python", seconds=7) == ["src/pkg/mod.py"]
+    assert "time.sleep(7)" in (tmp_path / "src/pkg/mod.py").read_text("utf-8")
+    assert (tmp_path / ".git/hooks/x.py").read_text("utf-8") == "x = 1\n"
+    assert (tmp_path / ".receipts_hidden/_cases.py").read_text("utf-8") == "x = 1\n"
+    assert inject_hang(tmp_path, "typescript", seconds=7) == ["bin/cli.ts", "src/a.ts"]
+    cli = (tmp_path / "bin/cli.ts").read_text("utf-8").splitlines()
+    assert cli[0] == "#!/usr/bin/env node"
+    assert cli[2] == "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 7000);"
+    module = (tmp_path / "src/a.ts").read_text("utf-8")
+    assert module.endswith('import { b } from "./b.ts";\nexport const a = b;\n')
+    assert module.startswith("// Added by the receipts-bench hang phase")
+    assert (tmp_path / "test/a.test.ts").read_text("utf-8") == 'import { test } from "node:test";\n'
+
+
+def test_an_unreadable_entry_script_stops_the_hang_phase(tmp_path: Path) -> None:
+    task = load_task(build_task(tmp_path / "project"))
+    runner = validate._Runner(task, factory(), tmp_path, keep=False)
+    work = tmp_path / "ws"
+    shutil.copytree(task.repo_dir, work)
+    broken = replace(task, hidden_check_cmd="python3 .receipts_hidden/missing.py")
+    runner.task = broken
+    with pytest.raises(PhaseError, match="cannot set the hidden time budget"):
+        runner.hidden(SubprocessSandbox(work), budget_s=2)
+
+
+# Workspaces are the ones a study run starts from ----------------------------------------
+
+
+def _git_out(work: Path, *args: str) -> str:
+    """Host git on a kept workspace of synthetic test data (read-only commands)."""
+    return subprocess.run(
+        ["git", "-C", str(work), *args],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"PATH": "/usr/bin:/bin", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"},
+    ).stdout
+
+
+def _expect_study_workspaces(task: TaskSpec, result: TaskValidation, tmp_path: Path) -> None:
+    """Each kept workspace is the study runner's start for its conditions (plus the reference).
+
+    receipts.study.runner.prepare_workspace builds the same conditions on the host; the
+    root commits must hold the same tree, and only the reference may differ from them.
+    """
+    from receipts.study.runner import prepare_workspace
+    from receipts.study.tasks import run_task_from_spec
+
+    assert set(CONDITIONS) == set(PHASES)
+    for phase, conditions in CONDITIONS.items():
+        kept = tmp_path / "work" / f"py-toy-greet-{phase}"
+        study = tmp_path / "study" / phase
+        base = prepare_workspace(run_task_from_spec(task), conditions, study)
+        assert _git_out(kept, "rev-parse", "HEAD^{tree}") == _git_out(
+            study, "rev-parse", "HEAD^{tree}"
+        ), phase
+        assert _git_out(kept, "rev-parse", "HEAD").strip() == base, phase
+        exclude = (kept / ".git" / "info" / "exclude").read_text("utf-8")
+        assert exclude == (study / ".git" / "info" / "exclude").read_text("utf-8"), phase
+        changed = _git_out(kept, "status", "--porcelain").splitlines()
+        if "reference" in result.phases[phase]["uncommitted"]:
+            assert " M src/toy/greet.py" in changed, phase
+        else:
+            assert changed == [], phase
+
+
+def test_the_workspace_constants_match_the_study_runner() -> None:
+    from receipts.study import runner
+
+    assert (f"{runner.HIDDEN_DIR}/", *runner.GENERATED_ARTIFACTS) == validate.WORKSPACE_EXCLUDES
+    assert {key: runner.GIT_ENV[key] for key in validate.GIT_IDENTITY} == validate.GIT_IDENTITY
+
+
+#: A preserve check that compares the starting tests with the root commit, as D32 allows
+#: (synthetic test data): it fails when the visible tests were edited after the start.
+GIT_BASELINE_CASES = HIDDEN_CASES.replace(
+    'def plain() -> None:\n    assert greet("Ada") == "Hello, Ada!"\n',
+    "def plain() -> None:\n"
+    "    import subprocess\n"
+    '    git = ["git", "-c", "core.fsmonitor=false"]\n'
+    '    roots = subprocess.run([*git, "rev-list", "--max-parents=0", "HEAD"],\n'
+    "                           capture_output=True, text=True, check=True)\n"
+    '    diff = [*git, "diff", "--quiet", roots.stdout.split()[0], "--", "tests/test_greet.py"]\n'
+    "    if subprocess.run(diff, check=False).returncode != 0:\n"
+    '        raise AssertionError("the starting visible tests were edited")\n'
+    '    assert greet("Ada") == "Hello, Ada!"\n',
+)
+
+
+def test_the_reference_is_judged_against_the_root_commit_like_a_real_run(tmp_path: Path) -> None:
+    assert GIT_BASELINE_CASES != HIDDEN_CASES
+    edited_tests = visible_tests(16) + "\n\ndef test_shout() -> None:\n    assert True\n"
+    overrides = {
+        "hidden/_cases.py": GIT_BASELINE_CASES,
+        "reference/tests/test_greet.py": edited_tests,
+    }
+    result = _validate(tmp_path, overrides, phases={"baseline", "reference"}, repeats=1)
+    assert _step(result, "baseline.preserve_requirements_pass").ok
+    step = _step(result, "reference.hidden_pass")
+    assert not step.ok
+    assert "plain" in step.detail
+    honest = _validate(tmp_path / "b", {"hidden/_cases.py": GIT_BASELINE_CASES}, phases={"m1"})
+    assert _failed(honest) == []
 
 
 def test_every_requirement_needs_a_hidden_check(tmp_path: Path) -> None:
@@ -428,7 +639,7 @@ class _NoGitSandbox(SubprocessSandbox):
     def run(
         self, cmd: str, *, cwd: str = ".", timeout_s: float | None = None, stdin: str | None = None
     ) -> CommandOutcome:
-        if cmd.startswith("set -e\ngit init"):
+        if cmd == validate.GIT_INIT:
             return super().run("echo 'git: command not found' >&2; exit 127", cwd=cwd)
         return super().run(cmd, cwd=cwd, timeout_s=timeout_s, stdin=stdin)
 
@@ -594,8 +805,11 @@ def test_task_validation_bookkeeping() -> None:
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("name", PILOTS)
+@pytest.mark.parametrize("name", EXEMPLARS)
 def test_pilot_task_validates(tmp_path: Path, name: str) -> None:
+    version = node_version()
+    if name.startswith("pilot-ts-") and (version is None or version < (22, 6)):
+        pytest.skip(f"TypeScript tasks need Node 22.6 or later (found {version}); CI installs 22")
     task_dir = ROOT / "bench" / "tasks" / name
     before = tree_sha256(task_dir)
     result = validate_path(task_dir, factory(), work_root=tmp_path / "work")
@@ -604,6 +818,9 @@ def test_pilot_task_validates(tmp_path: Path, name: str) -> None:
     assert result.tree_sha256 == before == tree_sha256(task_dir)
     m2 = result.phases["m2_start"]["truncation"]
     assert m2["first_failure_line"] > m2["visible_lines"] + validate.M2_MARGIN_LINES
+    (hang,) = result.phases["hang"]["hidden"]
+    assert hang["passed"] < hang["total"]  # the injected hang reached the checks
+    assert hang["duration_s"] < result.phases["hang"]["limit_s"]
 
 
 def test_capture_prior_work_fills_outputs_in_a_validator_workspace(tmp_path: Path) -> None:
@@ -635,6 +852,21 @@ def test_capture_prior_work_accepts_a_short_draft(tmp_path: Path) -> None:
     )
     captured = validate.capture_prior_work(task, factory())
     assert captured.episodes[0].steps[0].output.startswith('"""Greeting helper')
+
+
+def test_capture_prior_work_refuses_a_shared_file_with_steps(tmp_path: Path) -> None:
+    manifest = manifest_with(M4={"prior_work": "bench/prompts/shared.json"})
+    project = tmp_path / "project"
+    task_dir = build_task(project, overrides={"manifest.json": manifest, "prior_work.json": None})
+    shared = project / "bench" / "prompts" / "shared.json"
+    shared.write_text(json.dumps(prior_work()), encoding="utf-8")
+    task = load_task(task_dir)
+    with pytest.raises(PriorWorkError, match="shared by every task"):
+        validate.capture_prior_work(task, factory())
+    no_steps = prior_work()
+    no_steps["episodes"][0]["steps"] = []
+    shared.write_text(json.dumps(no_steps), encoding="utf-8")
+    assert validate.capture_prior_work(task, factory()).episodes[0].steps == ()
 
 
 def test_capture_prior_work_refuses_invalid_content(tmp_path: Path) -> None:

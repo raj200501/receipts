@@ -15,10 +15,9 @@ import pytest
 from receipts.bench import spec
 from receipts.bench.spec import TaskSpecError, load_task, task_dirs
 
-from .factory import TASK_TOML, build_task, manifest_with
+from .factory import EXEMPLARS, TASK_TOML, build_task, manifest_with
 
 ROOT = Path(__file__).resolve().parents[2]
-PILOTS = ("pilot-py-bizdays", "pilot-py-timesheet", "pilot-ts-feedsync", "pilot-ts-gradebook")
 
 
 def _problems(task: Path) -> str:
@@ -72,7 +71,7 @@ def test_shared_prior_work_path_resolves_from_the_project_root(tmp_path: Path) -
     assert task.prior_work_path == tmp_path / "bench" / "prompts" / "generic-session.json"
 
 
-@pytest.mark.parametrize("name", PILOTS)
+@pytest.mark.parametrize("name", EXEMPLARS)
 def test_pilot_tasks_load(name: str) -> None:
     task = load_task(ROOT / "bench" / "tasks" / name)
     assert task.pilot
@@ -122,7 +121,6 @@ def test_invalid_toml_and_json_are_reported(tmp_path: Path) -> None:
     ("old", "new", "expected"),
     [
         ('id = "py-toy-greet"', 'id = "py-other"', "does not match its directory"),
-        ('id = "py-toy-greet"', 'id = "py_Toy"', "id"),
         ('language = "python"', 'language = "rust"', "language"),
         ('language = "python"', 'language = "typescript"', "prefix"),
         ('category = "feature"', 'category = "chore"', "category"),
@@ -130,6 +128,8 @@ def test_invalid_toml_and_json_are_reported(tmp_path: Path) -> None:
         ('origin = "hand-written"', 'origin = "third-party"', "source"),
         ('origin = "hand-written"', 'origin = "hand-written"\nsource = "x"', "only for"),
         ("timeout_s = 60", "timeout_s = 5", "timeout_s"),
+        ("timeout_s = 60", "timeout_s = 29", "timeout_s must be an integer from 30 to 600"),
+        ("timeout_s = 60", "timeout_s = 601", "timeout_s must be an integer from 30 to 600"),
         ("timeout_s = 60", "timeout_s = true", "timeout_s"),
         ("timeout_s = 60", 'timeout_s = "60"', "timeout_s"),
         ('test_cmd = "python3 -m pytest -v"', 'test_cmd = "pytest -v"', "test_cmd"),
@@ -154,6 +154,45 @@ def test_invalid_toml_and_json_are_reported(tmp_path: Path) -> None:
 def test_task_toml_rules(tmp_path: Path, old: str, new: str, expected: str) -> None:
     task = build_task(tmp_path, overrides={"task.toml": _toml(old, new)})
     assert expected in _problems(task)
+
+
+@pytest.mark.parametrize(
+    "bad_id",
+    [
+        "py_Toy",
+        "py-Toy",
+        "py-toy_greet",
+        "rb-toy",
+        "py-",
+        "py-toy-",
+        "py--toy",
+        "pilot-py_toy",
+        "pilots-py-toy",
+        "py-" + "x" * 46,
+    ],
+)
+def test_id_format_rule(tmp_path: Path, bad_id: str) -> None:
+    # Directory, task.toml, and manifest agree, so only the format rule can fire.
+    text = _toml('id = "py-toy-greet"', f'id = "{bad_id}"')
+    manifest = manifest_with().replace('"py-toy-greet"', f'"{bad_id}"')
+    task = build_task(
+        tmp_path, task_id=bad_id, overrides={"task.toml": text, "manifest.json": manifest}
+    )
+    problems = _problems(task)
+    assert problems.splitlines() == [
+        f"task.toml: id {bad_id!r} must match {spec.TASK_ID_PATTERN.pattern} "
+        f"(at most {spec.MAX_TASK_ID} characters)"
+    ]
+
+
+@pytest.mark.parametrize("good_id", ["py-a", "py-toy-greet2", "pilot-py-toy", "py-" + "x" * 45])
+def test_ids_in_the_format_load(tmp_path: Path, good_id: str) -> None:
+    text = _toml('id = "py-toy-greet"', f'id = "{good_id}"')
+    manifest = manifest_with().replace('"py-toy-greet"', f'"{good_id}"')
+    task = build_task(
+        tmp_path, task_id=good_id, overrides={"task.toml": text, "manifest.json": manifest}
+    )
+    assert load_task(task).id == good_id
 
 
 def test_third_party_origin_needs_source_and_license(tmp_path: Path) -> None:

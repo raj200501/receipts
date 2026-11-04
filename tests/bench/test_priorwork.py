@@ -151,7 +151,109 @@ def test_command_rules(cmd: str, expected: str | None) -> None:
         assert any(expected in p for p in problems), problems
 
 
-@pytest.mark.parametrize("path", ["/etc/passwd", "../x", "a/../../x", ".git/config", ""])
+#: Commands that would read outside the repository (or .git), write, wait, or run
+#: programs, each with part of the expected problem (synthetic test data).
+REFUSED: tuple[tuple[str, str], ...] = (
+    ("cat /etc/hostname", "operand '/etc/hostname' is not a relative path"),
+    ("cat ../../../../etc/passwd", "operand '../../../../etc/passwd'"),
+    ("grep -rn token /root", "operand '/root'"),
+    ("cat .git/config", "operand '.git/config'"),
+    ("head -n 3 .receipts_hidden/check.py", "operand '.receipts_hidden/check.py'"),
+    ("cat ~/notes.txt", "operand '~/notes.txt'"),
+    ("cat -- /etc/passwd", "operand '/etc/passwd'"),
+    ("cat .g*/config", "operand '.g*/config'"),
+    ("cat $HOME/x", "variable expansion"),
+    ('grep -n "end$" src/a.py', "variable expansion"),
+    ("cat {.git,src}/config", "brace expansion"),
+    ("cat < README.md", "operator '<'"),
+    ("ls |& cat", "operator '|&'"),
+    ("sort -ocopy.txt README.md", "option -o of sort"),
+    ("sort -n -o copy.txt README.md", "option -o of sort"),
+    ("sort --output=copy.txt README.md", "option --output of sort"),
+    ("sort -T /tmp README.md", "option -T of sort"),
+    ("sort --compress-program=sh README.md", "option --compress-program"),
+    ("sort --files0-from=/etc/list", "the value of --files0-from"),
+    ("uniq README.md copy.txt", "uniq writes its second operand"),
+    ("tail -f README.md", "option -f of tail"),
+    ("tail --follow README.md", "option --follow of tail"),
+    ("grep -f /etc/passwd x src/a.py", "the value of -f '/etc/passwd'"),
+    ("grep -f/etc/passwd src/a.py", "the value of -f '/etc/passwd'"),
+    ("grep --file=/etc/passwd src/a.py", "the value of --file '/etc/passwd'"),
+    ("grep --file /etc/passwd src/a.py", "the value of --file '/etc/passwd'"),
+    ("grep --color /etc/passwd src/a.py", "operand '/etc/passwd'"),
+    ("wc --files0-from=/etc/x", "the value of --files0-from"),
+    ("grep -rn token", "recursive search of the whole workspace"),
+    ("grep -rn token .", "recursive search of the whole workspace"),
+    ("grep -r -e token ./", "recursive search of the whole workspace"),
+    ("ls -R", "recursive search of the whole workspace"),
+    ("ls -aR .", "recursive search of the whole workspace"),
+    ("find . -name x -prune -o -print", "recursive search of the whole workspace"),
+    ("find -name x", "recursive search of the whole workspace"),
+    ("find /etc -name passwd", "starting point '/etc'"),
+    ("find src -newer /etc/passwd", "the value of -newer '/etc/passwd'"),
+    ("find src -name x -exec cat {} +", "brace expansion"),
+    ("find src -name x -fprint out.txt", "option '-fprint'"),
+    ("find src -name '*.py' /etc", "argument '/etc'"),
+    ("LC_ALL=C", "a locale setting must be followed by a program"),
+)
+#: Read-only commands inside the repository that the rules accept (synthetic test data).
+ACCEPTED: tuple[str, ...] = (
+    "grep -o def src/a.py",
+    "find src -name x -prune -o -print",
+    "find -L src -maxdepth 2 -type f -name '*.py'",
+    "find src tests -name '*.py' | LC_ALL=C sort",
+    "grep -rn round_minutes src/a.py tests/test_a.py | LC_ALL=C sort",
+    "grep -rn token src tests",
+    "grep -r -e /api/ src",
+    "grep -c '^def test_' tests/test_a.py tests/test_b.py",
+    "grep -n 'end$' src/a.py",
+    'grep -n -i "facilities\\|https" README.md config/calendar.toml',
+    "grep -n end\\$ src/a.py",
+    "grep -n --include='*.py' -r token src",
+    "cut -d / -f 2 src/paths.txt",
+    "cut --output-delimiter=, -d : -f 1 data/x.txt",
+    "tr / ' '",
+    "ls -a",
+    "ls -R src",
+    "ls -I '*.pyc' src",
+    "sort -k 2 -t , data/rows.csv",
+    "sort -t, -k2 -n data/rows.csv | uniq -c",
+    "head -n 5 README.md",
+    "tail -n +3 README.md",
+    "wc -l src/*.py",
+    "nl -ba README.md",
+    "uniq -c src/a.py",
+    "cat a; ls b && wc c || nl d",
+    "cat ./src/a.py",
+)
+
+
+@pytest.mark.parametrize(("cmd", "expected"), REFUSED)
+def test_commands_stay_inside_the_repository(cmd: str, expected: str) -> None:
+    problems = priorwork._command_problems(cmd)
+    assert any(expected in p for p in problems), problems
+
+
+@pytest.mark.parametrize("cmd", ACCEPTED)
+def test_read_only_commands_inside_the_repository_are_accepted(cmd: str) -> None:
+    assert priorwork._command_problems(cmd) == []
+
+
+def test_step_problems_name_the_step() -> None:
+    data = _mutated("episodes.0.steps.1.args", {"cmd": "cat /etc/hostname"})
+    (problem,) = priorwork.step_problems(_parse(data))
+    assert problem.startswith("episodes[0].steps[1] ('cat /etc/hostname'): operand")
+
+
+@pytest.mark.parametrize("path", [".", "./src/a.py", "src/.hidden.py"])
+def test_read_paths_inside_the_repository_are_accepted(path: str) -> None:
+    data = _mutated("episodes.0.steps.0.args", {"path": path})
+    assert priorwork.step_problems(_parse(data)) == []
+
+
+@pytest.mark.parametrize(
+    "path", ["/etc/passwd", "../x", "a/../../x", ".git/config", "", "~/x", ".g*/config"]
+)
 def test_read_path_rules(path: str) -> None:
     data = _mutated("episodes.0.steps.0.args", {"path": path})
     try:

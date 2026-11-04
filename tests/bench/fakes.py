@@ -2,15 +2,18 @@
 
 It runs ``bash -c`` in the workspace with a small allowlisted environment (like
 the real backends) and, when ``unshare -rn`` works on this machine, inside a new
-network namespace so nothing can reach the network. It confines nothing else, so
-the bench tests use it only for this repository's own task files and for the
-synthetic tasks they write themselves.
+network namespace so nothing can reach the network. When the command ends, every
+process it left in its process group is stopped, as a sandbox's teardown would. It
+confines nothing else, so the bench tests use it only for this repository's own task
+files and for the synthetic tasks they write themselves.
 """
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -33,6 +36,22 @@ def _unshare_works() -> bool:
     except (OSError, subprocess.TimeoutExpired):
         return False
     return probe.returncode == 0
+
+
+@functools.cache
+def node_version() -> tuple[int, int, int] | None:
+    """The host's Node version as (major, minor, patch), or None when there is no node."""
+    node = shutil.which("node")
+    if node is None:
+        return None
+    try:
+        out = subprocess.run(
+            [node, "--version"], capture_output=True, text=True, timeout=30, check=False
+        ).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    match = re.match(r"^v(\d+)\.(\d+)\.(\d+)", out.strip())
+    return (int(match[1]), int(match[2]), int(match[3])) if match else None
 
 
 def toolchain_path() -> str:
@@ -103,6 +122,9 @@ class SubprocessSandbox:
             os.killpg(proc.pid, signal.SIGKILL)
             stdout, stderr = proc.communicate()
             timed_out = True
+        # Like a real sandbox's teardown: nothing the command started outlives it.
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGKILL)
         code = -9 if timed_out else proc.returncode
         out, out_cut, out_sha = cap_stream(stdout)
         err, err_cut, err_sha = cap_stream(stderr)

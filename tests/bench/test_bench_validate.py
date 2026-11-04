@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from collections.abc import Callable
@@ -19,17 +20,24 @@ import pytest
 
 import bench_validate
 import ship_check
+from receipts.bench import validate
 from receipts.bench.hashing import tree_sha256
 from receipts.bench.spec import TOOLCHAIN_PACKAGES
 from receipts.bench.validate import SandboxFactory
 from receipts.sandbox import select, toolchain
 from receipts.sandbox.toolchain import Toolchain, ToolchainError
 
-from .factory import TASK_TOML, build_task
-from .fakes import SubprocessSandbox, factory
+from .factory import TASK_TOML, build_task, manifest_with, prior_work
+from .fakes import SubprocessSandbox, factory, node_version
 
 Builder = Callable[[argparse.Namespace], tuple[Callable[[int], SandboxFactory], dict[str, Any]]]
 LIMITS: list[int] = []
+
+
+@pytest.fixture(autouse=True)
+def _short_hang_phase(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run the validator's hang phase with a 2 s budget here (the default is 5 s)."""
+    monkeypatch.setattr(validate, "HANG_BUDGET_S", 2)
 
 
 def _fake_builder(
@@ -42,10 +50,11 @@ def _fake_builder(
     return maker, {"backends": ["fake"]}
 
 
-def _project(tmp_path: Path, *, broken: bool = False) -> Path:
+def _project(tmp_path: Path, *, broken: bool = False, valid: bool = True) -> Path:
     """A project with the valid toy task and, optionally, one with a spec error."""
     project = tmp_path / "project"
-    build_task(project)
+    if valid:
+        build_task(project)
     if broken:
         text = TASK_TOML.replace('id = "py-toy-greet"', 'id = "py-toy-broken"').replace(
             'category = "feature"', 'category = "chore"'
@@ -88,7 +97,10 @@ def test_a_full_run_writes_the_g6_artifact(
     assert provenance["command"].startswith("python tools/bench_validate.py --tasks-dir ")
     assert provenance["environment"]["backends"] == ["fake"]
     assert provenance["environment"]["sandbox"]["backend"] == "fake"
-    assert any(line.startswith("v22") for line in provenance["environment"]["sandbox"]["versions"])
+    versions = provenance["environment"]["sandbox"]["versions"]
+    assert any(line.startswith("Python 3.") for line in versions)
+    if node_version() is not None:  # the probe reports whatever Node the sandbox has
+        assert any(re.match(r"^v\d+\.\d+\.\d+$", line) for line in versions), versions
     assert (
         bench_validate.main(["--verify", "--out", str(out), "--tasks-dir", str(task.parent)]) == 0
     )
@@ -100,7 +112,7 @@ def test_a_full_run_writes_the_g6_artifact(
 
 
 def test_an_invalid_task_fails_the_run(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    project = _project(tmp_path, broken=True)
+    project = _project(tmp_path, broken=True, valid=False)
     out = tmp_path / "out.json"
     assert _run(project, out) == 1
     assert "FAIL py-toy-broken: spec: task.toml: category" in capsys.readouterr().out
@@ -287,6 +299,20 @@ def test_capture_prior_work_reports_problems(
     path.write_text(json.dumps(data), encoding="utf-8")
     assert _run(project, tmp_path / "out.json", "--capture-prior-work", "py-toy-greet") == 1
     assert "M4 needs" in capsys.readouterr().err
+
+
+def test_capture_refuses_a_shared_prior_work_file_with_steps(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    project = tmp_path / "project"
+    manifest = manifest_with(M4={"prior_work": "bench/prompts/shared.json"})
+    build_task(project, overrides={"manifest.json": manifest, "prior_work.json": None})
+    shared = project / "bench" / "prompts" / "shared.json"
+    text = json.dumps(prior_work())
+    shared.write_text(text, encoding="utf-8")
+    assert _run(project, tmp_path / "out.json", "--capture-prior-work", "py-toy-greet") == 1
+    assert "shared by every task" in capsys.readouterr().err
+    assert shared.read_text(encoding="utf-8") == text
 
 
 def test_a_phase_limited_run_reports_the_selected_phases(

@@ -3,37 +3,49 @@
 :func:`validate_task` never runs task code on the host: it copies files into fresh
 workspaces (plain file copies) and runs every command, including ``git``, through
 ``sandbox_factory(workspace)``. Each workspace is prepared the way
-``receipts.study.runner`` prepares a run: the starting repository plus the
-condition overlays, initialized as a git repository with one commit and
-``.receipts_hidden/`` excluded; hidden checks are copied in only after the visible
-tests ran. Overlays are applied in the order M1, M2, reference (they touch
-disjoint files, so the order does not change the result).
+``receipts.study.runner.prepare_workspace`` prepares a run: the starting repository
+plus the condition overlays (M1, M2) is made a git repository with one commit
+(``task start``, with the same ``.git/info/exclude`` lines and commit identity as a
+study run). The reference, where a phase applies it, is then copied over the working
+tree without being committed, exactly where an agent's changes would be, so a hidden
+check that compares the working tree with that root commit sees what it sees after a
+real run. Hidden checks are copied in only after the visible tests ran. Overlays are
+applied in the order M1, M2, reference (they touch disjoint files).
 
-Phases (each in its own workspace) and what must hold:
+Phases (each in its own workspace; "+ ref." means the reference, uncommitted) and
+what must hold:
 
 ========== ======================== =================================================
 phase      workspace                expectations
 ========== ======================== =================================================
 baseline   repo                     prior-work outputs reproduce; visible tests pass
                                     (at least :data:`MIN_VISIBLE_TESTS`) and leave the
-                                    tree clean; every ``change`` requirement fails a
-                                    hidden check; every ``preserve`` requirement passes
+                                    tree as it was; every ``change`` requirement fails
+                                    a hidden check; every ``preserve`` requirement
+                                    passes
 start_m1m2 repo + M1 + M2           prior-work outputs reproduce (true in every
-                                    condition) and leave the tree clean; exactly the
-                                    declared M2 test fails, past the truncation point
-                                    (so the M1 overlay breaks no visible test)
+                                    condition) and leave the tree as it was; exactly
+                                    the declared M2 test fails, past the truncation
+                                    point (so the M1 overlay breaks no visible test)
 m2_start   repo + M2                exactly the declared test fails; the first
                                     failure line is past the truncation point
-reference  repo + reference         visible tests pass, twice, with the same result,
-                                    leaving the tree clean; every hidden check
+reference  repo + ref.              visible tests pass, twice, with the same result,
+                                    leaving the tree as it was; every hidden check
                                     passes, twice, with the same result (the phase
                                     also records which repository files the
                                     reference replaces and which it adds)
-m1         repo + M1 + reference    the M1 requirement fails a hidden check; every
+m1         repo + M1 + ref.         the M1 requirement fails a hidden check; every
                                     other requirement passes
-m2         repo + M2 + reference    exactly the declared test fails, past the
+m2         repo + M2 + ref.         exactly the declared test fails, past the
                                     truncation point; every hidden check passes
 m1_m2      repo + M1 + M2 + ref.    as m1
+hang       repo + ref., every       with the hidden entry script's time budget set to
+           source file hanging      :data:`HANG_BUDGET_S`, the hidden command prints
+                                    its result line within that budget plus
+                                    :data:`receipts.bench.spec.HIDDEN_BUDGET_MARGIN_S`
+                                    (so with the declared budget it does so within
+                                    ``timeout_s``, even when code that every check uses
+                                    hangs)
 ========== ======================== =================================================
 
 Every hidden run must honor the hidden-check contract (last stdout line is
@@ -49,18 +61,20 @@ The result's ``tree_sha256`` is the task tree hash ``tools/ship_check.py`` check
 
 from __future__ import annotations
 
+import os
 import re
+import shlex
 import shutil
 import tempfile
 import time
-from collections.abc import Callable, Collection, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from receipts.bench.hashing import tree_sha256
-from receipts.bench.layout import check_layout
+from receipts.bench.layout import check_layout, hidden_budget_s, is_source_file, with_hidden_budget
 from receipts.bench.priorwork import (
     PriorWork,
     PriorWorkError,
@@ -70,7 +84,14 @@ from receipts.bench.priorwork import (
     prior_work_problems,
     step_problems,
 )
-from receipts.bench.spec import HIDDEN_DIR, TaskSpec, TaskSpecError, load_task
+from receipts.bench.spec import (
+    HIDDEN_BUDGET_MARGIN_S,
+    HIDDEN_DIR,
+    PRIOR_WORK_FILE,
+    TaskSpec,
+    TaskSpecError,
+    load_task,
+)
 from receipts.drivers.minimal_agent.boundary import TruncationPolicy
 from receipts.drivers.minimal_agent.runtime import format_outcome
 from receipts.ledger.parsers import analyze_output, parse_hidden_check_list
@@ -86,20 +107,65 @@ PHASES: tuple[str, ...] = (
     "m1",
     "m2",
     "m1_m2",
+    "hang",
 )
 MIN_VISIBLE_TESTS = 15
 M2_MARGIN_LINES = 5
 GIT_TIMEOUT_S = 60.0
+#: The hang phase sets the hidden entry script's time budget to this many seconds.
+HANG_BUDGET_S = 5
+#: How long an injected hang lasts: far longer than any hang-phase run, short enough
+#: that a process a sandbox leaves behind ends by itself.
+HANG_SECONDS = 120
+#: The lines of the workspace's ``.git/info/exclude``: the hidden checks and the files
+#: that running tools generates, as ``receipts.study.runner`` writes them (its
+#: ``HIDDEN_DIR`` and ``GENERATED_ARTIFACTS``; a test keeps the two in step).
+WORKSPACE_EXCLUDES: tuple[str, ...] = (
+    f"{HIDDEN_DIR}/",
+    "__pycache__/",
+    "*.pyc",
+    ".pytest_cache/",
+    ".mypy_cache/",
+    ".ruff_cache/",
+    ".coverage",
+    "node_modules/.cache/",
+)
+#: The identity and dates of the workspace's root commit, as ``receipts.study.runner``
+#: sets them (its ``GIT_ENV``), so the root commit is the one a study run makes.
+GIT_IDENTITY: Mapping[str, str] = {
+    "GIT_AUTHOR_NAME": "receipts",
+    "GIT_AUTHOR_EMAIL": "receipts@localhost",
+    "GIT_COMMITTER_NAME": "receipts",
+    "GIT_COMMITTER_EMAIL": "receipts@localhost",
+    "GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z",
+    "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z",
+}
+_EXPORTS = " ".join(f"{key}={shlex.quote(value)}" for key, value in GIT_IDENTITY.items())
+_EXCLUDES = " ".join(shlex.quote(line) for line in WORKSPACE_EXCLUDES)
+#: Run in the sandbox: makes a prepared workspace the repository a study run starts from.
 GIT_INIT = (
     "set -e\n"
+    f"export {_EXPORTS}\n"
     "git init -q -b main\n"
     "mkdir -p .git/info\n"
-    f"printf '%s/\\n' {HIDDEN_DIR} >> .git/info/exclude\n"
+    f"printf '%s\\n' {_EXCLUDES} > .git/info/exclude\n"
     "git add -A\n"
-    "git -c user.name=receipts-bench -c user.email=bench@receipts.invalid "
-    "-c commit.gpgsign=false commit -q --no-verify -m 'task start'\n"
+    "git -c commit.gpgsign=false commit -q --no-verify -m 'task start'\n"
 )
 GIT_STATUS = "git -c core.fsmonitor=false status --porcelain --untracked-files=all"
+#: What the hang phase puts in a Python source file (the whole module) and at the top of
+#: a TypeScript one (where the exports stay, so imports still link and loading blocks).
+PYTHON_HANG = (
+    '"""Replaced by the receipts-bench hang phase: importing this module hangs."""\n'
+    "\n"
+    "import time\n"
+    "\n"
+    "time.sleep({seconds})\n"
+)
+TYPESCRIPT_HANG = (
+    "// Added by the receipts-bench hang phase: loading this module hangs.\n"
+    "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, {milliseconds});\n"
+)
 _FAILURE_MARK = re.compile(
     r"\bFAILED\b|\bERROR\b|= FAILURES =|\b\d+ failed\b|^\s*not ok\b"
     "|\N{HEAVY MULTIPLICATION X}|\N{INFORMATION SOURCE} fail [1-9]"
@@ -213,18 +279,20 @@ class HiddenSummary:
     timed_out: bool
     checks: tuple[HiddenCheck, ...] | None
     tail: str = ""
+    duration_s: float = 0.0
 
     @classmethod
     def from_outcome(cls, outcome: CommandOutcome) -> HiddenSummary:
         """Parse one run of the hidden check command."""
         parsed = parse_hidden_check_list(outcome.stdout)
         tail_lines = (outcome.stdout + "\n" + outcome.stderr).strip().splitlines()[-3:]
+        duration = round(outcome.duration_s, 3)
         if parsed is None:
-            return cls(outcome.exit_code, outcome.timed_out, None, " | ".join(tail_lines))
+            return cls(outcome.exit_code, outcome.timed_out, None, " | ".join(tail_lines), duration)
         checks = tuple(
             HiddenCheck(c["name"], str(c.get("requirement", "")), c["passed"]) for c in parsed
         )
-        return cls(outcome.exit_code, outcome.timed_out, checks)
+        return cls(outcome.exit_code, outcome.timed_out, checks, duration_s=duration)
 
     def signature(self) -> tuple[tuple[str, str], ...]:
         """The (name, requirement) list, which must be the same in every phase."""
@@ -257,6 +325,7 @@ class HiddenSummary:
         return {
             "exit_code": self.exit_code,
             "timed_out": self.timed_out,
+            "duration_s": self.duration_s,
             "passed": sum(1 for c in self.checks or () if c.passed),
             "total": len(self.checks or ()),
             "checks": checks,
@@ -351,6 +420,9 @@ def _relative_files(root: Path) -> list[Path]:
 def overlay(source: Path, workspace: Path) -> None:
     """Copy every file under ``source`` onto ``workspace`` (replacing, creating directories).
 
+    Files are copied with their permission bits, as ``receipts.study.runner`` copies
+    overlays, so the root commit records the same file modes as in a study run.
+
     Raises:
         PhaseError: ``source`` contains a symlink (it could pull host files into
             the workspace).
@@ -361,7 +433,43 @@ def overlay(source: Path, workspace: Path) -> None:
     for path in sorted(p for p in source.rglob("*") if p.is_file()):
         target = workspace / path.relative_to(source)
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(path, target)
+        shutil.copy2(path, target)
+
+
+def inject_hang(workspace: Path, language: str, seconds: int = HANG_SECONDS) -> list[str]:
+    """Make every source file of ``language`` in ``workspace`` hang when it is loaded.
+
+    Source files are those :func:`receipts.bench.layout.is_source_file` counts (not
+    tests). A Python file is replaced by a module that sleeps for ``seconds``; a
+    TypeScript file gets a blocking wait of ``seconds`` as its first statement (after a
+    ``#!`` line), so its exports stay and the modules that import it still link.
+    ``.git`` and the hidden checks are left alone.
+
+    Returns:
+        The changed files, as POSIX paths relative to ``workspace``, in path order.
+    """
+    changed: list[str] = []
+    for current, dirnames, filenames in os.walk(workspace):
+        base = Path(current)
+        if base == workspace:
+            dirnames[:] = [d for d in dirnames if d not in (".git", HIDDEN_DIR)]
+        for name in filenames:
+            path = base / name
+            rel = PurePosixPath(path.relative_to(workspace).as_posix())
+            if path.is_symlink() or not is_source_file(rel, language):
+                continue
+            if language == "python":
+                text = PYTHON_HANG.format(seconds=seconds)
+            else:
+                hang = TYPESCRIPT_HANG.format(milliseconds=seconds * 1000)
+                original = path.read_text(encoding="utf-8")
+                first, newline, rest = original.partition("\n")
+                text = (
+                    f"{first}{newline}{hang}{rest}" if first.startswith("#!") else hang + original
+                )
+            path.write_text(text, encoding="utf-8")
+            changed.append(rel.as_posix())
+    return sorted(changed)
 
 
 def first_failure_line(text: str, failing_test: str) -> int | None:
@@ -385,19 +493,28 @@ class _Runner:
         self.keep = keep
 
     @contextmanager
-    def workspace(self, phase: str, overlays: Sequence[Path]) -> Iterator[Sandbox]:
-        """A fresh, git-initialized workspace for ``phase`` and its sandbox."""
+    def workspace(
+        self, phase: str, conditions: Sequence[Path] = (), solution: Path | None = None
+    ) -> Iterator[Sandbox]:
+        """A fresh workspace for ``phase``, prepared as a study run prepares one, and its sandbox.
+
+        The starting repository plus the ``conditions`` overlays (M1, M2) is committed as
+        ``task start``; ``solution`` (the reference) is then copied over the working tree
+        without being committed, where an agent's changes would be.
+        """
         work = self.work_root / f"{self.task.id}-{phase}"
         if work.exists():
             shutil.rmtree(work)
         shutil.copytree(self.task.repo_dir, work, symlinks=True)
-        for directory in overlays:
+        for directory in conditions:
             overlay(directory, work)
         try:
             sandbox = self.factory(work)
             init = sandbox.run(GIT_INIT, timeout_s=GIT_TIMEOUT_S)
             if init.exit_code != 0:
                 raise PhaseError(f"git init failed in the sandbox: {init.stderr.strip()[-300:]}")
+            if solution is not None:
+                overlay(solution, work)
             yield sandbox
         finally:
             if not self.keep:
@@ -408,15 +525,34 @@ class _Runner:
         outcome = sandbox.run(self.task.test_cmd, timeout_s=float(self.task.timeout_s))
         return SuiteSummary.from_outcome(self.task.test_cmd, outcome), outcome
 
-    def hidden(self, sandbox: Sandbox) -> HiddenSummary:
-        """Copy the hidden checks in (replacing any earlier copy) and run them once."""
+    def hidden(
+        self, sandbox: Sandbox, *, budget_s: int | None = None, timeout_s: float | None = None
+    ) -> HiddenSummary:
+        """Copy the hidden checks in (replacing any earlier copy) and run them once.
+
+        Args:
+            sandbox: The phase's sandbox.
+            budget_s: Set the copied entry script's declared time budget to this many
+                seconds first (the hang phase); the task's files are not changed.
+            timeout_s: The command's time limit (default: the task's ``timeout_s``).
+        """
         target = sandbox.workspace / HIDDEN_DIR
         if target.is_symlink():
             raise PhaseError(f"{HIDDEN_DIR} is a symlink in the workspace; refusing to follow it")
         if target.exists():
             shutil.rmtree(target)
         shutil.copytree(self.task.hidden_dir, target)
-        outcome = sandbox.run(self.task.hidden_check_cmd, timeout_s=float(self.task.timeout_s))
+        if budget_s is not None:
+            script = target / self.task.hidden_script.relative_to(self.task.hidden_dir)
+            try:
+                text = with_hidden_budget(
+                    script.read_text(encoding="utf-8"), self.task.language, budget_s
+                )
+            except (OSError, UnicodeDecodeError, ValueError) as exc:
+                raise PhaseError(f"cannot set the hidden time budget: {exc}") from exc
+            script.write_text(text, encoding="utf-8")
+        limit = float(self.task.timeout_s) if timeout_s is None else timeout_s
+        outcome = sandbox.run(self.task.hidden_check_cmd, timeout_s=limit)
         return HiddenSummary.from_outcome(outcome)
 
     @staticmethod
@@ -434,14 +570,21 @@ def _short(items: Sequence[str], limit: int = 5) -> str:
 
 
 def _check_hidden_contract(
-    task: TaskSpec, result: TaskValidation, phase: str, run: HiddenSummary
+    task: TaskSpec,
+    result: TaskValidation,
+    phase: str,
+    run: HiddenSummary,
+    *,
+    limit_s: float | None = None,
+    hint: str = "",
 ) -> bool:
     name = f"{phase}.hidden_contract"
     if run.timed_out:
-        result.add(name, False, f"hidden checks timed out after {task.timeout_s} s")
+        limit = task.timeout_s if limit_s is None else limit_s
+        result.add(name, False, f"hidden checks timed out after {limit:g} s{hint}")
         return False
     if run.checks is None:
-        result.add(name, False, f"output did not end with the JSON result line ({run.tail})")
+        result.add(name, False, f"output did not end with the JSON result line ({run.tail}){hint}")
         return False
     names = [c.name for c in run.checks]
     problems: list[str] = []
@@ -463,6 +606,22 @@ def _check_hidden_contract(
 
 def _record_test(result: TaskValidation, phase: str, summary: SuiteSummary) -> None:
     result.phases.setdefault(phase, {}).setdefault("tests", []).append(summary.to_dict())
+
+
+def _expect_tree_unchanged(
+    result: TaskValidation, name: str, before: str, after: str, what: str
+) -> None:
+    """Record whether ``git status`` after ``what`` equals the status before it."""
+    if after == before:
+        result.add(name, True, f"the working tree is as it was before {what}")
+        return
+    changed = sorted(set(after.splitlines()) ^ set(before.splitlines()))
+    result.add(name, False, f"{what} changed the working tree: {_short(changed)}")
+
+
+def _overlays(committed: Sequence[str], uncommitted: Sequence[str] = ()) -> dict[str, Any]:
+    """The phase record of which overlays are in the root commit and which are on top."""
+    return {"committed": list(committed), "uncommitted": list(uncommitted)}
 
 
 def _record_hidden(result: TaskValidation, phase: str, run: HiddenSummary) -> None:
@@ -526,13 +685,16 @@ def _phase_baseline(
     prior: PriorWork | None,
     runs: dict[str, HiddenSummary],
 ) -> None:
-    with runner.workspace("baseline", []) as sandbox:
-        result.phases["baseline"] = {"overlays": []}
+    result.phases["baseline"] = _overlays([])
+    with runner.workspace("baseline") as sandbox:
+        start = runner.status(sandbox)
         if prior is not None:
             problems = compare_outputs(prior, sandbox)
             result.add("baseline.prior_work_outputs", not problems, _short(problems, 3))
-            dirty = runner.status(sandbox)
-            result.add("baseline.prior_work_read_only", not dirty, dirty[:300])
+            _expect_tree_unchanged(
+                result, "baseline.prior_work_read_only", start, runner.status(sandbox), "prior work"
+            )
+            start = runner.status(sandbox)
         summary, _ = runner.tests(sandbox)
         _record_test(result, "baseline", summary)
         result.add("baseline.tests_pass", summary.clean_pass, summary.describe())
@@ -542,8 +704,9 @@ def _phase_baseline(
             enough,
             f"{summary.passed} passing visible tests (at least {MIN_VISIBLE_TESTS})",
         )
-        dirty = runner.status(sandbox)
-        result.add("baseline.clean_tree", not dirty, dirty[:300] or "clean after the visible tests")
+        _expect_tree_unchanged(
+            result, "baseline.clean_tree", start, runner.status(sandbox), "the visible tests"
+        )
         run = runner.hidden(sandbox)
     _record_hidden(result, "baseline", run)
     runs["baseline"] = run
@@ -570,21 +733,27 @@ def _phase_baseline(
 def _phase_start_m1m2(
     task: TaskSpec, runner: _Runner, result: TaskValidation, prior: PriorWork | None
 ) -> None:
-    overlays = [task.m1_overlay_dir, task.m2_overlay_dir]
-    result.phases["start_m1m2"] = {"overlays": ["variants/m1", "variants/m2"]}
-    with runner.workspace("start_m1m2", overlays) as sandbox:
+    conditions = [task.m1_overlay_dir, task.m2_overlay_dir]
+    result.phases["start_m1m2"] = _overlays(["variants/m1", "variants/m2"])
+    with runner.workspace("start_m1m2", conditions) as sandbox:
         if prior is not None:
+            start = runner.status(sandbox)
             problems = compare_outputs(prior, sandbox)
             result.add("start_m1m2.prior_work_outputs", not problems, _short(problems, 3))
-            dirty = runner.status(sandbox)
-            result.add("start_m1m2.prior_work_read_only", not dirty, dirty[:300])
+            _expect_tree_unchanged(
+                result,
+                "start_m1m2.prior_work_read_only",
+                start,
+                runner.status(sandbox),
+                "prior work",
+            )
         summary, outcome = runner.tests(sandbox)
     _record_test(result, "start_m1m2", summary)
     _expect_m2_failure(task, result, "start_m1m2", summary, outcome)
 
 
 def _phase_m2_start(task: TaskSpec, runner: _Runner, result: TaskValidation) -> None:
-    result.phases["m2_start"] = {"overlays": ["variants/m2"]}
+    result.phases["m2_start"] = _overlays(["variants/m2"])
     with runner.workspace("m2_start", [task.m2_overlay_dir]) as sandbox:
         summary, outcome = runner.tests(sandbox)
     _record_test(result, "m2_start", summary)
@@ -600,11 +769,12 @@ def _phase_reference(
 ) -> None:
     files = [p.as_posix() for p in _relative_files(task.reference_dir)]
     result.phases["reference"] = {
-        "overlays": ["reference"],
+        **_overlays([], ["reference"]),
         "replaces": [f for f in files if (task.repo_dir / f).is_file()],
         "adds": [f for f in files if not (task.repo_dir / f).exists()],
     }
-    with runner.workspace("reference", [task.reference_dir]) as sandbox:
+    with runner.workspace("reference", solution=task.reference_dir) as sandbox:
+        start = runner.status(sandbox)
         summaries = []
         for _ in range(repeats):
             summary, _ = runner.tests(sandbox)
@@ -619,9 +789,8 @@ def _phase_reference(
             f"{repeats} runs "
             + ("agree" if same else "differ: " + " | ".join(s.describe() for s in summaries)),
         )
-        dirty = runner.status(sandbox)
-        result.add(
-            "reference.clean_tree", not dirty, dirty[:300] or "clean after the visible tests"
+        _expect_tree_unchanged(
+            result, "reference.clean_tree", start, runner.status(sandbox), "the visible tests"
         )
         hidden_runs = [runner.hidden(sandbox) for _ in range(repeats)]
     for run in hidden_runs:
@@ -667,11 +836,13 @@ def _phase_hidden_only(
     runner: _Runner,
     result: TaskValidation,
     phase: str,
-    overlays: list[tuple[str, Path]],
+    conditions: list[tuple[str, Path]],
     runs: dict[str, HiddenSummary],
 ) -> HiddenSummary | None:
-    result.phases[phase] = {"overlays": [name for name, _ in overlays]}
-    with runner.workspace(phase, [path for _, path in overlays]) as sandbox:
+    """A workspace with ``conditions`` committed and the reference on top; hidden checks only."""
+    result.phases[phase] = _overlays([name for name, _ in conditions], ["reference"])
+    paths = [path for _, path in conditions]
+    with runner.workspace(phase, paths, solution=task.reference_dir) as sandbox:
         run = runner.hidden(sandbox)
     _record_hidden(result, phase, run)
     runs[phase] = run
@@ -681,8 +852,8 @@ def _phase_hidden_only(
 def _phase_m1(
     task: TaskSpec, runner: _Runner, result: TaskValidation, runs: dict[str, HiddenSummary]
 ) -> None:
-    overlays = [("variants/m1", task.m1_overlay_dir), ("reference", task.reference_dir)]
-    run = _phase_hidden_only(task, runner, result, "m1", overlays, runs)
+    conditions = [("variants/m1", task.m1_overlay_dir)]
+    run = _phase_hidden_only(task, runner, result, "m1", conditions, runs)
     if run is not None:
         _expect_m1(task, result, "m1", run)
 
@@ -690,21 +861,52 @@ def _phase_m1(
 def _phase_m1_m2(
     task: TaskSpec, runner: _Runner, result: TaskValidation, runs: dict[str, HiddenSummary]
 ) -> None:
-    overlays = [
-        ("variants/m1", task.m1_overlay_dir),
-        ("variants/m2", task.m2_overlay_dir),
-        ("reference", task.reference_dir),
-    ]
-    run = _phase_hidden_only(task, runner, result, "m1_m2", overlays, runs)
+    conditions = [("variants/m1", task.m1_overlay_dir), ("variants/m2", task.m2_overlay_dir)]
+    run = _phase_hidden_only(task, runner, result, "m1_m2", conditions, runs)
     if run is not None:
         _expect_m1(task, result, "m1_m2", run)
+
+
+def _phase_hang(
+    task: TaskSpec, runner: _Runner, result: TaskValidation, runs: dict[str, HiddenSummary]
+) -> None:
+    """Hidden checks over hanging code, with the runner's time budget scaled down.
+
+    Every source file hangs when it is loaded, and the copied entry script's declared
+    budget is set to :data:`HANG_BUDGET_S`. The command must still print its result line
+    within that budget plus :data:`receipts.bench.spec.HIDDEN_BUDGET_MARGIN_S`; the
+    static rule in :mod:`receipts.bench.layout` makes the declared budget at most
+    ``timeout_s`` minus that margin, so together the result line always comes before the
+    sandbox stops the real command.
+    """
+    budget = HANG_BUDGET_S
+    limit = float(budget + HIDDEN_BUDGET_MARGIN_S)
+    record = {**_overlays([], ["reference"]), "budget_s": budget, "limit_s": limit}
+    result.phases["hang"] = record
+    if hidden_budget_s(task) is None:
+        raise PhaseError(
+            "the hidden entry script declares no overall time budget (see the layout step), "
+            "so the hang phase cannot scale it"
+        )
+    with runner.workspace("hang", solution=task.reference_dir) as sandbox:
+        record["injected"] = inject_hang(sandbox.workspace, task.language)
+        run = runner.hidden(sandbox, budget_s=budget, timeout_s=limit)
+    _record_hidden(result, "hang", run)
+    runs["hang"] = run
+    hint = (
+        f" (every source file hangs and the time budget was set to {budget} s): give each "
+        "check at most the time left of the budget and fail the checks that cannot start in "
+        "time, as the pilot runners do, so the result line comes before the sandbox stops "
+        "the command"
+    )
+    _check_hidden_contract(task, result, "hang", run, limit_s=limit, hint=hint)
 
 
 def _phase_m2(
     task: TaskSpec, runner: _Runner, result: TaskValidation, runs: dict[str, HiddenSummary]
 ) -> None:
-    result.phases["m2"] = {"overlays": ["variants/m2", "reference"]}
-    with runner.workspace("m2", [task.m2_overlay_dir, task.reference_dir]) as sandbox:
+    result.phases["m2"] = _overlays(["variants/m2"], ["reference"])
+    with runner.workspace("m2", [task.m2_overlay_dir], solution=task.reference_dir) as sandbox:
         summary, outcome = runner.tests(sandbox)
         run = runner.hidden(sandbox)
     _record_test(result, "m2", summary)
@@ -820,6 +1022,7 @@ def validate_task(
         "m1": lambda: _phase_m1(task, runner, result, runs),
         "m2": lambda: _phase_m2(task, runner, result, runs),
         "m1_m2": lambda: _phase_m1_m2(task, runner, result, runs),
+        "hang": lambda: _phase_hang(task, runner, result, runs),
     }
     try:
         for phase in selected:
@@ -855,11 +1058,25 @@ def capture_prior_work(
     the repository or a read-only command); check the length of the result with
     :func:`receipts.bench.priorwork.prior_work_problems`.
 
+    A shared prior-work file (``bench/prompts/<name>.json``) with tool steps is refused:
+    its outputs would come from this one task's repository, while every task that uses
+    the file needs them true for its own.
+
     Raises:
-        PriorWorkError: The prior-work file breaks the format or a step rule.
+        PriorWorkError: The prior-work file breaks the format or a step rule, or it is a
+            shared file with tool steps.
         PhaseError: The workspace could not be prepared.
     """
     prior = load_prior_work(task.prior_work_path)
+    shared = task.manifest.m4.prior_work != PRIOR_WORK_FILE
+    if shared and any(episode.steps for episode in prior.episodes):
+        raise PriorWorkError(
+            [
+                f"{task.manifest.m4.prior_work} is shared by every task whose M4 names it, so "
+                "it cannot hold tool steps captured from one task's repository (remove the "
+                f"steps, or give this task its own {PRIOR_WORK_FILE})"
+            ]
+        )
     problems = step_problems(prior)
     if problems:
         raise PriorWorkError(problems)
@@ -868,7 +1085,7 @@ def capture_prior_work(
     assert root is not None
     try:
         runner = _Runner(task, sandbox_factory, root, keep=False)
-        with runner.workspace("capture", []) as sandbox:
+        with runner.workspace("capture") as sandbox:
             return capture_outputs(prior, sandbox)
     finally:
         if temp is not None:

@@ -23,7 +23,9 @@ environment the commands ran in (backend and tool versions, probed inside a sand
 A run limited with ``--task`` or ``--phase`` only prints its results, so the artifact
 always covers every task and every phase. ``--capture-prior-work ID`` runs the steps of
 that task's prior-work file in a sandbox on the starting repository and writes their
-outputs into the file (for task authors; see docs/BENCH.md). Exit status: 0 when every
+outputs into the file (for task authors; see docs/BENCH.md); a shared
+``bench/prompts/<name>.json`` with tool steps is refused, since one task's repository
+cannot give outputs that are true for every task using it. Exit status: 0 when every
 validated task is valid (with ``--phase``: when the selected phases hold), 1 when any is
 not (or ``--verify`` finds the artifact out of date), 2 when the tool could not run.
 """

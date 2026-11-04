@@ -7,18 +7,19 @@ one rule at a time, and the repository's own pilot tasks.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
-from pathlib import Path
+import os
+import subprocess
+from collections.abc import Mapping, Sequence
+from pathlib import Path, PurePosixPath
 
 import pytest
 
 from receipts.bench import layout
 from receipts.bench.spec import load_task
 
-from .factory import build_task, manifest_with
+from .factory import EXEMPLARS, HIDDEN_CHECK, build_task, manifest_with
 
 ROOT = Path(__file__).resolve().parents[2]
-PILOTS = sorted(p.name for p in (ROOT / "bench" / "tasks").glob("pilot-*"))
 
 
 def _check(tmp_path: Path, **overrides: str | None) -> list[str]:
@@ -29,7 +30,7 @@ def test_synthetic_task_is_clean(tmp_path: Path) -> None:
     assert _check(tmp_path) == []
 
 
-@pytest.mark.parametrize("name", PILOTS)
+@pytest.mark.parametrize("name", EXEMPLARS)
 def test_pilot_tasks_are_clean(name: str) -> None:
     assert layout.check_layout(load_task(ROOT / "bench" / "tasks" / name)) == []
 
@@ -160,7 +161,10 @@ def _ts_task(tmp_path: Path, extra: Mapping[str, str | None] | None = None) -> l
         "repo/test/greet.test.ts": 'import { test } from "node:test";\ntest("x", () => {});\n',
         "hidden/check.py": None,
         "hidden/_cases.py": None,
-        "hidden/check.mjs": 'import { spawnSync } from "node:child_process";\n',
+        "hidden/check.mjs": (
+            'import { spawnSync } from "node:child_process";\n\n'
+            "const BUDGET_MS = 45_000; // 60 s minus 15 s\n"
+        ),
         "reference/src/toy/greet.py": None,
         "reference/src/greet.ts": "export const g = 1;\n",
         "variants/m2/tests/test_zz_service.py": None,
@@ -213,3 +217,182 @@ def test_typescript_test_script_needs_every_flag(tmp_path: Path) -> None:
     npm_script = {"scripts": {"test": "npx tsx --test"}}
     problems = _ts_task(tmp_path / "b", {"repo/package.json": json.dumps(npm_script)})
     assert any("scripts.test must run node with" in p for p in problems), problems
+
+
+# The hidden runner's overall time budget ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("", "hidden/check.py: no overall time budget (declare BUDGET_S = <seconds>"),
+        ("BUDGET_S = 46\n", "time budget of 46 s must be more than 0 and at most 45 s"),
+        ("BUDGET_S = 0\n", "time budget of 0 s must be more than 0"),
+        ("BUDGET_S = 45.0\n", "no overall time budget"),
+        ("    BUDGET_S = 45\n", "no overall time budget"),
+    ],
+)
+def test_hidden_budget_rule(tmp_path: Path, line: str, expected: str) -> None:
+    script = HIDDEN_CHECK.replace("BUDGET_S = 45\n", line)
+    assert script != HIDDEN_CHECK
+    problems = _check(tmp_path, **{"hidden/check.py": script})
+    assert any(expected in p for p in problems), problems
+
+
+def test_hidden_budget_forms(tmp_path: Path) -> None:
+    commented = HIDDEN_CHECK.replace("BUDGET_S = 45\n", "BUDGET_S = 40  # 60 s minus 20 s\n")
+    task = load_task(build_task(tmp_path, overrides={"hidden/check.py": commented}))
+    assert layout.hidden_budget_s(task) == 40.0
+    assert layout.check_layout(task) == []
+    (task.hidden_script).write_bytes(b"\xff\xfe")
+    assert layout.hidden_budget_s(task) is None
+    task.hidden_script.unlink()
+    assert layout.hidden_budget_s(task) is None
+    assert not any("time budget" in p for p in layout.check_layout(task))
+
+
+def test_typescript_hidden_budget(tmp_path: Path) -> None:
+    too_long = {"hidden/check.mjs": "const BUDGET_MS = 50_000;\n"}
+    problems = _ts_task(tmp_path, too_long)
+    assert any("time budget of 50 s must be more than 0 and at most 45 s" in p for p in problems)
+    missing = {"hidden/check.mjs": "const TIMEOUT_MS = 60_000;\n"}
+    problems = _ts_task(tmp_path / "b", missing)
+    assert any("declare const BUDGET_MS = <milliseconds>;" in p for p in problems), problems
+
+
+def test_with_hidden_budget_changes_only_the_number() -> None:
+    assert layout.with_hidden_budget(HIDDEN_CHECK, "python", 2) == HIDDEN_CHECK.replace(
+        "BUDGET_S = 45\n", "BUDGET_S = 2\n"
+    )
+    text = "const A = 1;\nconst BUDGET_MS = 105_000; // note\nconst BUDGET_MS2 = 3;\n"
+    assert layout.with_hidden_budget(text, "typescript", 2) == text.replace("105_000", "2000")
+    with pytest.raises(ValueError, match="BUDGET_S"):
+        layout.with_hidden_budget("TIMEOUT_S = 30\n", "python", 2)
+
+
+# Files that git would leave out of every commit ----------------------------------------
+
+LOG_IGNORE = "__pycache__/\n.pytest_cache/\n*.log\n!keep.log\n"
+
+
+def test_files_the_task_ignores_itself_are_reported(tmp_path: Path) -> None:
+    overrides = {
+        "repo/.gitignore": LOG_IGNORE,
+        "repo/data/sample.log": "synthetic sample log line\n",
+        "repo/data/keep.log": "kept by the negated pattern\n",
+    }
+    problems = _check(tmp_path, **overrides)
+    assert problems == [
+        "repo/data/sample.log: ignored by git (bench/tasks/py-toy-greet/repo/.gitignore:3: "
+        "*.log), so git would leave it out of every commit and clone (rename it or change "
+        "the ignore rule)"
+    ]
+
+
+def _git(root: Path, *args: str) -> None:
+    """Host git on a synthetic test tree, never on an inherited repository."""
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, env=env)
+
+
+def test_ignore_rules_of_the_enclosing_repository_count(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    (tmp_path / ".gitignore").write_text("*.csv\n", encoding="utf-8")
+    (tmp_path / ".git" / "info" / "exclude").write_text("notes/\n", encoding="utf-8")
+    task = build_task(
+        tmp_path, overrides={"repo/data/rows.csv": "a,b\n", "repo/notes/todo.md": "x\n"}
+    )
+    problems = layout.check_layout(load_task(task))
+    assert any(
+        p.startswith("repo/data/rows.csv: ignored by git (.gitignore:1: *.csv)") for p in problems
+    )
+    assert any(
+        p.startswith("repo/notes/todo.md: ignored by git (.git/info/exclude:1: notes/)")
+        for p in problems
+    )
+    assert len(problems) == 2, problems
+
+
+def test_an_inherited_git_dir_does_not_redirect_the_question(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    other = tmp_path / "other"
+    other.mkdir()
+    _git(other, "init", "-q")
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(other))
+    overrides = {"repo/.gitignore": LOG_IGNORE, "repo/data/sample.log": "x\n"}
+    problems = _check(tmp_path / "project", **overrides)
+    assert any(p.startswith("repo/data/sample.log: ignored by git") for p in problems), problems
+
+
+def test_a_task_outside_the_project_uses_its_own_ignore_files(tmp_path: Path) -> None:
+    task_dir = build_task(
+        tmp_path / "a", overrides={"repo/.gitignore": LOG_IGNORE, "repo/data/x.log": "x\n"}
+    )
+    elsewhere = tmp_path / "b"
+    (elsewhere / "bench" / "prompts").mkdir(parents=True)
+    (elsewhere / "bench" / "prompts" / "pressure.txt").write_text("Synthetic.\n", "utf-8")
+    problems = layout.check_layout(load_task(task_dir, elsewhere))
+    assert problems == [
+        "repo/data/x.log: ignored by git (repo/.gitignore:3: *.log), so git would leave it out "
+        "of every commit and clone (rename it or change the ignore rule)"
+    ]
+
+
+def test_without_git_the_name_rules_still_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def no_git(
+        argv: Sequence[str], *, stdin: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(layout, "_git", no_git)
+    assert layout.git_ignored(tmp_path, ["a.log"]) is None
+    overrides = {"repo/.gitignore": LOG_IGNORE, "repo/data/x.log": "x\n", "repo/.env": "X=1"}
+    problems = _check(tmp_path, **overrides)
+    assert any(p.startswith("repo/.env: forbidden name") for p in problems)
+    assert not any("x.log" in p for p in problems)
+
+
+def test_a_failing_git_gives_no_answer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def failing(
+        argv: Sequence[str], *, stdin: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        code = 0 if "rev-parse" in argv else 128
+        return subprocess.CompletedProcess(["git", *argv], code, "true\n", "fatal: broken")
+
+    monkeypatch.setattr(layout, "_git", failing)
+    assert layout.git_ignored(tmp_path, ["a.log"]) is None
+    assert layout.git_ignored(tmp_path, []) == {}
+
+
+def test_the_scratch_repository_must_be_created(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def no_init(
+        argv: Sequence[str], *, stdin: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(["git", *argv], 128, "", "fatal: cannot init")
+
+    monkeypatch.setattr(layout, "_git", no_init)
+    assert layout.git_ignored(tmp_path, ["a.log"]) is None
+
+
+def test_test_and_source_file_classification() -> None:
+    def rel(text: str) -> PurePosixPath:
+        return PurePosixPath(text)
+
+    assert layout.is_test_file(rel("tests/test_a.py"), "python")
+    assert layout.is_test_file(rel("a_test.py"), "python")
+    assert not layout.is_test_file(rel("test_data.json"), "python")
+    assert layout.is_test_file(rel("test/a.test.ts"), "typescript")
+    assert layout.is_test_file(rel("src/a.test.mts"), "typescript")
+    assert not layout.is_test_file(rel("src/a.ts"), "typescript")
+    assert layout.is_source_file(rel("src/pkg/a.py"), "python")
+    assert not layout.is_source_file(rel("tests/helpers.py"), "python")
+    assert not layout.is_source_file(rel("conftest.py"), "python")
+    assert not layout.is_source_file(rel("src/a.ts"), "python")
+    assert layout.is_source_file(rel("bin/cli.ts"), "typescript")
+    assert not layout.is_source_file(rel("test/helpers.ts"), "typescript")

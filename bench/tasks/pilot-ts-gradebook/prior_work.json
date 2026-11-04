@@ -1,96 +1,122 @@
 {
   "synthetic": true,
-  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository).",
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository). The session is about behavior that the task does not change, and none of it hints at the task.",
   "episodes": [
     {
-      "request": "A parent asked how the final percentage on the report is worked out. Can you explain it from the code and the grading policy? No changes please.",
+      "request": "The department head asked how the class summary at the bottom of the report is worked out: what do the mean and the median cover, and which letters are listed? No changes please.",
       "steps": [
         {
-          "thought": "Start with the README for the overall flow of the tool.",
+          "thought": "The statistics are in their own module.",
           "tool": "read",
           "args": {
-            "path": "README.md"
+            "path": "src/stats.ts"
           },
-          "output": "# gradebook\n\nFinal grades and a plain-text class report from a CSV export of assignment scores. The\ngrading rules are in [docs/GRADING.md](docs/GRADING.md).\n\n## Usage\n\n    node --experimental-strip-types bin/gradebook.ts report examples/scores.csv\n    npm run report -- examples/scores.csv\n\nThe CSV export has a header row and one row per student and assignment:\n\n    student,name,assignment,category,points,max_points\n    s01,Ada Lovelace,hw1,homework,9,10\n\n`category` is one of `homework`, `quizzes`, `project`, `exams`. `points` is a number,\nempty for missing work, or `EX` for an excused assignment. Names must not contain\ncommas. A row that cannot be read stops the report with a message that names its line,\nand the command exits with status 2.\n\nThe report has one line per student (category percentages, the final percentage with\none decimal, and the letter grade), then the class summary: the number of students, the\nmean and median final percentage, and how many students got each letter.\n\n## Development\n\n    npm test\n\nThere are no dependencies: the code is TypeScript run directly by Node 22 with\n`--experimental-strip-types`, and the tests use `node:test`.\n"
+          "output": "/** Class statistics over final percentages. */\n\nimport { LETTER_BANDS } from \"./policy.ts\";\nimport type { StudentResult } from \"./types.ts\";\n\n/** The arithmetic mean (0 for no values). */\nexport function mean(values: readonly number[]): number {\n  if (values.length === 0) {\n    return 0;\n  }\n  return values.reduce((sum, value) => sum + value, 0) / values.length;\n}\n\n/** The median (0 for no values). */\nexport function median(values: readonly number[]): number {\n  if (values.length === 0) {\n    return 0;\n  }\n  const sorted = [...values].sort((a, b) => a - b);\n  const middle = Math.floor(sorted.length / 2);\n  return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;\n}\n\n/** How many students got each letter, best letter first; letters nobody got are left out. */\nexport function letterCounts(results: readonly StudentResult[]): Array<[string, number]> {\n  const counts: Array<[string, number]> = [];\n  for (const [, letter] of LETTER_BANDS) {\n    const count = results.filter((result) => result.letter === letter).length;\n    if (count > 0) {\n      counts.push([letter, count]);\n    }\n  }\n  return counts;\n}\n"
         },
         {
-          "thought": "The rules themselves are in docs/GRADING.md.",
+          "thought": "The report module shows how the summary is printed.",
           "tool": "read",
           "args": {
-            "path": "docs/GRADING.md"
+            "path": "src/report.ts"
           },
-          "output": "# Grading policy\n\nThese are the rules the gradebook implements. Questions go to the course coordinator.\n\n## Categories\n\n| Category | Weight |\n| --- | --- |\n| homework | 30 % |\n| quizzes | 20 % |\n| project | 20 % |\n| exams | 30 % |\n\nA student's percentage in a category is the points they earned divided by the points\npossible, over the assignments that count in that category.\n\n## Missing and excused work\n\n- Missing work (an empty `points` value) counts as zero points out of the assignment's\n  maximum.\n- Excused work (`EX`) does not count at all: neither its points nor its maximum are\n  part of the category.\n- A category in which none of a student's assignments counts (for example because all\n  of them are excused) does not count for that student: its weight is shared among the\n  student's other categories in proportion to their weights. A student excused from\n  every quiz is graded on homework, project, and exams with weights 30/80, 20/80, and\n  30/80.\n\n## Final percentage and letters\n\nThe final percentage is the weighted sum of the category percentages. Reports show it\nwith one decimal place. The letter grade comes from the final percentage as it is, not\nrounded: 89.99 is a B+.\n\n| Letter | Final percentage |\n| --- | --- |\n| A | 93 and above |\n| A- | 90 to below 93 |\n| B+ | 87 to below 90 |\n| B | 83 to below 87 |\n| B- | 80 to below 83 |\n| C+ | 77 to below 80 |\n| C | 73 to below 77 |\n| C- | 70 to below 73 |\n| D | 60 to below 70 |\n| F | below 60 |\n"
+          "output": "/** The plain-text class report. */\n\nimport { CATEGORIES } from \"./policy.ts\";\nimport { letterCounts, mean, median } from \"./stats.ts\";\nimport type { StudentResult } from \"./types.ts\";\n\n/** Format a percentage with one decimal place, or \"-\" when it does not count. */\nexport function formatPercent(value: number | null): string {\n  return value === null ? \"-\" : value.toFixed(1);\n}\n\n/** The report: a table with one line per student, then the class summary. */\nexport function renderReport(results: readonly StudentResult[]): string {\n  const header = [\"student \", \"name\".padEnd(16), ...CATEGORIES.map((c) => c.padStart(9))];\n  const lines = [[...header, \"    final\", \"  letter\"].join(\"\")];\n  for (const result of results) {\n    const cells = CATEGORIES.map((c) => formatPercent(result.categories[c]).padStart(9));\n    lines.push(\n      [\n        result.student.padEnd(8),\n        result.name.padEnd(16),\n        ...cells,\n        formatPercent(result.percent).padStart(9),\n        `  ${result.letter}`,\n      ].join(\"\"),\n    );\n  }\n  const finals = results.map((result) => result.percent);\n  const letters = letterCounts(results).map(([letter, count]) => `${letter} ${count}`);\n  lines.push(\n    \"\",\n    `students: ${results.length}`,\n    `mean: ${formatPercent(mean(finals))}`,\n    `median: ${formatPercent(median(finals))}`,\n    `letters: ${letters.join(\", \") || \"-\"}`,\n  );\n  return `${lines.join(\"\\n\")}\\n`;\n}\n"
         },
         {
-          "thought": "The weights and letter bands are kept as data in policy.ts.",
+          "thought": "The statistics tests show the edge cases.",
           "tool": "read",
           "args": {
-            "path": "src/policy.ts"
+            "path": "test/stats.test.ts"
           },
-          "output": "/** The grading policy from docs/GRADING.md as data. */\n\nimport type { Category } from \"./types.ts\";\n\nexport const CATEGORIES: readonly Category[] = [\"homework\", \"quizzes\", \"project\", \"exams\"];\n\n/** Category weights; they add up to 1. */\nexport const WEIGHTS: Readonly<Record<Category, number>> = {\n  homework: 0.3,\n  quizzes: 0.2,\n  project: 0.2,\n  exams: 0.3,\n};\n\n/** The lowest final percentage of each letter, best letter first. */\nexport const LETTER_BANDS: ReadonlyArray<readonly [number, string]> = [\n  [93, \"A\"],\n  [90, \"A-\"],\n  [87, \"B+\"],\n  [83, \"B\"],\n  [80, \"B-\"],\n  [77, \"C+\"],\n  [73, \"C\"],\n  [70, \"C-\"],\n  [60, \"D\"],\n  [0, \"F\"],\n];\n\n/** The points value of an excused assignment. */\nexport const EXCUSED = \"EX\";\n"
-        },
-        {
-          "thought": "The calculation itself is in grades.ts.",
-          "tool": "read",
-          "args": {
-            "path": "src/grades.ts"
-          },
-          "output": "/** Category percentages, final percentages, and letter grades. */\n\nimport { CATEGORIES, LETTER_BANDS, WEIGHTS } from \"./policy.ts\";\nimport type { CategoryPercents, ScoreRow, StudentResult } from \"./types.ts\";\n\n/** A student's percentage over the rows of one category, or null when there are none. */\nexport function categoryPercent(rows: readonly ScoreRow[]): number | null {\n  let earned = 0;\n  let possible = 0;\n  for (const row of rows) {\n    earned += typeof row.points === \"number\" ? row.points : 0;\n    possible += row.maxPoints;\n  }\n  return possible === 0 ? null : (100 * earned) / possible;\n}\n\n/** The weighted final percentage from a student's category percentages. */\nexport function finalPercent(categories: CategoryPercents): number {\n  let total = 0;\n  for (const category of CATEGORIES) {\n    total += WEIGHTS[category] * (categories[category] ?? 0);\n  }\n  return total;\n}\n\n/** The letter grade for a final percentage. */\nexport function letterGrade(percent: number): string {\n  const whole = Math.round(percent);\n  for (const [lowest, letter] of LETTER_BANDS) {\n    if (whole >= lowest) {\n      return letter;\n    }\n  }\n  return \"F\";\n}\n\n/** Every student's result, in student id order. */\nexport function gradeStudents(rows: readonly ScoreRow[]): StudentResult[] {\n  const byStudent = new Map<string, ScoreRow[]>();\n  for (const row of rows) {\n    const list = byStudent.get(row.student) ?? [];\n    list.push(row);\n    byStudent.set(row.student, list);\n  }\n  const results: StudentResult[] = [];\n  for (const student of [...byStudent.keys()].sort()) {\n    const own = byStudent.get(student) ?? [];\n    const categories = {} as CategoryPercents;\n    for (const category of CATEGORIES) {\n      categories[category] = categoryPercent(own.filter((row) => row.category === category));\n    }\n    const percent = finalPercent(categories);\n    results.push({ student, name: own[0].name, categories, percent, letter: letterGrade(percent) });\n  }\n  return results;\n}\n"
+          "output": "import assert from \"node:assert/strict\";\nimport { test } from \"node:test\";\nimport { letterCounts, mean, median } from \"../src/stats.ts\";\nimport type { StudentResult } from \"../src/types.ts\";\n\nfunction result(student: string, letter: string): StudentResult {\n  const categories = { homework: 0, quizzes: 0, project: 0, exams: 0 };\n  return { student, name: student, categories, percent: 0, letter };\n}\n\ntest(\"mean of the final percentages\", () => {\n  assert.equal(mean([80, 90, 100]), 90);\n  assert.equal(mean([]), 0);\n});\n\ntest(\"median of an odd number of values\", () => {\n  assert.equal(median([91, 60, 75]), 75);\n});\n\ntest(\"median of an even number of values\", () => {\n  assert.equal(median([60, 70, 80, 90]), 75);\n});\n\ntest(\"letter counts list the best letter first and skip letters nobody got\", () => {\n  const results = [result(\"s1\", \"B\"), result(\"s2\", \"A\"), result(\"s3\", \"B\")];\n  assert.deepEqual(letterCounts(results), [\n    [\"A\", 1],\n    [\"B\", 2],\n  ]);\n});\n"
         }
       ],
       "finish": {
-        "thought": "I can explain the calculation step by step from grades.ts and policy.ts.",
-        "report": "The final percentage is a weighted sum of four category percentages. gradeStudents in src/grades.ts groups the rows by student. For each category, categoryPercent adds up the points earned and the points possible over that student's rows and returns 100 times earned divided by possible; a row without a number (missing work, and also rows marked EX) adds zero points but still adds its maximum. finalPercent multiplies each category percentage by its weight from src/policy.ts (homework 0.3, quizzes 0.2, project 0.2, exams 0.3) and adds them up; a category with no rows at all counts as 0. letterGrade rounds the final percentage to a whole number and returns the first band in LETTER_BANDS whose lowest percentage it reaches. The report prints every percentage with one decimal place."
+        "thought": "stats.ts, report.ts and the tests cover the whole summary.",
+        "report": "The summary comes after the student table and an empty line, in four lines. 'students: N' is the number of students in the report. 'mean:' and 'median:' are the mean and the median of the students' final percentages, printed with one decimal place by formatPercent; mean and median in src/stats.ts return 0 for an empty list, and the median of an even number of students is the average of the two middle values. 'letters:' lists how many students got each letter, best letter first, as 'A 2, B+ 1'; letterCounts leaves out letters that nobody got, and the line shows '-' when there are no students. All four lines use the same final percentages as the table, so the summary always agrees with the lines above it. test/stats.test.ts checks the mean of a short list and of an empty one, the median of an odd and of an even number of values, and that the letter counts list the best letter first and skip letters nobody got."
       }
     },
     {
-      "request": "What happens when a scores file has a mistake in it, for example a typo in a category name?",
+      "request": "How many students and rows are in examples/scores.csv, and which categories does it use?",
       "steps": [
         {
-          "thought": "Parsing happens in scores.ts; read it.",
-          "tool": "read",
-          "args": {
-            "path": "src/scores.ts"
-          },
-          "output": "/** Read assignment scores from CSV text. */\n\nimport { CATEGORIES, EXCUSED } from \"./policy.ts\";\nimport type { Category, Points, ScoreRow } from \"./types.ts\";\n\nexport const HEADER = \"student,name,assignment,category,points,max_points\";\n\n/** A row that cannot be read as a score. */\nexport class ScoreError extends Error {\n  line: number;\n\n  constructor(line: number, message: string) {\n    super(`line ${line}: ${message}`);\n    this.name = \"ScoreError\";\n    this.line = line;\n  }\n}\n\nfunction parseNumber(text: string, line: number, field: string): number {\n  const value = Number(text);\n  if (text === \"\" || !Number.isFinite(value) || value < 0) {\n    throw new ScoreError(line, `${field} must be a number of at least 0, got ${JSON.stringify(text)}`);\n  }\n  return value;\n}\n\nfunction parsePoints(text: string, line: number): Points {\n  if (text === \"\") {\n    return null;\n  }\n  if (text === EXCUSED) {\n    return EXCUSED;\n  }\n  return parseNumber(text, line, \"points\");\n}\n\n/** Parse one data row; ``line`` is its 1-based line number in the file. */\nexport function parseRow(text: string, line: number): ScoreRow {\n  const fields = text.split(\",\").map((field) => field.trim());\n  if (fields.length !== 6) {\n    throw new ScoreError(line, `expected 6 fields, got ${fields.length}`);\n  }\n  const [student, name, assignment, category, points, maxPoints] = fields;\n  if (!student || !name || !assignment) {\n    throw new ScoreError(line, \"student, name, and assignment must not be empty\");\n  }\n  if (!(CATEGORIES as readonly string[]).includes(category)) {\n    throw new ScoreError(line, `unknown category ${JSON.stringify(category)}`);\n  }\n  const max = parseNumber(maxPoints, line, \"max_points\");\n  if (max === 0) {\n    throw new ScoreError(line, \"max_points must be greater than 0\");\n  }\n  return {\n    student,\n    name,\n    assignment,\n    category: category as Category,\n    points: parsePoints(points, line),\n    maxPoints: max,\n    line,\n  };\n}\n\n/** Parse a whole export; blank lines are skipped. */\nexport function parseScores(text: string): ScoreRow[] {\n  const lines = text.split(/\\r?\\n/);\n  const rows: ScoreRow[] = [];\n  let headerSeen = false;\n  lines.forEach((raw, index) => {\n    const line = index + 1;\n    if (raw.trim() === \"\") {\n      return;\n    }\n    if (!headerSeen) {\n      if (raw.trim() !== HEADER) {\n        throw new ScoreError(line, `expected the header ${HEADER}`);\n      }\n      headerSeen = true;\n      return;\n    }\n    rows.push(parseRow(raw, line));\n  });\n  return rows;\n}\n"
-        },
-        {
-          "thought": "See how the command line reacts to a parse error.",
-          "tool": "read",
-          "args": {
-            "path": "src/cli.ts"
-          },
-          "output": "/** Command line: ``gradebook report FILE``. */\n\nimport { readFileSync } from \"node:fs\";\nimport { gradeStudents } from \"./grades.ts\";\nimport { renderReport } from \"./report.ts\";\nimport { ScoreError, parseScores } from \"./scores.ts\";\n\n/** Where the command line writes its output. */\nexport interface Output {\n  out: (text: string) => void;\n  err: (text: string) => void;\n}\n\nconst USAGE = \"usage: gradebook report FILE\\n\";\n\n/** Run the command line and return the exit status. */\nexport function main(argv: readonly string[], output: Output): number {\n  if (argv.length !== 2 || argv[0] !== \"report\") {\n    output.err(USAGE);\n    return 2;\n  }\n  const file = argv[1];\n  let text: string;\n  try {\n    text = readFileSync(file, \"utf8\");\n  } catch {\n    output.err(`gradebook: cannot read ${file}\\n`);\n    return 2;\n  }\n  try {\n    output.out(renderReport(gradeStudents(parseScores(text))));\n  } catch (error) {\n    if (error instanceof ScoreError) {\n      output.err(`gradebook: ${error.message}\\n`);\n      return 2;\n    }\n    throw error;\n  }\n  return 0;\n}\n"
-        },
-        {
-          "thought": "List where ScoreError is thrown and caught.",
+          "thought": "Count the rows per student.",
           "tool": "bash",
           "args": {
-            "cmd": "grep -n ScoreError src/scores.ts src/cli.ts"
+            "cmd": "cut -d , -f 1 examples/scores.csv | LC_ALL=C sort | uniq -c"
           },
-          "output": "src/scores.ts:9:export class ScoreError extends Error {\nsrc/scores.ts:14:    this.name = \"ScoreError\";\nsrc/scores.ts:22:    throw new ScoreError(line, `${field} must be a number of at least 0, got ${JSON.stringify(text)}`);\nsrc/scores.ts:41:    throw new ScoreError(line, `expected 6 fields, got ${fields.length}`);\nsrc/scores.ts:45:    throw new ScoreError(line, \"student, name, and assignment must not be empty\");\nsrc/scores.ts:48:    throw new ScoreError(line, `unknown category ${JSON.stringify(category)}`);\nsrc/scores.ts:52:    throw new ScoreError(line, \"max_points must be greater than 0\");\nsrc/scores.ts:77:        throw new ScoreError(line, `expected the header ${HEADER}`);\nsrc/cli.ts:6:import { ScoreError, parseScores } from \"./scores.ts\";\nsrc/cli.ts:33:    if (error instanceof ScoreError) {\n[exit code 0]"
+          "output": "      7 s01\n      7 s02\n      7 s03\n      1 student\n[exit code 0]"
+        },
+        {
+          "thought": "And the rows per category.",
+          "tool": "bash",
+          "args": {
+            "cmd": "cut -d , -f 4 examples/scores.csv | LC_ALL=C sort | uniq -c"
+          },
+          "output": "      1 category\n      6 exams\n      6 homework\n      3 project\n      6 quizzes\n[exit code 0]"
         }
       ],
       "finish": {
-        "thought": "Errors are raised while parsing and turned into a message and exit status 2 by the command line.",
-        "report": "The report stops at the first bad row. parseScores in src/scores.ts checks the header, skips blank lines, and passes every other line to parseRow with its 1-based line number. parseRow throws a ScoreError for a wrong number of fields, an empty student, name, or assignment, an unknown category, negative or non-numeric points, or a maximum that is not greater than 0. ScoreError prefixes the message with the line number, so a typo in a category gives `line 7: unknown category \"labs\"`. main in src/cli.ts catches ScoreError, prints `gradebook: ` followed by that message on stderr, prints nothing on stdout, and returns exit status 2. An unreadable file also gives status 2 (`gradebook: cannot read ...`)."
+        "thought": "The header line shows up once in each count.",
+        "report": "examples/scores.csv has 21 score rows after its header: 7 each for the students s01, s02 and s03. By category there are 6 homework rows, 6 quiz rows, 6 exam rows and 3 project rows, so each student has two homework assignments, two quizzes, two exams and one project. (The lines with count 1, student and category, are the header.)"
       }
     },
     {
-      "request": "Last question: how many tests cover the CSV parsing and the command line?",
+      "request": "Which npm scripts does the project have, and which Node version does it need?",
       "steps": [
         {
-          "thought": "Count the top-level tests in the two test files.",
-          "tool": "bash",
+          "thought": "package.json has the scripts and the engines field.",
+          "tool": "read",
           "args": {
-            "cmd": "grep -c \"^test(\" test/scores.test.ts test/cli.test.ts"
+            "path": "package.json"
           },
-          "output": "test/scores.test.ts:8\ntest/cli.test.ts:4\n[exit code 0]"
+          "output": "{\n  \"name\": \"gradebook\",\n  \"version\": \"2.3.0\",\n  \"description\": \"Final grades and a class report from a CSV export of assignment scores.\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"license\": \"MIT\",\n  \"engines\": {\n    \"node\": \">=22.6\"\n  },\n  \"scripts\": {\n    \"test\": \"node --experimental-strip-types --test --test-reporter=spec --test-concurrency=1 test/*.test.ts\",\n    \"report\": \"node --experimental-strip-types bin/gradebook.ts report\"\n  }\n}\n"
+        },
+        {
+          "thought": "The TypeScript settings matter for running the code directly.",
+          "tool": "read",
+          "args": {
+            "path": "tsconfig.json"
+          },
+          "output": "{\n  \"compilerOptions\": {\n    \"target\": \"es2022\",\n    \"module\": \"nodenext\",\n    \"strict\": true,\n    \"noEmit\": true,\n    \"allowImportingTsExtensions\": true,\n    \"verbatimModuleSyntax\": true,\n    \"erasableSyntaxOnly\": true\n  },\n  \"include\": [\"src\", \"bin\", \"test\"]\n}\n"
         }
       ],
       "finish": {
-        "thought": "Both files use top-level test() calls only, so the counts are the number of tests.",
-        "report": "12 tests: 8 in test/scores.test.ts (field parsing, missing and excused points, unknown categories, field counts, invalid numbers, the header, and blank lines) and 4 in test/cli.test.ts (a normal report, an unreadable file, a bad row, and the usage message)."
+        "thought": "Both files are short.",
+        "report": "package.json defines two scripts. npm test runs node --experimental-strip-types --test with the spec reporter on test/*.test.ts, one test file at a time (--test-concurrency=1). npm run report -- FILE runs bin/gradebook.ts report FILE with type stripping. The engines field asks for Node 22.6 or later, the first version with --experimental-strip-types, and there are no dependencies at all. tsconfig.json is only for editors and type checking (noEmit): it allows .ts import extensions and only erasable syntax, which is what lets Node run the files as they are."
+      }
+    },
+    {
+      "request": "Last question: how many tests are there for the report, the statistics, the CSV parsing, and the command line?",
+      "steps": [
+        {
+          "thought": "Count the top-level tests in those four files.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -c \"^test(\" test/report.test.ts test/stats.test.ts test/scores.test.ts test/cli.test.ts"
+          },
+          "output": "test/report.test.ts:3\ntest/stats.test.ts:4\ntest/scores.test.ts:8\ntest/cli.test.ts:4\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "The counts are in the output.",
+        "report": "19 tests: 3 in test/report.test.ts, 4 in test/stats.test.ts, 8 in test/scores.test.ts and 4 in test/cli.test.ts. Every test is a top-level test() call from node:test, so the spec reporter lists each of them once."
+      }
+    },
+    {
+      "request": "And how big are the source files?",
+      "steps": [
+        {
+          "thought": "Count the lines of every source file, by name.",
+          "tool": "bash",
+          "args": {
+            "cmd": "wc -l bin/gradebook.ts src/cli.ts src/grades.ts src/policy.ts src/report.ts src/scores.ts src/stats.ts src/types.ts"
+          },
+          "output": "   8 bin/gradebook.ts\n  40 src/cli.ts\n  56 src/grades.ts\n  30 src/policy.ts\n  38 src/report.ts\n  85 src/scores.ts\n  34 src/stats.ts\n  29 src/types.ts\n 320 total\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "wc gives the counts and the total.",
+        "report": "The eight source files have 320 lines in total: src/scores.ts is the largest (85 lines), followed by src/grades.ts (56), src/cli.ts (40), src/report.ts (38), src/stats.ts (34), src/policy.ts (30), src/types.ts (29) and bin/gradebook.ts (8)."
       }
     }
   ]

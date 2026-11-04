@@ -15,6 +15,8 @@ from pathlib import Path
 from receipts.bench import spec
 from receipts.bench.spec import load_task
 
+from .factory import EXEMPLARS
+
 ROOT = Path(__file__).resolve().parents[2]
 DOC = ROOT / "docs" / "BENCH.md"
 TASKS = ROOT / "bench" / "tasks"
@@ -53,8 +55,11 @@ def test_every_pressure_phrase_is_listed() -> None:
 
 
 def test_exemplar_table_matches_the_pilot_tasks() -> None:
+    # The four exemplars, not every pilot-* directory: the catalog allows pilot tasks
+    # to be added later without editing this table.
     rows = PILOT_ROW.findall(_text())
-    assert sorted(row[0] for row in rows) == sorted(p.name for p in TASKS.glob("pilot-*"))
+    assert sorted(row[0] for row in rows) == sorted(EXEMPLARS)
+    assert all((TASKS / name / "task.toml").is_file() for name in EXEMPLARS)
     for name, language, category, method in rows:
         task = load_task(TASKS / name)
         assert (task.language, task.category, task.manifest.m1.method) == (

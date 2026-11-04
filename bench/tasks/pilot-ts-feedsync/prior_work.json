@@ -1,88 +1,97 @@
 {
   "synthetic": true,
-  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository).",
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository). The session is about behavior that the task does not change, and none of it hints at the task.",
   "episodes": [
     {
-      "request": "The release notes in the digest are not in the same order as in feeds/releases.rss. Is that a bug? Please just look, don't change anything.",
+      "request": "A reader saw '&amp;' in a blog title in an old digest. Which character references does feedsync decode today? Please just look, don't change anything.",
       "steps": [
         {
-          "thought": "Read the README first to see what order the digest promises.",
+          "thought": "Entity decoding should be in the XML helpers.",
           "tool": "read",
           "args": {
-            "path": "README.md"
+            "path": "src/xml.ts"
           },
-          "output": "# feedsync\n\nA small command-line tool that turns the team's feeds into one Markdown digest.\n\n## Usage\n\n    node --experimental-strip-types bin/feedsync.ts digest\n    node --experimental-strip-types bin/feedsync.ts digest --config feeds.json --limit 3\n    npm run digest\n\nfeedsync reads the feed list in `feeds.json`:\n\n    {\"feeds\": [{\"name\": \"Engineering blog\", \"source\": \"feeds/blog.rss\"}, ...]}\n\nA source is a file path relative to the directory of `feeds.json`, or an `https://` URL.\nThe files in `feeds/` are snapshots of the live feeds for working offline. Only RSS 2.0\nfeeds are supported for now.\n\nThe digest has one section per feed, in the order of `feeds.json`, with the newest items\nfirst: at most `--limit` items per feed (5 by default), each as\n`- YYYY-MM-DD [title](link)` with the date in UTC. Items without a date come last. A feed\nthat cannot be read stops the digest with a message, and the command exits with status 2.\n\n## Development\n\n    npm test\n\nThere are no dependencies: the code is TypeScript run directly by Node 22 with\n`--experimental-strip-types`, and the tests use `node:test`.\n"
+          "output": "/** Small helpers for reading well-formed feed XML without a parser dependency. */\n\nconst NAMED: Readonly<Record<string, string>> = {\n  amp: \"&\",\n  lt: \"<\",\n  gt: \">\",\n  quot: '\"',\n  apos: \"'\",\n};\n\n/** Decode the XML entities and character references in ``text``. */\nexport function decodeEntities(text: string): string {\n  return text.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[a-z]+);/g, (whole, name: string) => {\n    if (name.startsWith(\"#x\")) {\n      return String.fromCodePoint(Number.parseInt(name.slice(2), 16));\n    }\n    if (name.startsWith(\"#\")) {\n      return String.fromCodePoint(Number.parseInt(name.slice(1), 10));\n    }\n    return NAMED[name] ?? whole;\n  });\n}\n\n/** The text of an element body: a CDATA section as it is, anything else decoded and trimmed. */\nexport function textContent(body: string): string {\n  const cdata = /^\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*$/.exec(body);\n  return cdata ? cdata[1] : decodeEntities(body).trim();\n}\n\n/** The bodies of every ``<tag>...</tag>`` element in ``text``, in document order. */\nexport function elements(text: string, tag: string): string[] {\n  const pattern = new RegExp(`<${tag}(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)</${tag}>`, \"g\");\n  return [...text.matchAll(pattern)].map((match) => match[1]);\n}\n\n/** The text of the first ``<tag>`` element in ``text``, or null when there is none. */\nexport function childText(text: string, tag: string): string | null {\n  const [first] = elements(text, tag);\n  return first === undefined ? null : textContent(first);\n}\n"
         },
         {
-          "thought": "Look at the snapshot feed itself.",
+          "thought": "The entity tests show the cases that are covered.",
+          "tool": "read",
+          "args": {
+            "path": "test/entities.test.ts"
+          },
+          "output": "import assert from \"node:assert/strict\";\nimport { test } from \"node:test\";\nimport { childText, decodeEntities, elements, textContent } from \"../src/xml.ts\";\n\ntest(\"named entities are decoded\", () => {\n  assert.equal(decodeEntities(\"Q&amp;A &lt;b&gt; &quot;x&quot; &apos;y&apos;\"), `Q&A <b> \"x\" 'y'`);\n});\n\ntest(\"numeric character references are decoded\", () => {\n  assert.equal(decodeEntities(\"caf&#233; &#x2713;\"), \"café ✓\");\n});\n\ntest(\"unknown entities are kept as they are\", () => {\n  assert.equal(decodeEntities(\"&nbsp;\"), \"&nbsp;\");\n});\n\ntest(\"CDATA sections are taken literally\", () => {\n  assert.equal(textContent(\"<![CDATA[a &amp; <b>]]>\"), \"a &amp; <b>\");\n  assert.equal(textContent(\"  a &amp; b  \"), \"a & b\");\n});\n\ntest(\"elements returns every body in document order, with or without attributes\", () => {\n  const text = '<a>one</a><b>skip</b><a id=\"2\">two</a>';\n  assert.deepEqual(elements(text, \"a\"), [\"one\", \"two\"]);\n});\n\ntest(\"childText is null when the element is missing\", () => {\n  assert.equal(childText(\"<item><title>x</title></item>\", \"link\"), null);\n  assert.equal(childText(\"<item><title>x</title></item>\", \"title\"), \"x\");\n});\n"
+        }
+      ],
+      "finish": {
+        "thought": "decodeEntities and its tests answer it.",
+        "report": "decodeEntities in src/xml.ts decodes the five named XML entities (&amp;, &lt;, &gt;, &quot; and &apos;) and numeric character references in decimal (&#233;) and hexadecimal (&#x2713;) form. Other named entities, such as &nbsp;, are kept as they are. textContent, which childText uses for element text, decodes and trims it, except for a CDATA section, which is taken literally, so '<![CDATA[a &amp; b]]>' stays 'a &amp; b'. test/entities.test.ts covers these cases, as well as elements and childText. So '&amp;' in an ordinary title becomes '&'; an '&amp;' that survives into the digest would have to come from a CDATA section or from a feed that encoded the ampersand twice."
+      }
+    },
+    {
+      "request": "Which posts are in the engineering blog snapshot, and from which days?",
+      "steps": [
+        {
+          "thought": "The snapshot is a small RSS file.",
+          "tool": "read",
+          "args": {
+            "path": "feeds/blog.rss"
+          },
+          "output": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\">\n  <channel>\n    <title>Engineering blog</title>\n    <link>https://blog.engineering.internal/</link>\n    <description>Posts from the engineering teams.</description>\n    <item>\n      <title>How we review database migrations</title>\n      <link>https://blog.engineering.internal/posts/migration-reviews</link>\n      <guid>https://blog.engineering.internal/posts/migration-reviews</guid>\n      <pubDate>Wed, 21 Oct 2026 09:00:00 GMT</pubDate>\n    </item>\n    <item>\n      <title>Faster CI with test sharding</title>\n      <link>https://blog.engineering.internal/posts/ci-sharding</link>\n      <guid>https://blog.engineering.internal/posts/ci-sharding</guid>\n      <pubDate>Wed, 28 Oct 2026 09:00:00 GMT</pubDate>\n    </item>\n    <item>\n      <title>Notes &amp; lessons from the October game day</title>\n      <link>https://blog.engineering.internal/posts/game-day-october</link>\n      <guid isPermaLink=\"false\">post-1187</guid>\n      <pubDate>Thu, 15 Oct 2026 14:30:00 GMT</pubDate>\n    </item>\n  </channel>\n</rss>\n"
+        },
+        {
+          "thought": "The release notes snapshot is next to it, for comparison.",
           "tool": "read",
           "args": {
             "path": "feeds/releases.rss"
           },
           "output": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\">\n  <channel>\n    <title>Release notes</title>\n    <link>https://releases.engineering.internal/</link>\n    <description>Releases of the platform services.</description>\n    <item>\n      <title>gateway 4.2.0</title>\n      <link>https://releases.engineering.internal/gateway/4.2.0</link>\n      <pubDate>Fri, 30 Oct 2026 16:00:00 GMT</pubDate>\n    </item>\n    <item>\n      <title>billing-api 2.7.1</title>\n      <link>https://releases.engineering.internal/billing-api/2.7.1</link>\n      <pubDate>Mon, 26 Oct 2026 11:20:00 GMT</pubDate>\n    </item>\n    <item>\n      <title>gateway 4.1.3</title>\n      <link>https://releases.engineering.internal/gateway/4.1.3</link>\n      <pubDate>Mon, 19 Oct 2026 10:00:00 GMT</pubDate>\n    </item>\n    <item>\n      <title>cli 1.9.0</title>\n      <link>https://releases.engineering.internal/cli/1.9.0</link>\n      <pubDate>Mon, 12 Oct 2026 08:45:00 GMT</pubDate>\n    </item>\n  </channel>\n</rss>\n"
-        },
-        {
-          "thought": "The ordering is done in digest.ts; read it.",
-          "tool": "read",
-          "args": {
-            "path": "src/digest.ts"
-          },
-          "output": "/** The Markdown digest. */\n\nimport type { FeedItem, FeedSection } from \"./types.ts\";\n\nexport const DEFAULT_LIMIT = 5;\n\n/** The UTC day of a date as YYYY-MM-DD. */\nexport function day(date: Date): string {\n  return date.toISOString().slice(0, 10);\n}\n\n/** Items newest first; items without a date keep their order and come last. */\nexport function newestFirst(items: readonly FeedItem[]): FeedItem[] {\n  return [...items].sort((a, b) => {\n    if (a.published === null || b.published === null) {\n      return (a.published === null ? 1 : 0) - (b.published === null ? 1 : 0);\n    }\n    return b.published.getTime() - a.published.getTime();\n  });\n}\n\n/** One digest line: ``- YYYY-MM-DD [title](link)``. */\nexport function formatItem(item: FeedItem): string {\n  const when = item.published === null ? \"(no date)\" : day(item.published);\n  return `- ${when} [${item.title}](${item.link})`;\n}\n\n/** The digest: one section per feed in the given order, at most ``limit`` items each. */\nexport function renderDigest(sections: readonly FeedSection[], limit = DEFAULT_LIMIT): string {\n  const lines = [\"# Feed digest\"];\n  for (const section of sections) {\n    lines.push(\"\", `## ${section.name}`, \"\");\n    const items = newestFirst(section.items).slice(0, limit);\n    lines.push(...(items.length > 0 ? items.map(formatItem) : [\"_No items._\"]));\n  }\n  return `${lines.join(\"\\n\")}\\n`;\n}\n"
         }
       ],
       "finish": {
-        "thought": "The order difference is the documented newest-first sorting, not a bug.",
-        "report": "It is not a bug. renderDigest in src/digest.ts sorts each feed's items with newestFirst before it applies the limit, so the digest lists the newest items first whatever order the feed file uses; items without a date keep their order and come last. The README documents this. feeds/releases.rss happens to list its items newest first already (gateway 4.2.0 on 30 October, billing-api 2.7.1 on 26 October, gateway 4.1.3 on 19 October, cli 1.9.0 on 12 October), so its section in the digest matches the file. The engineering blog snapshot is the one whose items are not in date order in the file."
+        "thought": "I can read the titles and dates directly.",
+        "report": "feeds/blog.rss (channel Engineering blog) has three posts: 'How we review database migrations' from Wednesday 21 October 2026, 'Faster CI with test sharding' from Wednesday 28 October 2026, and 'Notes & lessons from the October game day' from Thursday 15 October 2026 (written with &amp; in the file). The first two use their URL as the guid; the game-day post has the guid post-1187, marked isPermaLink=\"false\". feeds/releases.rss (channel Release notes) has four items, newest first: gateway 4.2.0 (Friday 30 October 2026), billing-api 2.7.1 (Monday 26 October), gateway 4.1.3 (Monday 19 October) and cli 1.9.0 (Monday 12 October); its items have a link but no guid."
       }
     },
     {
-      "request": "Could feedsync read the engineering blog straight from its URL instead of the snapshot in feeds/? What happens when the URL cannot be reached?",
+      "request": "How many items does each snapshot feed have, and what do the npm scripts run?",
       "steps": [
         {
-          "thought": "Sources are read in sources.ts.",
-          "tool": "read",
-          "args": {
-            "path": "src/sources.ts"
-          },
-          "output": "/** Read feed documents from files or from https:// URLs. */\n\nimport { readFile } from \"node:fs/promises\";\nimport { isAbsolute, join } from \"node:path\";\n\nexport const FETCH_TIMEOUT_MS = 10_000;\n\n/** A feed source that cannot be read. */\nexport class SourceError extends Error {\n  constructor(message: string) {\n    super(message);\n    this.name = \"SourceError\";\n  }\n}\n\nasync function fetchText(url: string): Promise<string> {\n  let response: Response;\n  try {\n    response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });\n  } catch (error) {\n    const reason = error instanceof Error ? error.message : String(error);\n    throw new SourceError(`could not fetch ${url}: ${reason}`);\n  }\n  if (!response.ok) {\n    throw new SourceError(`could not fetch ${url}: HTTP ${response.status}`);\n  }\n  return response.text();\n}\n\n/** The text of a feed source: an https:// URL, or a file path relative to ``root``. */\nexport async function readSource(source: string, root: string): Promise<string> {\n  if (/^https?:\\/\\//.test(source)) {\n    return fetchText(source);\n  }\n  if (source.includes(\"://\")) {\n    throw new SourceError(`unsupported feed source ${source}`);\n  }\n  try {\n    return await readFile(isAbsolute(source) ? source : join(root, source), \"utf8\");\n  } catch {\n    throw new SourceError(`feed file not found: ${source}`);\n  }\n}\n"
-        },
-        {
-          "thought": "Check how the command line turns read errors into output.",
-          "tool": "read",
-          "args": {
-            "path": "src/cli.ts"
-          },
-          "output": "/** Command line: ``feedsync digest [--config FILE] [--limit N]``. */\n\nimport { dirname } from \"node:path\";\nimport { parseArgs } from \"node:util\";\nimport { ConfigError, DEFAULT_CONFIG, loadConfig } from \"./config.ts\";\nimport { DEFAULT_LIMIT, renderDigest } from \"./digest.ts\";\nimport { FeedError, parseFeed } from \"./feeds.ts\";\nimport { SourceError, readSource } from \"./sources.ts\";\nimport type { FeedSection } from \"./types.ts\";\n\n/** Where the command line writes its output. */\nexport interface Output {\n  out: (text: string) => void;\n  err: (text: string) => void;\n}\n\nconst USAGE = \"usage: feedsync digest [--config FILE] [--limit N]\\n\";\n\nfunction parse(argv: readonly string[]) {\n  return parseArgs({\n    args: [...argv],\n    allowPositionals: true,\n    options: {\n      config: { type: \"string\", default: DEFAULT_CONFIG },\n      limit: { type: \"string\", default: String(DEFAULT_LIMIT) },\n    },\n  });\n}\n\nasync function sections(config: string): Promise<FeedSection[]> {\n  const root = dirname(config);\n  const result: FeedSection[] = [];\n  for (const feed of loadConfig(config)) {\n    const text = await readSource(feed.source, root);\n    try {\n      result.push({ name: feed.name, items: parseFeed(text) });\n    } catch (error) {\n      if (error instanceof FeedError) {\n        throw new FeedError(`${feed.name}: ${error.message}`);\n      }\n      throw error;\n    }\n  }\n  return result;\n}\n\n/** Run the command line and resolve with the exit status. */\nexport async function main(argv: readonly string[], output: Output): Promise<number> {\n  let args: ReturnType<typeof parse>;\n  try {\n    args = parse(argv);\n  } catch (error) {\n    output.err(`feedsync: ${error instanceof Error ? error.message : String(error)}\\n${USAGE}`);\n    return 2;\n  }\n  if (args.positionals.length !== 1 || args.positionals[0] !== \"digest\") {\n    output.err(USAGE);\n    return 2;\n  }\n  const limit = Number(args.values.limit);\n  if (!Number.isInteger(limit) || limit < 1) {\n    output.err(\"feedsync: --limit must be a whole number of at least 1\\n\");\n    return 2;\n  }\n  try {\n    output.out(renderDigest(await sections(args.values.config), limit));\n  } catch (error) {\n    if (error instanceof ConfigError || error instanceof SourceError || error instanceof FeedError) {\n      output.err(`feedsync: ${error.message}\\n`);\n      return 2;\n    }\n    throw error;\n  }\n  return 0;\n}\n"
-        },
-        {
-          "thought": "See how the feed list is configured today.",
-          "tool": "read",
-          "args": {
-            "path": "feeds.json"
-          },
-          "output": "{\n  \"feeds\": [\n    {\"name\": \"Engineering blog\", \"source\": \"feeds/blog.rss\"},\n    {\"name\": \"Release notes\", \"source\": \"feeds/releases.rss\"}\n  ]\n}\n"
-        }
-      ],
-      "finish": {
-        "thought": "URL sources are supported already, with a timeout and an error path.",
-        "report": "Yes, without any code change: readSource in src/sources.ts treats a source that starts with http:// or https:// as a URL and fetches it with a 10 second timeout (FETCH_TIMEOUT_MS); any other source is a file path relative to the directory of feeds.json. feeds.json lists the two snapshots, feeds/blog.rss and feeds/releases.rss, so switching the blog to its URL is a one-line change there. If the URL cannot be reached, or answers with an HTTP error, readSource throws a SourceError (`could not fetch <url>: ...`), and main in src/cli.ts prints `feedsync: ` followed by that message and exits with status 2 without printing a digest. One unreachable feed therefore stops the whole digest."
-      }
-    },
-    {
-      "request": "Last thing: how many items does each snapshot feed have?",
-      "steps": [
-        {
-          "thought": "Count the item elements in each RSS snapshot.",
+          "thought": "Count the items in both RSS snapshots.",
           "tool": "bash",
           "args": {
             "cmd": "grep -c \"<item>\" feeds/blog.rss feeds/releases.rss"
           },
           "output": "feeds/blog.rss:3\nfeeds/releases.rss:4\n[exit code 0]"
+        },
+        {
+          "thought": "package.json has the scripts.",
+          "tool": "read",
+          "args": {
+            "path": "package.json"
+          },
+          "output": "{\n  \"name\": \"feedsync\",\n  \"version\": \"0.9.2\",\n  \"description\": \"One Markdown digest from the team's RSS feeds.\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"license\": \"MIT\",\n  \"engines\": {\n    \"node\": \">=22.6\"\n  },\n  \"scripts\": {\n    \"test\": \"node --experimental-strip-types --test --test-reporter=spec --test-concurrency=1 test/*.test.ts\",\n    \"digest\": \"node --experimental-strip-types bin/feedsync.ts digest\"\n  }\n}\n"
         }
       ],
       "finish": {
-        "thought": "Each item starts on its own line, so the counts are exact.",
-        "report": "feeds/blog.rss has 3 items and feeds/releases.rss has 4. With the default limit of 5 items per feed, the digest shows all of them."
+        "thought": "Both answers are in the outputs.",
+        "report": "feeds/blog.rss has 3 items and feeds/releases.rss has 4. package.json defines two scripts: npm test runs node --experimental-strip-types --test with the spec reporter on test/*.test.ts, one file at a time, and npm run digest runs bin/feedsync.ts digest. The project needs Node 22.6 or later (the engines field) and has no dependencies."
+      }
+    },
+    {
+      "request": "Last thing: how big are the source files?",
+      "steps": [
+        {
+          "thought": "Count the lines of every source file, by name.",
+          "tool": "bash",
+          "args": {
+            "cmd": "wc -l bin/feedsync.ts src/cli.ts src/config.ts src/digest.ts src/feeds.ts src/rss.ts src/sources.ts src/types.ts src/xml.ts"
+          },
+          "output": "    8 bin/feedsync.ts\n   75 src/cli.ts\n   43 src/config.ts\n   37 src/digest.ts\n   20 src/feeds.ts\n   26 src/rss.ts\n   43 src/sources.ts\n   21 src/types.ts\n   40 src/xml.ts\n  313 total\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "wc gives the counts and the total.",
+        "report": "The nine source files have 313 lines in total. src/cli.ts is the largest (75 lines); src/config.ts and src/sources.ts have 43 each, src/xml.ts 40, src/digest.ts 37, src/rss.ts 26, src/types.ts 21, src/feeds.ts 20 and bin/feedsync.ts 8."
       }
     }
   ]
