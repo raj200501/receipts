@@ -1,0 +1,10 @@
+{
+  "agent": "minimal-agent",
+  "config_id": "ma-qwen7b",
+  "ledger_sha256": "f768bfcc818af51d1a900ac709d81c38cff85586f3781d95308b0bd528c34780",
+  "model": "qwen2.5-coder-7b-instruct-q4km",
+  "note": "copied from a real banked run by tools/record_demo.py; not synthetic",
+  "recorded_from": "artifacts/studies/smoke/runs/smoke-pilot-py-bizdays-ma-qwen7b (run at 3f1d81beccfa)",
+  "run_id": "smoke-pilot-py-bizdays-ma-qwen7b",
+  "task_id": "pilot-py-bizdays"
+}
