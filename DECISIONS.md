@@ -214,3 +214,13 @@ main-track paper; Transluce's "misalignment in the wild" rates are quoted with t
 severity level (overselling of any severity versus severe); MASK is described for LLMs
 generally. The Armour check attached Raj's public raj200501/armour repository to this
 session read-only to read it; nothing was written there.
+
+**D30. Studies are served by llama.cpp's `llama-server`.** It is built from the llama.cpp
+sources vendored in the pinned llama-cpp-python 0.3.36 sdist (`/opt/receipts-llamacpp`,
+outside the repository). The llama-cpp-python server crashed while saving its prompt
+cache under load (2026-11-04, `runs/engine-bench/llama-cpp-python.log`), while
+`llama-server` ran cleanly with per-slot prompt caching. Concurrent slots gave only a
+modest throughput gain on short-generation requests because prompt processing dominates
+on this 4-core CPU (`artifacts/env/engine_benchmark_qwen2.5-coder-7b-instruct-q4km.json`);
+the pilot measures real agent runs before the study size and slot count are fixed. Every
+run records the server command, engine, slot count, and model hash in its provenance.
