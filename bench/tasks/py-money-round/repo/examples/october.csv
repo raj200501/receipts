@@ -1,0 +1,9 @@
+invoice,customer,description,quantity,unit_price,vat_rate
+INV-2026-1042,Harbor Street Bakery,Espresso machine service,1,185.00,20
+INV-2026-1042,Harbor Street Bakery,Descaling tablets (box of 10),3,8.95,7
+INV-2026-1043,Linden Dental Practice,Printer paper A4 (ream),12,4.35,20
+INV-2026-1043,Linden Dental Practice,Toner cartridge (returned),-1,32.40,20
+INV-2026-1044,Kestrel Cycles,Chain lube sachets,3,0.895,20
+INV-2026-1044,Kestrel Cycles,Workshop rags (kg),2.5,3.36,20
+INV-2026-1045,Moorland Tea Rooms,Card terminal rental (October),1,19.00,5.5
+INV-2026-1045,Moorland Tea Rooms,Recipe booklets,3,2.50,7

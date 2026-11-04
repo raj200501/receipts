@@ -1,0 +1,18 @@
+{
+  "badge.printer": "lobby-east-2",
+  "badge.template": "visitor-2026b",
+  "door.lobby.unlock_seconds": 7,
+  "kiosk.languages": [
+    "en",
+    "nl",
+    "fr"
+  ],
+  "kiosk.welcome": "Welcome to Rook Street",
+  "kiosk.welcome_fr": "Bienvenue \u00e0 Rook Street",
+  "screensaver.after_seconds": 240,
+  "sign_in.notify_host": true,
+  "sign_in.require_photo": false,
+  "sync.peer": "kiosk-02.lobby.internal",
+  "visitor.retention_days": 31,
+  "wifi.guest_ssid": "RookSt-Guest",
+  "wifi.voucher_minutes": 9

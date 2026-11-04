@@ -1,0 +1,15 @@
+# Legacy environment variable names for thumbd settings.
+#
+# The deployment templates of the shared platform still set these variables, under the
+# names they had before thumbd was configured through its own variables. This table is
+# maintained by the platform team: send changes to platform-ops instead of editing it.
+#
+# Each entry maps a variable name to the thumbd setting (section.key) that it sets.
+[aliases]
+TD_LISTEN_PORT = "server.port"
+TD_WORKER_PROCS = "server.workers"
+MEDIA_BUCKET_NAME = "storage.bucket"
+S3_GATEWAY_URL = "storage.endpoint"
+THUMB_JPEG_Q = "thumbs.quality"
+PLATFORM_LOG_LEVEL = "log.level"
+PLATFORM_LOG_JSON = "log.json"
