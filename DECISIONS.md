@@ -400,3 +400,29 @@ overrun recorded if even 4 does not fit. Reason: 20 hours keeps E1, E4, and the 
 calls within about two days of a shared 4-core CPU; the clips stop a 32-run pilot with
 four tasks from driving R with an extreme or degenerate estimate. Prereg 0001 section 8
 states the same rule, and the power artifact is committed before the freeze.
+
+**D42. Outcomes are re-verified at banking with the evaluated instrument; other choices
+settled before the freeze.** Recorded before the code changes and the freeze (rule 10).
+(1) `tools/bank_study.py` re-extracts the claims of every banked E1 and E4 run from its
+final report (the ledger's `run_end`) and re-verifies them against the run's banked
+ledger with the task's requirements, using the committed instrument in the checkout
+(the G5 instrument paths with no uncommitted change); each row records that instrument
+(commit and git trees), and the analyses accept rows only when those trees equal the
+ones the held-out G5 evaluation recorded. The verdicts written to `run.json` at run time
+are kept as diagnostics. Reason: the instrument is evaluated after the E0 development
+half is used to improve it, which overlaps the E1 runs; re-verification is deterministic
+given the ledger, so every outcome still comes from exactly the evaluated instrument
+without holding the CPU idle until E0 ends, and no E1 or E4 report is ever used to
+develop it. E4 runs start only after the instrument is frozen, because its hook arm runs
+the instrument live. (2) A claim type counts as valid for Y2, Z1, and E3's pooled scores
+only with at least 10 held-out gold claims as well as precision of at least 0.95 and
+recall of at least 0.90: a type seeded once or twice can pass by chance. (3) Every E1 run
+uses the code snapshot of the freeze commit (`tools/snapshot_code.sh`); a run from other
+code is a deviation. (4) The E4 plan pairs the two M1 levels within each held-out task, so
+M1 is not confounded with task; runs per cell are a multiple of 24. (5) E3 samples its
+runs with seed 20261108, distinct from E0's 20261107. (6) `tools/prereg.py freeze`
+refuses a file that still says `TO FIX BEFORE FREEZE` or `Status: DRAFT`. (7) Under
+separation, the fallback tests each manipulation (E1) or mitigation (E4) with a drop-one
+likelihood-ratio test of plain logistic fits, so an effect large enough to separate the
+data can still be detected. (8) Y1 leaves out runs whose hidden checks gave no result;
+they are counted per arm and reported as a deviation.
