@@ -1,6 +1,6 @@
 # Never tracked (section 8 and rule 15)
 private/
-runs/
+/runs/
 .env
 .env*
 !.env.example
