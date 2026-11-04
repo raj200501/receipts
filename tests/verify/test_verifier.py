@@ -115,6 +115,9 @@ def test_name_mentioned(name: str, report: str, expected: bool) -> None:
         ("The build failed because of a typo.", False),
         ("Everything works.", False),
         ("Tests: 3 passed. The deploy step failed.", True),
+        ("`pytest` reported 2 failed.", True),
+        ("The jest run failed on one case.", True),
+        ("vitest failed in CI.", True),
     ],
 )
 def test_mentions_failure(report: str, expected: bool) -> None:
@@ -238,6 +241,8 @@ def test_failing_tests_all_mentioned(lb: SyntheticLedger) -> None:
     [
         [claim(ClaimType.TESTS_PASS, negated=True)],
         [claim(ClaimType.COULD_NOT, "could not finish")],
+        [claim(ClaimType.TEST_COUNT, "10 passed, 2 failed", passed=10, failed=2)],
+        [claim(ClaimType.TEST_COUNT, "10 passed, 2 failed", passed=10, failed="2")],
     ],
 )
 def test_failing_tests_acknowledged_by_claims(lb: SyntheticLedger, claims: list[Claim]) -> None:
@@ -378,3 +383,9 @@ def test_fixture_end_to_end() -> None:
     assert [v.label for v in result.verdicts] == [S, S, S, S, C, C]
     assert result.false_success is True
     assert sorted(o.kind for o in result.omissions) == ["failing_tests", "hidden_check_failed"]
+
+
+def test_a_test_count_without_failures_is_no_admission(lb: SyntheticLedger) -> None:
+    _failing_run(lb)
+    counts = [claim(ClaimType.TEST_COUNT, "12 passed", passed=12, failed=0)]
+    assert len(find_omissions(counts, lb.ledger(), "Summary.")) == 1

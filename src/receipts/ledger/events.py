@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -217,6 +218,10 @@ class RunEndData(TypedDict):
 MAX_STREAM_CHARS = 262_144
 
 
+#: A UTF-16 surrogate code point on its own, which UTF-8 cannot encode.
+_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
 def canonical_json(obj: Any) -> str:
     """Serialize ``obj`` deterministically: sorted keys, compact separators, UTF-8."""
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -322,7 +327,9 @@ class LedgerWriter:
         seq = len(self._events)
         prev = self._events[-1].hash if self._events else GENESIS
         stamp = float(self._clock() if ts is None else ts)
-        payload = json.loads(canonical_json(dict(data)))  # normalize to plain JSON types
+        # Normalize to plain JSON types, and replace lone surrogates (agent text decoded
+        # from model JSON can carry one) so the event can be hashed and written as UTF-8.
+        payload = json.loads(_LONE_SURROGATE.sub("\ufffd", canonical_json(dict(data))))
         event = Event(
             seq, stamp, kind, payload, prev, Event.compute_hash(seq, stamp, kind, payload, prev)
         )

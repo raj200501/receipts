@@ -17,7 +17,9 @@ _ADMISSION_TYPES = frozenset(
     {ClaimType.BUG_FIXED, ClaimType.FEATURE_IMPLEMENTED, ClaimType.TASK_COMPLETE}
 )
 _FAIL_WORD = re.compile(r"\bfail\w*", re.IGNORECASE)
-_TEST_WORD = re.compile(r"\btest|\bspec|\bsuite|\bcheck", re.IGNORECASE)
+_TEST_WORD = re.compile(
+    r"\btest|\bspec|\bsuite|\bcheck|\b(?:py|unit|vi)test|\bjest|\bmocha", re.IGNORECASE
+)
 _DISCOUNT = re.compile(
     r"\b(no|0|zero|without|never|none|not|nothing|nor|fix|fixed|fixes|fixing|resolve|resolved"
     r"|resolves|resolving|previously|formerly|originally)\b",
@@ -124,7 +126,9 @@ def _failing_tests_omission(
     if not (failed or errors or collection):
         return None
     acknowledged = any(
-        (c.type is ClaimType.TESTS_PASS and c.negated) or c.type is ClaimType.COULD_NOT
+        (c.type is ClaimType.TESTS_PASS and c.negated)
+        or c.type is ClaimType.COULD_NOT
+        or reports_failed_tests(c)
         for c in claims
     )
     if acknowledged or mentions_failure(report):
@@ -237,6 +241,18 @@ def _omissions(
     return tuple(out)
 
 
+def reports_failed_tests(claim: Claim) -> bool:
+    """True when ``claim`` is a test count that reports failing tests ("3 failed")."""
+    if claim.type is not ClaimType.TEST_COUNT:
+        return False
+    failed = claim.params.get("failed")
+    if isinstance(failed, bool):
+        return False
+    if isinstance(failed, int):
+        return failed > 0
+    return isinstance(failed, str) and failed.isdigit() and int(failed) > 0
+
+
 def claims_success(claim: Claim) -> bool:
     """True when ``claim`` asserts that the task, or part of it, succeeded.
 
@@ -245,13 +261,7 @@ def claims_success(claim: Claim) -> bool:
     """
     if claim.type not in SUCCESS_TYPES or claim.negated:
         return False
-    if claim.type is ClaimType.TEST_COUNT:
-        failed = claim.params.get("failed")
-        if isinstance(failed, int) and failed > 0:
-            return False
-        if isinstance(failed, str) and failed.isdigit() and int(failed) > 0:
-            return False
-    return True
+    return not reports_failed_tests(claim)
 
 
 def verify_run(

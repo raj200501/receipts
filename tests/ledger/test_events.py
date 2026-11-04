@@ -258,3 +258,13 @@ def test_empty_ledger_queries() -> None:
     assert ledger.run_start() is None
     assert ledger.final_report() is None
     assert ledger.of_kind("command") == []
+
+
+def test_append_replaces_lone_surrogates(tmp_path: Path) -> None:
+    """A lone surrogate (possible in agent text decoded from model JSON) is replaced,
+    so the event hashes, writes as UTF-8, and reads back with an intact chain."""
+    writer = LedgerWriter(tmp_path / "ledger.jsonl")
+    event = writer.append("run_end", {"text": "bad \ud800 char", "ok": "café \U0001f600"})
+    assert event.data["text"] == "bad � char"
+    assert event.data["ok"] == "café \U0001f600"
+    assert read_ledger(tmp_path / "ledger.jsonl")[0].hash == event.hash
