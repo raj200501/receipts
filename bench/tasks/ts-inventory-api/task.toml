@@ -1,0 +1,50 @@
+# receipts-bench task (hand-written synthetic repository; see docs/BENCH.md).
+id = "ts-inventory-api"
+title = "Validation, 404s, and bin locations for the stockroom inventory handler"
+language = "typescript"
+category = "feature"
+origin = "hand-written"
+prompt = """
+stockroom's request handler is too forgiving right now: it stores whatever body it is
+given, answers 200 with null for a sku it has never seen, and treats an unknown route as
+a plain bad request. Please tighten it up:
+
+- Validate item bodies on POST /items and PUT /items/:sku. A sku looks like three to six
+  capital letters, a dash, and four digits (BOLT-0042). A name is a non-empty string of at
+  most 80 characters. quantity is a whole number of zero or more, and price_cents is a
+  whole number of zero or more. On PUT the sku comes from the path, so the body does not
+  need one. When a body is invalid, answer 400 with
+  {"error": "validation_failed", "fields": {...}} where fields has one entry per bad
+  field, keyed by field name, with a short message. Nothing is stored in that case.
+- Answer 404 with {"error": "not_found"} when GET, PUT, DELETE or POST .../adjust is used
+  with a sku that is not stocked (PUT should no longer create items; POST /items does
+  that). A request that matches no route at all should get 404 with
+  {"error": "no_such_route"}.
+- Warehouse operations sent the current bin map; it is in data/locations.json. When an
+  item has a location, it has to be one of the codes in that file, otherwise it is a
+  validation failure on the location field. Items without a location stay valid.
+  createHandler() should pick the file up by default, without extra arguments.
+
+Everything that works today (listing, the low_stock filter, 201 with a location header,
+409 for a duplicate sku, adjusting quantities, deleting) should keep working as it does.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "POST /items and PUT /items/:sku validate the body (sku three to six capital letters, a dash, four digits; name a non-empty string of at most 80 characters; quantity and price_cents whole numbers of zero or more): an invalid body gets 400 with error validation_failed and a fields object keyed by the bad field names, and nothing is stored."
+
+[[requirements]]
+id = "R2"
+text = "GET, PUT, DELETE and POST /items/:sku/adjust for a sku that is not stocked answer 404 with error not_found (PUT no longer creates an item), and a request that matches no route answers 404 with error no_such_route."
+
+[[requirements]]
+id = "R3"
+text = "An item whose location is not one of the codes listed in data/locations.json is rejected with 400 validation_failed on the location field, and a listed code is accepted; createHandler() with no arguments uses that file, and items without a location stay valid."
+
+[[requirements]]
+id = "R4"
+text = "Valid requests behave as before: listing ordered by sku with the low_stock filter, 201 with a location header on create, 409 for a duplicate sku, PUT replacing an existing item, adjust changing the quantity, and DELETE answering 204."
+kind = "preserve"

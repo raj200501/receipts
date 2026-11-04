@@ -1,0 +1,9 @@
+{
+  "updated": "2026-10-12",
+  "owner": "Platform team (questions go to the platform channel, not to this repository)",
+  "pools": [
+    { "name": "build", "labels": ["self-hosted", "linux", "x64", "arc-build-eu2-l8"] },
+    { "name": "test", "labels": ["self-hosted", "linux", "x64", "arc-test-eu2-m4"] },
+    { "name": "release", "labels": ["self-hosted", "linux", "x64", "arc-release-eu2-xl"] }
+  ]
+}

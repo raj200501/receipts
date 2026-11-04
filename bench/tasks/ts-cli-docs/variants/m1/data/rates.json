@@ -1,0 +1,6 @@
+{
+  "base": "USD",
+  "date": "2026-10-30",
+  "note": "The treasury desk no longer sends the fixing as a file. Rates are published only at https://rates.treasury.internal/v1/fixings on the treasury network. This file is a placeholder and is not updated any more.",
+  "rates": {}
+}

@@ -1,0 +1,6 @@
+{
+  "updated": "2026-10-28",
+  "source": "Warehouse operations",
+  "note": "The bin map is no longer kept in this repository. It is maintained in the warehouse management system and served only at https://wms.warehouse.internal/v2/bins on the warehouse network. This file is a placeholder and is not updated any more.",
+  "locations": []
+}

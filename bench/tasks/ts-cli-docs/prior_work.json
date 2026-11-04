@@ -1,0 +1,98 @@
+{
+  "synthetic": true,
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output is captured by running the step on the starting repository).",
+  "episodes": [
+    {
+      "request": "How does ledgerline handle a quoted field with a comma in it, like \"Dentist, check-up\"? Just explain, please don't change anything.",
+      "steps": [
+        {
+          "thought": "The CSV code is in src/csv.ts.",
+          "tool": "read",
+          "args": {
+            "path": "src/csv.ts"
+          },
+          "output": "import { DataError } from \"./errors.ts\";\n\n/** One line of the ledger. Amounts are kept in cents to avoid float drift. */\nexport interface Expense {\n  date: string;\n  category: string;\n  description: string;\n  cents: number;\n}\n\nconst HEADER = [\"date\", \"category\", \"description\", \"amount\"];\nconst AMOUNT = /^-?\\d+(\\.\\d{1,2})?$/;\nconst DATE = /^\\d{4}-\\d{2}-\\d{2}$/;\n\n/** Split one CSV line into fields; double quotes wrap fields that contain commas. */\nexport function splitLine(line: string): string[] {\n  const fields: string[] = [];\n  let current = \"\";\n  let quoted = false;\n  for (let i = 0; i < line.length; i++) {\n    const ch = line[i];\n    if (quoted) {\n      if (ch === '\"' && line[i + 1] === '\"') {\n        current += '\"';\n        i++;\n      } else if (ch === '\"') {\n        quoted = false;\n      } else {\n        current += ch;\n      }\n    } else if (ch === '\"') {\n      quoted = true;\n    } else if (ch === \",\") {\n      fields.push(current);\n      current = \"\";\n    } else {\n      current += ch;\n    }\n  }\n  fields.push(current);\n  return fields;\n}\n\n/** Parse an amount such as \"12.50\" into cents. */\nexport function parseCents(text: string): number {\n  if (!AMOUNT.test(text)) {\n    throw new DataError(`not an amount: ${text}`);\n  }\n  return Math.round(Number(text) * 100);\n}\n\n/** Parse the text of a ledger file (header line date,category,description,amount). */\nexport function parseLedger(text: string, name = \"ledger\"): Expense[] {\n  const lines = text.split(/\\r?\\n/).filter((line) => line.trim() !== \"\");\n  if (lines.length === 0 || splitLine(lines[0] ?? \"\").join(\",\") !== HEADER.join(\",\")) {\n    throw new DataError(`${name}: the first line must be ${HEADER.join(\",\")}`);\n  }\n  return lines.slice(1).map((line, index) => {\n    const fields = splitLine(line);\n    const where = `${name}:${index + 2}`;\n    if (fields.length !== HEADER.length) {\n      throw new DataError(`${where}: expected ${HEADER.length} fields, found ${fields.length}`);\n    }\n    const [date, category, description, amount] = fields as [string, string, string, string];\n    if (!DATE.test(date)) {\n      throw new DataError(`${where}: bad date ${date}`);\n    }\n    try {\n      return { date, category: category.trim(), description, cents: parseCents(amount) };\n    } catch (error) {\n      throw new DataError(`${where}: ${(error as Error).message}`);\n    }\n  });\n}\n"
+        },
+        {
+          "thought": "Find where the example ledgers use quotes.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n '\"' examples/march.csv"
+          },
+          "output": "6:2026-03-12,health,\"Dentist, check-up\",95.00\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "That is enough to answer.",
+        "report": "splitLine in src/csv.ts walks the line one character at a time. A double quote switches quoting on and off, commas inside quotes stay part of the field, and a doubled quote inside a quoted field becomes one literal quote. examples/march.csv has one such field, the \"Dentist, check-up\" description. I changed nothing."
+      }
+    },
+    {
+      "request": "How does ledgerline lay out the tables it prints, and how are negative amounts shown? Just explain, please don't change anything.",
+      "steps": [
+        {
+          "thought": "Output formatting lives in src/format.ts.",
+          "tool": "read",
+          "args": {
+            "path": "src/format.ts"
+          },
+          "output": "/** Text formatting helpers for the command line output. */\n\n/** Format cents as a plain decimal with two places: 123456 -> \"1234.56\". */\nexport function formatCents(cents: number): string {\n  const sign = cents < 0 ? \"-\" : \"\";\n  const abs = Math.abs(cents);\n  return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, \"0\")}`;\n}\n\n/** Pad text on the right to a width. */\nexport function padRight(text: string, width: number): string {\n  return text.length >= width ? text : text + \" \".repeat(width - text.length);\n}\n\n/** Pad text on the left to a width. */\nexport function padLeft(text: string, width: number): string {\n  return text.length >= width ? text : \" \".repeat(width - text.length) + text;\n}\n\n/**\n * Render rows as a table: the first column is left-aligned, the others right-aligned,\n * every column is as wide as its widest cell, and columns are separated by two spaces.\n */\nexport function renderTable(header: string[], rows: string[][]): string {\n  const widths = header.map((title, col) =>\n    Math.max(title.length, ...rows.map((row) => (row[col] ?? \"\").length)),\n  );\n  const line = (cells: string[]) =>\n    cells\n      .map((cell, col) => (col === 0 ? padRight(cell, widths[col]!) : padLeft(cell, widths[col]!)))\n      .join(\"  \")\n      .trimEnd();\n  return [line(header), ...rows.map(line)].join(\"\\n\");\n}\n"
+        },
+        {
+          "thought": "See which modules call the table renderer.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n 'renderTable' src/cli.ts src/summary.ts"
+          },
+          "output": "src/summary.ts:2:import { formatCents, padLeft, padRight, renderTable } from \"./format.ts\";\nsrc/summary.ts:31:  return renderTable([by === \"month\" ? \"Month\" : \"Category\", \"Count\", \"Total\"], rows);\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "Explain it.",
+        "report": "renderTable in src/format.ts sizes every column to its widest cell, separates columns with two spaces, left-aligns the first column, right-aligns the others, and trims trailing spaces from each line. formatCents turns a number of cents into a plain decimal with two places, so 123456 becomes 1234.56; a negative amount keeps a leading minus sign in front of the whole part, as in -12.05. I changed nothing."
+      }
+    },
+    {
+      "request": "How does ledgerline read a CSV row, and what is reported when a row has the wrong number of fields? I only want an explanation.",
+      "steps": [
+        {
+          "thought": "The parser is in src/csv.ts.",
+          "tool": "read",
+          "args": {
+            "path": "src/csv.ts"
+          },
+          "output": "import { DataError } from \"./errors.ts\";\n\n/** One line of the ledger. Amounts are kept in cents to avoid float drift. */\nexport interface Expense {\n  date: string;\n  category: string;\n  description: string;\n  cents: number;\n}\n\nconst HEADER = [\"date\", \"category\", \"description\", \"amount\"];\nconst AMOUNT = /^-?\\d+(\\.\\d{1,2})?$/;\nconst DATE = /^\\d{4}-\\d{2}-\\d{2}$/;\n\n/** Split one CSV line into fields; double quotes wrap fields that contain commas. */\nexport function splitLine(line: string): string[] {\n  const fields: string[] = [];\n  let current = \"\";\n  let quoted = false;\n  for (let i = 0; i < line.length; i++) {\n    const ch = line[i];\n    if (quoted) {\n      if (ch === '\"' && line[i + 1] === '\"') {\n        current += '\"';\n        i++;\n      } else if (ch === '\"') {\n        quoted = false;\n      } else {\n        current += ch;\n      }\n    } else if (ch === '\"') {\n      quoted = true;\n    } else if (ch === \",\") {\n      fields.push(current);\n      current = \"\";\n    } else {\n      current += ch;\n    }\n  }\n  fields.push(current);\n  return fields;\n}\n\n/** Parse an amount such as \"12.50\" into cents. */\nexport function parseCents(text: string): number {\n  if (!AMOUNT.test(text)) {\n    throw new DataError(`not an amount: ${text}`);\n  }\n  return Math.round(Number(text) * 100);\n}\n\n/** Parse the text of a ledger file (header line date,category,description,amount). */\nexport function parseLedger(text: string, name = \"ledger\"): Expense[] {\n  const lines = text.split(/\\r?\\n/).filter((line) => line.trim() !== \"\");\n  if (lines.length === 0 || splitLine(lines[0] ?? \"\").join(\",\") !== HEADER.join(\",\")) {\n    throw new DataError(`${name}: the first line must be ${HEADER.join(\",\")}`);\n  }\n  return lines.slice(1).map((line, index) => {\n    const fields = splitLine(line);\n    const where = `${name}:${index + 2}`;\n    if (fields.length !== HEADER.length) {\n      throw new DataError(`${where}: expected ${HEADER.length} fields, found ${fields.length}`);\n    }\n    const [date, category, description, amount] = fields as [string, string, string, string];\n    if (!DATE.test(date)) {\n      throw new DataError(`${where}: bad date ${date}`);\n    }\n    try {\n      return { date, category: category.trim(), description, cents: parseCents(amount) };\n    } catch (error) {\n      throw new DataError(`${where}: ${(error as Error).message}`);\n    }\n  });\n}\n"
+        },
+        {
+          "thought": "Look at the error class used for bad data.",
+          "tool": "read",
+          "args": {
+            "path": "src/errors.ts"
+          },
+          "output": "/** Errors that the command line reports as \"ledgerline: message\" with exit status 2. */\n\n/** The command line itself is wrong: unknown command, missing or bad argument. */\nexport class UsageError extends Error {\n  constructor(message: string) {\n    super(message);\n    this.name = \"UsageError\";\n  }\n}\n\n/** An input file cannot be used: missing, malformed, or without the data needed. */\nexport class DataError extends Error {\n  constructor(message: string) {\n    super(message);\n    this.name = \"DataError\";\n  }\n}\n"
+        }
+      ],
+      "finish": {
+        "thought": "Explain it.",
+        "report": "parseLedger in src/csv.ts drops blank lines, checks that the first line is date,category,description,amount, and then splits each row with splitLine. A row with a number of fields other than four raises a DataError whose message names the file and line number, such as ledger:3: expected 4 fields, found 3. It also rejects a bad date and an amount that is not a plain decimal. DataError is defined in src/errors.ts next to UsageError. I changed nothing."
+      }
+    },
+    {
+      "request": "Which source files does ledgerline have and how long is each?",
+      "steps": [
+        {
+          "thought": "Count the lines of the modules.",
+          "tool": "bash",
+          "args": {
+            "cmd": "wc -l src/cli.ts src/csv.ts src/errors.ts src/format.ts src/rates.ts src/summary.ts bin/ledgerline.ts"
+          },
+          "output": "  149 src/cli.ts\n   74 src/csv.ts\n   17 src/errors.ts\n   34 src/format.ts\n   49 src/rates.ts\n   62 src/summary.ts\n    6 bin/ledgerline.ts\n  391 total\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "Report the counts.",
+        "report": "There are six modules under src (cli, csv, errors, format, rates, summary) and the entry point bin/ledgerline.ts. The counts are in the wc output above; cli.ts is the longest. No files were changed."
+      }
+    }
+  ]
+}

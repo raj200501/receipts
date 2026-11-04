@@ -1,0 +1,15 @@
+{
+  "updated": "2026-09-30",
+  "source": "Warehouse operations, bin map for the Ostrava and Brno sites",
+  "locations": [
+    { "code": "A-01-01", "zone": "inbound", "note": "dock 1 staging" },
+    { "code": "A-01-02", "zone": "inbound", "note": "dock 1 staging" },
+    { "code": "B-04-11", "zone": "fasteners", "note": "small parts racks" },
+    { "code": "B-04-12", "zone": "fasteners", "note": "small parts racks" },
+    { "code": "C-07-03", "zone": "cables", "note": "spool wall" },
+    { "code": "F-12-08", "zone": "tools", "note": "locked cage" },
+    { "code": "K-19-06", "zone": "returns", "note": "inspection shelf" },
+    { "code": "Q-03-09", "zone": "overflow", "note": "mezzanine" },
+    { "code": "T-22-14", "zone": "cold", "note": "adhesives and sealants" }
+  ]
+}
