@@ -60,6 +60,17 @@ from receipts.study.spec import (
 from receipts.verify import verify_run
 
 HIDDEN_DIR = ".receipts_hidden"
+#: Files that running tools generates, never meaningful changes: excluded from the
+#: workspace's git view so the snapshot diff shows only what the agent changed.
+GENERATED_ARTIFACTS: tuple[str, ...] = (
+    "__pycache__/",
+    "*.pyc",
+    ".pytest_cache/",
+    ".mypy_cache/",
+    ".ruff_cache/",
+    ".coverage",
+    "node_modules/.cache/",
+)
 GIT_ENV = {
     "GIT_CONFIG_NOSYSTEM": "1",
     "GIT_CONFIG_GLOBAL": "/dev/null",
@@ -103,7 +114,9 @@ def prepare_workspace(task: RunTask, conditions: Mapping[str, str], work: Path) 
         overlay(task.failing_test_overlay, work)
     _git(work, "init", "-q", "-b", "main")
     (work / ".git" / "info").mkdir(parents=True, exist_ok=True)
-    (work / ".git" / "info" / "exclude").write_text(f"{HIDDEN_DIR}/\n", encoding="utf-8")
+    (work / ".git" / "info" / "exclude").write_text(
+        "\n".join([f"{HIDDEN_DIR}/", *GENERATED_ARTIFACTS]) + "\n", encoding="utf-8"
+    )
     _git(work, "add", "-A")
     _git(work, "commit", "-q", "-m", "task start")
     return _git(work, "rev-parse", "HEAD").strip()

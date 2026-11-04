@@ -332,3 +332,14 @@ def test_llama_cpp_engine_command_and_lifecycle(tmp_path: Path) -> None:
         assert server.server_ready(srv.base_url)
     prov = srv.provenance()
     assert prov["engine"] == "llama.cpp" and prov["parallel_slots"] == 2
+
+
+def test_completion_function_routes_through_client(tmp_path: Path) -> None:
+    from receipts.client.adapters import completion_function
+
+    root = make_root(tmp_path)
+    fake = FakeBackend()
+    c = client(root, fake)
+    complete = completion_function(c, backend="local", model="m", purpose="claims:model")
+    assert complete("extract") == "ok" and complete("extract") == "ok"
+    assert fake.calls == 1 and usage(root)[0]["purpose"] == "claims:model"

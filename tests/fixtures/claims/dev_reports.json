@@ -1,0 +1,2851 @@
+{
+  "description": "Development corpus for receipts.claims: hand-written, synthetic final reports in the styles of Claude Code, Codex, Aider, OpenHands and minimal-agent, each with the claims a careful reader would extract. These are hand-written development fixtures, not model output, not real runs, and not evaluation data (the E0 seeded evaluation set is written separately and blind). 'expected' holds the claims the pattern extractor must produce; 'model_only' holds claims a reader would also extract that no pattern rule targets, left to the model extractor.",
+  "synthetic": true,
+  "label": "hand-written development fixtures",
+  "reports": [
+    {
+      "id": "d01",
+      "style": "claude-code",
+      "report": "I fixed the off-by-one error in `parse_range` so the end of a range is now inclusive.\n\n## Changes\n- `src/ranges/parse.py`: use `end + 1` as the upper bound\n- `tests/test_parse.py`: added `test_inclusive_end`\n\n## Verification\nRan `pytest -q`: 42 passed in 0.81s. `ruff check .` reports no issues.\n",
+      "expected": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "the off-by-one error in `parse_range`"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/ranges/parse.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "tests/test_parse.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_added",
+          "params": {
+            "path": "tests/test_parse.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest -q"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 42
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "ruff check ."
+          },
+          "negated": false
+        },
+        {
+          "type": "lint_clean",
+          "params": {
+            "tool": "ruff"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d02",
+      "style": "claude-code",
+      "report": "Implemented the `--json` flag for the `report` command.\n\n**What changed**\n- `src/cli.ts`: parse `--json` and pass it to the formatter\n- `src/format/json.ts` (new): serializes the report as JSON\n- `test/cli.test.ts`: two new tests for the flag\n\n`npm test` → 18 passing. `npm run lint` is clean and `npx tsc --noEmit` passes.\n",
+      "expected": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "the `--json` flag for the `report` command"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/cli.ts"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_created",
+          "params": {
+            "path": "src/format/json.ts"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "test/cli.test.ts"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_added",
+          "params": {
+            "path": "test/cli.test.ts",
+            "target": "the flag"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npm test"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 18
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npm run lint"
+          },
+          "negated": false
+        },
+        {
+          "type": "lint_clean",
+          "params": {},
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npx tsc --noEmit"
+          },
+          "negated": false
+        },
+        {
+          "type": "typecheck_clean",
+          "params": {
+            "tool": "tsc"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d03",
+      "style": "codex",
+      "report": "**Summary**\n- Added retry with exponential backoff to `fetch_json` in `src/net/http.py`.\n- New setting `HTTP_MAX_RETRIES` (default 3) in `src/config.py`.\n\n**Testing**\n- ✅ `pytest tests/net -q` (9 passed)\n- ✅ `ruff check src`\n- ⚠️ `mypy src` reports 2 errors in `src/legacy/compat.py` (pre-existing, unrelated)\n",
+      "expected": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "retry with exponential backoff to `fetch_json` in `src/net/http.py`"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest tests/net -q"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 9
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "ruff check src"
+          },
+          "negated": false
+        },
+        {
+          "type": "lint_clean",
+          "params": {
+            "tool": "ruff"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "mypy src"
+          },
+          "negated": false
+        },
+        {
+          "type": "typecheck_clean",
+          "params": {
+            "tool": "mypy"
+          },
+          "negated": true
+        }
+      ],
+      "model_only": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/net/http.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "New setting `HTTP_MAX_RETRIES` (default 3)"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/config.py"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d04",
+      "style": "aider",
+      "report": "I'll make the change to `app/views.py` to return 404 for missing users.\n\nApplied edit to app/views.py\nApplied edit to tests/test_views.py\nCommit 3f2a9c1 fix: return 404 when the user does not exist\n\nThe tests pass now.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "app/views.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "tests/test_views.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "return 404 when the user does not exist"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d05",
+      "style": "openhands",
+      "report": "I have successfully completed the task. Here is a summary of what I did:\n\n1. Created `utils/slugify.py` with a `slugify()` function that handles unicode.\n2. Added unit tests in `tests/test_slugify.py` covering empty strings and unicode input.\n3. Ran the test suite with `python -m pytest`, and all 7 tests passed.\n\nThe implementation is complete and ready for review.\n",
+      "expected": [
+        {
+          "type": "task_complete",
+          "params": {},
+          "negated": false
+        },
+        {
+          "type": "file_created",
+          "params": {
+            "path": "utils/slugify.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_added",
+          "params": {
+            "path": "tests/test_slugify.py",
+            "target": "empty strings and unicode input"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "tests/test_slugify.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "the test suite"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "python -m pytest"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 7,
+            "total": 7
+          },
+          "negated": false
+        },
+        {
+          "type": "task_complete",
+          "params": {},
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d06",
+      "style": "minimal-agent",
+      "report": "Done. All tests pass.",
+      "expected": [
+        {
+          "type": "task_complete",
+          "params": {},
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {
+            "scope": "all"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d07",
+      "style": "minimal-agent",
+      "report": "I could not finish the task. The `parse_date` fix works for ISO dates, but 2 tests in tests/test_dates.py still fail on timezone offsets. I did not run the linter.\n",
+      "expected": [
+        {
+          "type": "could_not",
+          "params": {
+            "description": "finish the task"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {
+            "scope": "tests/test_dates.py"
+          },
+          "negated": true
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "the linter"
+          },
+          "negated": true
+        }
+      ],
+      "model_only": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "The `parse_date` fix works for ISO dates"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d08",
+      "style": "claude-code",
+      "report": "Bumped `requests` from 2.28.1 to 2.32.3 in `requirements.txt` to pick up the security fix.\n\n- Updated `src/client.py` for the new `Session.request` signature.\n- `pip install -r requirements.txt` succeeds and the full suite passes (`pytest`, 64 passed).\n",
+      "expected": [
+        {
+          "type": "dependency_updated",
+          "params": {
+            "name": "requests",
+            "version": "2.32.3"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "requirements.txt"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/client.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pip install -r requirements.txt"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 64
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d09",
+      "style": "codex",
+      "report": "Refactored the config loader:\n\n- Split `src/config.py` into `src/config/loader.py` and `src/config/schema.py`.\n- Removed `src/config.py`.\n- Kept the public `load_config()` signature unchanged.\n\nAll 88 tests still pass. `mypy --strict` is clean.\n",
+      "expected": [
+        {
+          "type": "file_deleted",
+          "params": {
+            "path": "src/config.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 88,
+            "total": 88
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "mypy --strict"
+          },
+          "negated": false
+        },
+        {
+          "type": "typecheck_clean",
+          "params": {
+            "tool": "mypy"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "file_created",
+          "params": {
+            "path": "src/config/loader.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_created",
+          "params": {
+            "path": "src/config/schema.py"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d10",
+      "style": "claude-code",
+      "report": "Updated the documentation:\n\n- Rewrote `docs/usage.md` with examples for every subcommand.\n- Added a \"Configuration\" section to `README.md`.\n- Created `docs/faq.md`.\n\nNo code changes, so I didn't run the tests.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "docs/usage.md"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "README.md"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_created",
+          "params": {
+            "path": "docs/faq.md"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "the tests"
+          },
+          "negated": true
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d11",
+      "style": "claude-code",
+      "report": "Added a GitHub Actions workflow at `.github/workflows/ci.yml` that runs ruff, mypy and pytest on Python 3.11 and 3.12.\n\nI validated the YAML locally with `actionlint`; I could not run the workflow itself because there is no network access in the sandbox.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": ".github/workflows/ci.yml"
+          },
+          "negated": false
+        },
+        {
+          "type": "could_not",
+          "params": {
+            "description": "run the workflow itself"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "actionlint"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d12",
+      "style": "minimal-agent",
+      "report": "ok so i changed calc.py to handle division by zero. ran pytest, 5 passed 1 failed. the failing one is test_divide_negative i think its unrelated\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "calc.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 5,
+            "failed": 1
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "tests_pass",
+          "params": {
+            "scope": "test_divide_negative"
+          },
+          "negated": true
+        }
+      ]
+    },
+    {
+      "id": "d13",
+      "style": "claude-code",
+      "report": "## Summary\n\nImplemented CSV export for the report page.\n\n| File | Change |\n|------|--------|\n| `src/export/csv.py` | New: `export_csv()` writer |\n| `src/views/report.py` | Added the export button handler |\n| `tests/test_csv.py` | New tests |\n\nAll tests pass (`pytest -q`: 51 passed).\n",
+      "expected": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "CSV export for the report page"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_created",
+          "params": {
+            "path": "src/export/csv.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/views/report.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "the export button handler"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "tests/test_csv.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_added",
+          "params": {
+            "path": "tests/test_csv.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 51
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest -q"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d14",
+      "style": "claude-code",
+      "report": "I wasn't able to complete the email notification feature: the task requires sending through the SMTP server at `mail.internal`, which isn't reachable from this sandbox.\n\nWhat I did:\n- Added `src/notify/email.py` with the message builder.\n- Added unit tests for the builder (`tests/test_email.py`); they pass.\n\nWhat is missing: the actual send step is stubbed out and untested.\n",
+      "expected": [
+        {
+          "type": "could_not",
+          "params": {
+            "description": "complete the email notification feature"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_created",
+          "params": {
+            "path": "src/notify/email.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_added",
+          "params": {
+            "path": "tests/test_email.py",
+            "target": "the builder"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "the actual send step"
+          },
+          "negated": true
+        }
+      ]
+    },
+    {
+      "id": "d15",
+      "style": "claude-code",
+      "report": "The pagination endpoint is implemented, but one test still fails: `test_last_page_has_remaining_items` returns 9 items instead of 10. I haven't found the cause yet.\n",
+      "expected": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "The pagination endpoint"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": true
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d16",
+      "style": "codex",
+      "report": "- Fixed the null check in `src/auth/session.ts:42` so expired tokens are rejected.\n- Added a regression test in `src/auth/session.test.ts`.\n- `npm test`: 112 passed, 0 failed.\n",
+      "expected": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "the null check in `src/auth/session.ts:42`"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/auth/session.ts"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_added",
+          "params": {
+            "path": "src/auth/session.test.ts"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/auth/session.test.ts"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npm test"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 112,
+            "failed": 0
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d17",
+      "style": "aider",
+      "report": "Here are the changes to `calculator/ops.py` to support exponentiation.\n\ncalculator/ops.py\n```python\ndef power(a, b):\n    return a ** b\n```\n\nI added `power` and registered it in the operator table. Run `pytest` to check.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "calculator/ops.py"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "`power`"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d18",
+      "style": "openhands",
+      "report": "I attempted to fix the failing test `test_concurrent_writes`, but it is still flaky: it passed 3 out of 5 runs. The root cause appears to be a race in `storage/lock.py`, which I did not modify.\n",
+      "expected": [],
+      "model_only": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "the failing test `test_concurrent_writes`"
+          },
+          "negated": true
+        },
+        {
+          "type": "file_unchanged",
+          "params": {
+            "path": "storage/lock.py"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d19",
+      "style": "claude-code",
+      "report": "Added dark mode support to the settings page.\n\n- `src/components/ThemeToggle.tsx` (new)\n- `src/styles/theme.css` (modified)\n- `src/pages/Settings.tsx` (modified)\n\n`npm run build` completes without errors and `npm test` passes (24 tests).\n",
+      "expected": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "dark mode support to the settings page"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_created",
+          "params": {
+            "path": "src/components/ThemeToggle.tsx"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/styles/theme.css"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/pages/Settings.tsx"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npm run build"
+          },
+          "negated": false
+        },
+        {
+          "type": "build_succeeds",
+          "params": {
+            "tool": "npm run build"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npm test"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d20",
+      "style": "minimal-agent",
+      "report": "Everything is implemented and working.",
+      "expected": [
+        {
+          "type": "task_complete",
+          "params": {},
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d21",
+      "style": "claude-code",
+      "report": "Dropped the `six` dependency now that the project is Python 3 only.\n\n- Removed `six` from `setup.cfg` and replaced `six.moves.urllib` imports in `pkg/net.py`.\n- `python -m pytest` passes: 140 passed, 2 skipped.\n",
+      "expected": [
+        {
+          "type": "dependency_removed",
+          "params": {
+            "name": "six"
+          },
+          "negated": false
+        },
+        {
+          "type": "dependency_removed",
+          "params": {
+            "name": "six"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "setup.cfg"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "pkg/net.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "python -m pytest"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 140
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d22",
+      "style": "claude-code",
+      "report": "Fixed the timezone conversion in `format_timestamp`. I didn't touch `api/routes.py` or the database models.\n\nTests: `pytest tests/test_time.py` → 6 passed.\n",
+      "expected": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "the timezone conversion in `format_timestamp`"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_unchanged",
+          "params": {
+            "path": "api/routes.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest tests/test_time.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 6
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d23",
+      "style": "codex",
+      "report": "I updated `pyproject.toml` to add `httpx>=0.27` as a dependency and rewrote `fetch.py` to use it.\n\nI couldn't run the tests: `uv sync` fails because there is no network access, so `httpx` isn't installed.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "pyproject.toml"
+          },
+          "negated": false
+        },
+        {
+          "type": "dependency_added",
+          "params": {
+            "name": "httpx",
+            "version": "0.27"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "fetch.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "could_not",
+          "params": {
+            "description": "run the tests"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "uv sync"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d24",
+      "style": "claude-code",
+      "report": "All 128 tests pass, ruff is clean, and mypy reports no errors.",
+      "expected": [
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 128,
+            "total": 128
+          },
+          "negated": false
+        },
+        {
+          "type": "lint_clean",
+          "params": {
+            "tool": "ruff"
+          },
+          "negated": false
+        },
+        {
+          "type": "typecheck_clean",
+          "params": {
+            "tool": "mypy"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d25",
+      "style": "minimal-agent",
+      "report": "The bug is fixed and all tests are passing now. Task complete.",
+      "expected": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "The bug"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {
+            "scope": "all"
+          },
+          "negated": false
+        },
+        {
+          "type": "task_complete",
+          "params": {},
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d26",
+      "style": "claude-code",
+      "report": "Cleaned up the lint warnings flagged by `ruff check`:\n\n- Removed unused imports in `src/app/__init__.py` and `src/app/cli.py`.\n- Sorted imports in `src/app/models.py`.\n\n`ruff check .` now reports `All checks passed!`.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/app/__init__.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/app/cli.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/app/models.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "ruff check ."
+          },
+          "negated": false
+        },
+        {
+          "type": "lint_clean",
+          "params": {
+            "tool": "ruff"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d27",
+      "style": "claude-code",
+      "report": "Implemented the `export` subcommand with CSV and JSON output. I did not implement the XML format because the spec marks it optional.\n\nRan `pytest -q` and `ruff check .`: both pass.\n",
+      "expected": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "the `export` subcommand with CSV and JSON output"
+          },
+          "negated": false
+        },
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "the XML format"
+          },
+          "negated": true
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest -q"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "ruff check ."
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": false
+        },
+        {
+          "type": "lint_clean",
+          "params": {
+            "tool": "ruff"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d28",
+      "style": "codex",
+      "report": "Migrated the remaining modules to type hints.\n\nValidation:\n- `mypy src` → 3 errors remain in `src/plugins/loader.py` (dynamic imports); I left them for a follow-up.\n- `pytest` → 77 passed.\n",
+      "expected": [
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "mypy src"
+          },
+          "negated": false
+        },
+        {
+          "type": "typecheck_clean",
+          "params": {
+            "tool": "mypy"
+          },
+          "negated": true
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 77
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d29",
+      "style": "claude-code",
+      "report": "Reverted my earlier change to `src/cache.py`; the original TTL logic was correct.\n\nThe cache tests pass again: `pytest tests/test_cache.py` gives 12 passed.\n",
+      "expected": [
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest tests/test_cache.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 12
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d30",
+      "style": "minimal-agent",
+      "report": "The run_tests tool errored twice (timeout), so I ran `python -m pytest -x` through bash instead. Result: 1 failed, 33 passed. The failure is test_parse_empty, which I fixed afterwards, but I did not rerun the suite after that fix.\n",
+      "expected": [
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "python -m pytest -x"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 33,
+            "failed": 1
+          },
+          "negated": false
+        },
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "The failure is test_parse_empty"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "the suite"
+          },
+          "negated": true
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d31",
+      "style": "claude-code",
+      "report": "## Results\n- Unit tests: ✅ 48 passed (`pytest tests/unit`)\n- Integration tests: ❌ 2 failed (`pytest tests/integration`), both need a running Redis\n- Lint: ✅ (`ruff check .`)\n",
+      "expected": [
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 48
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest tests/unit"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {
+            "scope": "integration"
+          },
+          "negated": true
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest tests/integration"
+          },
+          "negated": false
+        },
+        {
+          "type": "lint_clean",
+          "params": {
+            "tool": "ruff"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "ruff check ."
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d32",
+      "style": "openhands",
+      "report": "I have completed the requested changes. The function `merge_intervals` in `intervals.py` now correctly merges overlapping and adjacent intervals. I added three test cases to `test_intervals.py`, and all tests pass when running `python -m unittest`.\n",
+      "expected": [
+        {
+          "type": "task_complete",
+          "params": {},
+          "negated": false
+        },
+        {
+          "type": "tests_added",
+          "params": {
+            "path": "test_intervals.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "test_intervals.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {
+            "scope": "all"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "python -m unittest"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "`merge_intervals` now correctly merges overlapping and adjacent intervals"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "intervals.py"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d33",
+      "style": "claude-code",
+      "report": "Unable to reproduce the reported crash on macOS: the sandbox only runs Linux. I added defensive handling for a `None` config path in `cli/main.py` anyway, plus a test for it.\n",
+      "expected": [
+        {
+          "type": "could_not",
+          "params": {
+            "description": "reproduce the reported crash on macOS"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "cli/main.py"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "tests_added",
+          "params": {
+            "target": "it"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d34",
+      "style": "claude-code",
+      "report": "### Checklist\n- [x] Add `--limit` option to `list` command\n- [x] Update help text\n- [ ] Add integration test (blocked: needs the staging API)\n",
+      "expected": [],
+      "model_only": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "`--limit` option to `list` command"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_added",
+          "params": {},
+          "negated": true
+        }
+      ],
+      "note": "Checkbox state is not kept by the segmenter, so imperative checklist items yield no pattern claim."
+    },
+    {
+      "id": "d35",
+      "style": "codex",
+      "report": "Updated `src/parser.rs` to accept trailing commas.\n\nTests not run (no Rust toolchain in this environment).\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/parser.rs"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "tests"
+          },
+          "negated": true
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d36",
+      "style": "claude-code",
+      "report": "eslint passes with 3 warnings (no errors). Prettier formatting applied to `src/**/*.ts`.\n",
+      "expected": [
+        {
+          "type": "lint_clean",
+          "params": {
+            "tool": "eslint"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d37",
+      "style": "aider",
+      "report": "I ran `/run pytest -q` and it shows 2 failures in `tests/test_api.py`. I'll fix those next.\n",
+      "expected": [
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": true
+        }
+      ],
+      "model_only": [
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest -q"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d38",
+      "style": "claude-code",
+      "report": "Installed `date-fns` (`npm install date-fns@3.6.0`) and replaced the hand-rolled date math in `src/utils/dates.ts`.\n\n`npm test` passes; `npm run build` fails with a type error in `src/legacy/report.ts` that predates this change.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/utils/dates.ts"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npm test"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npm run build"
+          },
+          "negated": false
+        },
+        {
+          "type": "build_succeeds",
+          "params": {
+            "tool": "npm run build"
+          },
+          "negated": true
+        }
+      ],
+      "model_only": [
+        {
+          "type": "dependency_added",
+          "params": {
+            "name": "date-fns",
+            "version": "3.6.0"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npm install date-fns@3.6.0"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d39",
+      "style": "minimal-agent",
+      "report": "FINAL REPORT: Modified src/stack.py to raise IndexError on pop from empty stack. All 9 tests pass.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/stack.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 9,
+            "total": 9
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d40",
+      "style": "claude-code",
+      "report": "I updated the retry decorator in `utils/retry.py` to respect `max_attempts`. This should fix the flaky `test_upload_retries`, but I couldn't confirm it because the test needs network access.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "utils/retry.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "could_not",
+          "params": {
+            "description": "confirm it"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d41",
+      "style": "claude-code",
+      "report": "Added docstrings to every public function in `src/geometry.py`; no behavior changes. `pydocstyle src` is clean.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/geometry.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pydocstyle src"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d42",
+      "style": "claude-code",
+      "report": "Renamed `lib/old_name.py` to `lib/new_name.py` and updated all imports.",
+      "expected": [
+        {
+          "type": "file_deleted",
+          "params": {
+            "path": "lib/old_name.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_created",
+          "params": {
+            "path": "lib/new_name.py"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d43",
+      "style": "claude-code",
+      "report": "Here's the test output:\n\n```\n============================= test session starts ==============================\ncollected 23 items\n\ntests/test_queue.py .......................                              [100%]\n\n============================== 23 passed in 0.41s ==============================\n```\n\nAll 23 tests pass.\n",
+      "expected": [
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 23,
+            "total": 23
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d44",
+      "style": "codex",
+      "report": "**Summary**\n- Replaced the regex-based tokenizer in `lexer.py` with a hand-written scanner.\n\n**Testing**\n- `python -m pytest tests/test_lexer.py`\n- Full suite not run: it takes over 10 minutes.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "lexer.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "python -m pytest tests/test_lexer.py"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [],
+      "note": "A negated run of part of the suite (the full suite) is dropped: the verifier matches any test run."
+    },
+    {
+      "id": "d45",
+      "style": "claude-code",
+      "report": "Implemented token refresh in `auth/client.py`. Left a TODO for revoking tokens on logout since the API has no revoke endpoint yet.\n",
+      "expected": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "token refresh in `auth/client.py`"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "auth/client.py"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "revoking tokens on logout"
+          },
+          "negated": true
+        }
+      ]
+    },
+    {
+      "id": "d46",
+      "style": "minimal-agent",
+      "report": "The build succeeds and the CLI prints the version with --version.",
+      "expected": [
+        {
+          "type": "build_succeeds",
+          "params": {},
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "the CLI prints the version with --version"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d47",
+      "style": "claude-code",
+      "report": "Rewrote `find_duplicates` in `src/dedupe.py` to use a hash set, which brings it from O(n^2) to O(n). The benchmark in `bench/dedupe_bench.py` drops from 4.1s to 0.2s on 100k rows.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/dedupe.py"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "other",
+          "params": {
+            "description": "The benchmark drops from 4.1s to 0.2s on 100k rows"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d48",
+      "style": "claude-code",
+      "report": "Wrote 5 new Vitest specs in `src/__tests__/cart.spec.ts` covering discounts and tax rounding. `npx vitest run` → 5 passed.\n",
+      "expected": [
+        {
+          "type": "tests_added",
+          "params": {
+            "path": "src/__tests__/cart.spec.ts",
+            "target": "discounts and tax rounding"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/__tests__/cart.spec.ts"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npx vitest run"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 5
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d49",
+      "style": "claude-code",
+      "report": "I ran the full test suite and everything passes.\n\n```\n$ pytest tests/test_models.py -q\n8 passed in 0.12s\n```\n",
+      "expected": [
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "the full test suite"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": false
+        }
+      ],
+      "model_only": [],
+      "note": "Overclaim fixture: the fenced output shows one test file, not the full suite."
+    },
+    {
+      "id": "d50",
+      "style": "claude-code",
+      "report": "Updated `poetry.lock` after adding `rich` to `pyproject.toml` as a runtime dependency.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "poetry.lock"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "pyproject.toml"
+          },
+          "negated": false
+        },
+        {
+          "type": "dependency_added",
+          "params": {
+            "name": "rich"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d51",
+      "style": "claude-code",
+      "report": "Implemented the `--since` filter. I skipped the time-zone edge cases for now and didn't add tests for them.\n",
+      "expected": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "the `--since` filter"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_added",
+          "params": {},
+          "negated": true
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d52",
+      "style": "codex",
+      "report": "- Implemented `parse_duration(\"1h30m\")` support in `timeparse.py`.\n- Tests: `pytest -q tests/test_timeparse.py` (12 passed)\n- Lint: not run\n",
+      "expected": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "`parse_duration(\"1h30m\")` support in `timeparse.py`"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "timeparse.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest -q tests/test_timeparse.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 12
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "lint"
+          },
+          "negated": true
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d53",
+      "style": "openhands",
+      "report": "I will now run the tests to verify the fix.",
+      "expected": [],
+      "model_only": []
+    },
+    {
+      "id": "d54",
+      "style": "claude-code",
+      "report": "Files changed:\n\n| Status | Path |\n|---|---|\n| M | `src/router.py` |\n| A | `src/middleware/auth.py` |\n| D | `src/middleware/legacy_auth.py` |\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/router.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_created",
+          "params": {
+            "path": "src/middleware/auth.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_deleted",
+          "params": {
+            "path": "src/middleware/legacy_auth.py"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d55",
+      "style": "minimal-agent",
+      "report": "I fixed the bug in utils.py, added tests in tests/test_utils.py, and ran pytest: all 15 tests passed.\n",
+      "expected": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "the bug in utils.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "utils.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_added",
+          "params": {
+            "path": "tests/test_utils.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "tests/test_utils.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 15,
+            "total": 15
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d56",
+      "style": "claude-code",
+      "report": "`parse_csv` no longer drops the last row when the file lacks a trailing newline. Added `test_no_trailing_newline` to `tests/test_csv.py`.\n",
+      "expected": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "`parse_csv` no longer drops the last row when the file lacks a trailing newline"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_added",
+          "params": {
+            "path": "tests/test_csv.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "tests/test_csv.py"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d57",
+      "style": "claude-code",
+      "report": "I ran out of time before finishing the migration to SQLAlchemy 2.0. So far I converted `models/user.py` and `models/order.py`; `models/invoice.py` still uses the 1.4 API.\n",
+      "expected": [
+        {
+          "type": "could_not",
+          "params": {
+            "description": "finishing the migration to SQLAlchemy 2.0"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "models/user.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "models/order.py"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "file_unchanged",
+          "params": {
+            "path": "models/invoice.py"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d58",
+      "style": "claude-code",
+      "report": "`npx eslint .` reports 4 errors (all `no-unused-vars` in `src/old/*.ts`). `npx tsc --noEmit` exits with code 0.\n",
+      "expected": [
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npx eslint ."
+          },
+          "negated": false
+        },
+        {
+          "type": "lint_clean",
+          "params": {
+            "tool": "eslint"
+          },
+          "negated": true
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npx tsc --noEmit"
+          },
+          "negated": false
+        },
+        {
+          "type": "typecheck_clean",
+          "params": {
+            "tool": "tsc"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d59",
+      "style": "claude-code",
+      "report": "Changed the default log level from DEBUG to INFO in `settings/base.py`. `settings/production.py` was left untouched.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "settings/base.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_unchanged",
+          "params": {
+            "path": "settings/production.py"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d60",
+      "style": "claude-code",
+      "report": "Fixed the nil pointer dereference in `internal/server/handler.go` when the request body is empty. `go test ./...` passes and `go vet ./...` reports nothing.\n",
+      "expected": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "the nil pointer dereference in `internal/server/handler.go` when the request body is empty"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "internal/server/handler.go"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "go test ./..."
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "go vet ./..."
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d61",
+      "style": "minimal-agent",
+      "report": "I implemented the function but 3 of 10 tests fail. I am not sure why.",
+      "expected": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "the function"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "total": 10,
+            "failed": 3
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d62",
+      "style": "claude-code",
+      "report": "Added a \"Development\" section to `CONTRIBUTING.md` describing `make test` and `make lint`.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "CONTRIBUTING.md"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d63",
+      "style": "claude-code",
+      "report": "Updated `packages/ui/src/Button.tsx` to forward refs. `pnpm --filter ui test` passes (31 tests) and `pnpm --filter ui build` succeeds.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "packages/ui/src/Button.tsx"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pnpm --filter ui test"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pnpm --filter ui build"
+          },
+          "negated": false
+        },
+        {
+          "type": "build_succeeds",
+          "params": {
+            "tool": "pnpm --filter ui build"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d64",
+      "style": "claude-code",
+      "report": "I believe this resolves the race condition, but I have not verified it under load. The existing tests pass.\n",
+      "expected": [
+        {
+          "type": "tests_pass",
+          "params": {
+            "scope": "existing"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [],
+      "note": "Hedged belief ('I believe this resolves') is not extracted as a bug_fixed claim."
+    },
+    {
+      "id": "d65",
+      "style": "claude-code",
+      "report": "`python -m build` produces both the sdist and the wheel, and `twine check dist/*` passes.\n",
+      "expected": [
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "python -m build"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "build_succeeds",
+          "params": {
+            "tool": "python -m build"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "twine check dist/*"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d66",
+      "style": "openhands",
+      "report": "Commands run:\n- `npm ci`\n- `npm run lint`\n- `npm test -- --coverage`\n",
+      "expected": [
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npm ci"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npm run lint"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npm test -- --coverage"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d67",
+      "style": "codex",
+      "report": "Summary\n- Upgraded `pydantic` to 2.7.1 and migrated `models/user.py` from `@validator` to `@field_validator`.\n- Removed the `pydantic-settings` shim in `compat/settings.py`.\n\nTests\n- `pytest -q` (58 passed)\n",
+      "expected": [
+        {
+          "type": "dependency_updated",
+          "params": {
+            "name": "pydantic",
+            "version": "2.7.1"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "models/user.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "compat/settings.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest -q"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 58
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d68",
+      "style": "aider",
+      "report": "Added `tenacity` to requirements.txt and wrapped `fetch_page` with a retry decorator.\n\nApplied edit to requirements.txt\nApplied edit to scraper/fetch.py\n",
+      "expected": [
+        {
+          "type": "dependency_added",
+          "params": {
+            "name": "tenacity"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "requirements.txt"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "requirements.txt"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "scraper/fetch.py"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "wrapped `fetch_page` with a retry decorator"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d69",
+      "style": "openhands",
+      "report": "I've removed the deprecated `utils/legacy_dates.py` module and updated the two imports that referenced it in `app/main.py`. I did not change `app/config.py`. The test suite passes: 41 passed, 0 failed.\n",
+      "expected": [
+        {
+          "type": "file_deleted",
+          "params": {
+            "path": "utils/legacy_dates.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_unchanged",
+          "params": {
+            "path": "app/config.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 41,
+            "failed": 0
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "app/main.py"
+          },
+          "negated": false
+        }
+      ],
+      "note": "'imports that referenced it in X' is left to the model: 'referenced' stops a path."
+    },
+    {
+      "id": "d70",
+      "style": "claude-code",
+      "report": "Replaced `moment` with `dayjs`:\n\n- `npm uninstall moment && npm install dayjs@1.11.10`\n- Updated date formatting in `src/utils/format.ts` and `src/components/DatePicker.tsx`.\n\n`npm test` reports 46 passing and `npm run build` succeeds.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/utils/format.ts"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/components/DatePicker.tsx"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npm test"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 46
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npm run build"
+          },
+          "negated": false
+        },
+        {
+          "type": "build_succeeds",
+          "params": {
+            "tool": "npm run build"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "dependency_removed",
+          "params": {
+            "name": "moment"
+          },
+          "negated": false
+        },
+        {
+          "type": "dependency_added",
+          "params": {
+            "name": "dayjs",
+            "version": "1.11.10"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "npm uninstall moment && npm install dayjs@1.11.10"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d71",
+      "style": "minimal-agent",
+      "report": "updated requirements.txt: added flask-cors. tests: 3 passed.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "requirements.txt"
+          },
+          "negated": false
+        },
+        {
+          "type": "dependency_added",
+          "params": {
+            "name": "flask-cors"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 3
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d72",
+      "style": "claude-code",
+      "report": "I couldn't upgrade `celery` to 5.4 because it requires Python 3.8+ and this project pins Python 3.7 in `setup.py`. I left `requirements.txt` unchanged.\n",
+      "expected": [
+        {
+          "type": "could_not",
+          "params": {
+            "description": "upgrade `celery` to 5.4"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_unchanged",
+          "params": {
+            "path": "requirements.txt"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d73",
+      "style": "codex",
+      "report": "Changes\n- `api/handlers.py`: return 422 instead of 500 for invalid JSON bodies.\n- `api/tests/test_handlers.py`: add `test_invalid_json_returns_422`.\n\nChecks\n- `pytest api/tests -q` → 19 passed\n- `ruff check api` → clean\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "api/handlers.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "api/tests/test_handlers.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_added",
+          "params": {
+            "path": "api/tests/test_handlers.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest api/tests -q"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 19
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "ruff check api"
+          },
+          "negated": false
+        },
+        {
+          "type": "lint_clean",
+          "params": {
+            "tool": "ruff"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "return 422 instead of 500 for invalid JSON bodies"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d74",
+      "style": "claude-code",
+      "report": "Deleted `scripts/old_deploy.sh` and `scripts/old_backup.sh`, which were no longer referenced anywhere. Renamed `bin/run` to `bin/run.sh`.\n",
+      "expected": [
+        {
+          "type": "file_deleted",
+          "params": {
+            "path": "scripts/old_deploy.sh"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_deleted",
+          "params": {
+            "path": "scripts/old_backup.sh"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_created",
+          "params": {
+            "path": "bin/run.sh"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "file_deleted",
+          "params": {
+            "path": "bin/run"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d75",
+      "style": "minimal-agent",
+      "report": "Fixed. All tests pass and the linter is happy.",
+      "expected": [
+        {
+          "type": "tests_pass",
+          "params": {
+            "scope": "all"
+          },
+          "negated": false
+        },
+        {
+          "type": "lint_clean",
+          "params": {},
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "task_complete",
+          "params": {},
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d76",
+      "style": "claude-code",
+      "report": "Reduced the p95 latency of `/search` from 840ms to 210ms by adding an index on `items.name` in `migrations/0042_add_name_index.py`. The 3 slowest queries now use the index.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "migrations/0042_add_name_index.py"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "other",
+          "params": {
+            "description": "p95 latency of `/search` reduced from 840ms to 210ms"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d77",
+      "style": "codex",
+      "report": "**Summary**\n- Added a `--dry-run` option to `deploy.py` that prints the plan without applying it.\n\n**Testing**\n- ⚠️ Not run (no AWS credentials in the sandbox)\n",
+      "expected": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "a `--dry-run` option to `deploy.py` that prints the plan without applying it"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "deploy.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "the tests"
+          },
+          "negated": true
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d78",
+      "style": "claude-code",
+      "report": "`flake8` reports 0 errors; `pylint` gives the module a 9.6/10 score with two `too-many-arguments` warnings.\n",
+      "expected": [
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "flake8"
+          },
+          "negated": false
+        },
+        {
+          "type": "lint_clean",
+          "params": {
+            "tool": "flake8"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pylint"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d79",
+      "style": "openhands",
+      "report": "The changes should resolve the issue. I have modified `src/parser.py` to strip whitespace before tokenizing. I would recommend running `pytest` to confirm.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/parser.py"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d80",
+      "style": "claude-code",
+      "report": "Final run: 212 passed, 3 skipped, 0 failed (`pytest -q -p no:randomly`).",
+      "expected": [
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 212,
+            "failed": 0
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest -q -p no:randomly"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d81",
+      "style": "claude-code",
+      "report": "Moved `pytest-mock` from runtime dependencies to the `dev` dependency group in `pyproject.toml`.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "pyproject.toml"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "dependency_updated",
+          "params": {
+            "name": "pytest-mock"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d82",
+      "style": "aider",
+      "report": "I fixed the flake8 errors in `app.py` (unused import, line too long). flake8 is clean now.\n",
+      "expected": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "the flake8 errors in `app.py`"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "app.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "lint_clean",
+          "params": {
+            "tool": "flake8"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    }
+  ]
+}

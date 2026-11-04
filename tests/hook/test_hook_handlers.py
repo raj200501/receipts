@@ -127,7 +127,7 @@ def test_concurrent_hooks_keep_the_chain_intact(tmp_path: Path) -> None:
 def seed_failing_ledger(tmp_path: Path) -> Path:
     ledger, st = tmp_path / "ledger.jsonl", HookState(tmp_path / "state")
     work = tmp_path / "w"
-    work.mkdir(exist_ok=True)
+    work.mkdir(parents=True, exist_ok=True)
     record.handle_pre(
         hook(
             "PreToolUse",

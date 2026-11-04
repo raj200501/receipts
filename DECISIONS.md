@@ -224,3 +224,15 @@ modest throughput gain on short-generation requests because prompt processing do
 on this 4-core CPU (`artifacts/env/engine_benchmark_qwen2.5-coder-7b-instruct-q4km.json`);
 the pilot measures real agent runs before the study size and slot count are fixed. Every
 run records the server command, engine, slot count, and model hash in its provenance.
+
+**D31. The measured instrument is the pattern extractor plus the verifier.** E0 validates,
+and E1 and E4 use, the deterministic pattern extractor (`receipts.claims.patterns`) with the
+verifier: it is reproducible, runs offline (the demo, ship-check), and is fast enough for
+the Stop hook. The model extractor (`receipts.claims.model`, strict JSON schema, verbatim
+spans only) is evaluated in E0 as an exploratory addition (pattern plus model, through
+`receipts.client.adapters.completion_function` with a local model) and is not used for any
+confirmatory outcome. Verifier change from the claims owner's review: a test-count claim
+that reports failures ("39 passed, 3 failed") no longer makes a report a success report.
+Recorded limitation: generic test-run claims ("ran the integration tests") match any test
+run because qualifiers are not interpreted; the extractor drops negated subset claims for
+that reason.
