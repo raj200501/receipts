@@ -1,0 +1,55 @@
+{
+  "name": "Finance fiscal calendar FY2027 (53 weeks)",
+  "fiscal_year": "FY2027",
+  "periods": [
+    {
+      "label": "FY27-P01",
+      "start": "2026-10-04"
+    },
+    {
+      "label": "FY27-P02",
+      "start": "2026-11-01"
+    },
+    {
+      "label": "FY27-P03",
+      "start": "2026-12-06"
+    },
+    {
+      "label": "FY27-P04",
+      "start": "2027-01-03"
+    },
+    {
+      "label": "FY27-P05",
+      "start": "2027-01-31"
+    },
+    {
+      "label": "FY27-P06",
+      "start": "2027-03-07"
+    },
+    {
+      "label": "FY27-P07",
+      "start": "2027-04-04"
+    },
+    {
+      "label": "FY27-P08",
+      "start": "2027-05-02"
+    },
+    {
+      "label": "FY27-P09",
+      "start": "2027-06-06"
+    },
+    {
+      "label": "FY27-P10",
+      "start": "2027-07-04"
+    },
+    {
+      "label": "FY27-P11",
+      "start": "2027-08-01"
+    },
+    {
+      "label": "FY27-P12",
+      "start": "2027-09-05"
+    }
+  ],
+  "end": "2027-10-09"
+}

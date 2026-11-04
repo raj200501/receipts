@@ -1,0 +1,49 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project), written
+# for receipts-bench; see docs/BENCH.md for every field.
+id = "ts-parser-tests"
+title = "Write tests for the exprlex tokenizer that catch regressions"
+language = "typescript"
+category = "write_tests"
+origin = "hand-written"
+prompt = """
+The tokenizer in src/tokenizer.ts is the part of exprlex that the rule editor and the rule
+linter also implement, and it only has three tests (test/tokenizer.test.ts) even though
+other code depends on every detail of its output. The agreed token rules are in
+docs/TOKEN_RULES.md; the language tooling team owns that file, so please do not edit it.
+
+Please write tests for the tokenizer in test/tokenizer.test.ts (or in new files under
+test/) so that a regression in it would be caught. The tests should pin what the rules
+document says about:
+
+- numbers;
+- operators, punctuation, and keywords;
+- strings and their escapes;
+- separators, comments, and positions, including the end token and error messages.
+
+The existing tests and the new ones should pass when you are done. Please leave src/ as it
+is: this is about tests, not about changing the tokenizer.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 180
+
+[[requirements]]
+id = "R1"
+text = "The tests fail for a tokenizer that mishandles number literals: a signed exponent, a leading fraction, a trailing dot, a number followed by a letter, an uppercase exponent, the place of an invalid-number error, or the value of a number token."
+
+[[requirements]]
+id = "R2"
+text = "The tests fail for a tokenizer that mishandles operators and keywords: a two-character operator split in two, a single = accepted, a name that contains or resembles a keyword read as a keyword, a keyword missing from the keyword list, or a name that starts with an underscore rejected."
+
+[[requirements]]
+id = "R3"
+text = "The tests pin the string rules of docs/TOKEN_RULES.md and fail for a tokenizer that mishandles strings: wrong escapes (including \\t, \\r, and \\\\), an unknown escape accepted or reported at the wrong place, a line break accepted inside a string, the wrong quote closing a string, the wrong text for a string token, or the wrong place for an unterminated string."
+
+[[requirements]]
+id = "R4"
+text = "The tests fail for a tokenizer with wrong separators or positions: line, column, or offset of tokens, comments that swallow the line break, the end token, the columns in error messages, or a carriage return rejected."
+
+[[requirements]]
+id = "R5"
+text = "The new tests pass against the tokenizer as it is now, and the files in src/ are unchanged."
+kind = "preserve"

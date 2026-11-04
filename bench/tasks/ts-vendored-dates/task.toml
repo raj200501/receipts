@@ -1,0 +1,60 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project), written
+# for receipts-bench; see docs/BENCH.md for every field.
+id = "ts-vendored-dates"
+title = "Move dueby from datekit 1.4.2 to the vendored 2.0.0 and add fiscal periods"
+language = "typescript"
+category = "dependency_bump"
+origin = "hand-written"
+prompt = """
+The platform team released datekit 2.0.0 and we have vendored it in vendor/datekit-2.0.0/
+next to 1.4.2. Its CHANGELOG.md lists the breaking changes and its README.md describes the
+fiscal calendars. Please move dueby to 2.0.0: switch the imports in src/ and adapt the
+call sites to the new API, and update the tests and the README where they describe the old
+behavior. Leave the vendored files as they are.
+
+We want the new date behavior in dueby too:
+
+- month arithmetic should stop at the end of a shorter month instead of rolling over, so
+  one month after 2027-01-31 is 2027-02-28 and a monthly schedule that starts on the 31st
+  falls on the last day of the shorter months;
+- a date that does not exist, such as 2027-02-30, should be an error in every command that
+  reads dates, with exit status 2, instead of being moved into the next month.
+
+Finance also wants fiscal periods in the output now that datekit can read their calendar
+files. Add a --fiscal option to dueby due and dueby schedule that appends the label of the
+fiscal period the due date (or the instalment date) falls in, for example [FY27-P03], or
+[no fiscal period] for a date outside the calendar. The calendar for the year is
+data/fiscal-fy2027.json; --calendar FILE should read another calendar file instead. A
+calendar file that cannot be read or is not a valid calendar should stop the command with
+exit status 2.
+
+Everything else should print what it prints today.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "Month arithmetic clamps to the end of the shorter month as datekit 2.0.0 does: dueby due 2027-01-31 1m gives 2027-02-28 (2028-02-29 in a leap year), twelve months after 2024-02-29 is 2025-02-28, and dueby schedule from the 31st uses the last day of each shorter month and the 31st again afterwards."
+
+[[requirements]]
+id = "R2"
+text = "A date that does not exist (2027-02-30, 2027-04-31, 2027-02-29, or month 13) stops dueby due, schedule, status, and between with exit status 2, nothing on standard output, and a message starting with dueby: that names the date, instead of rolling it into the next month."
+
+[[requirements]]
+id = "R3"
+text = "dueby due and dueby schedule accept --fiscal with --calendar FILE: it appends the fiscal period label of the due date or instalment date from that calendar file (such as [FY27-P03]), or [no fiscal period] for a date outside the calendar; a calendar file that cannot be read or is not valid stops the command with exit status 2."
+
+[[requirements]]
+id = "R4"
+text = "Without --calendar, dueby due --fiscal and dueby schedule --fiscal read data/fiscal-fy2027.json, the repository's FY2027 calendar, and label dates with its period labels."
+
+[[requirements]]
+id = "R5"
+text = "The code in src/ imports vendor/datekit-2.0.0/datekit.ts and nothing in src/ or bin/ imports vendor/datekit-1.4.2, and the vendored files under vendor/ are unchanged."
+
+[[requirements]]
+id = "R6"
+text = "Everything else prints as before: weekday and month names, net, eom, eom+N and whole-month terms, --business, status (overdue, due today, due in), between (negative when the second date is earlier), 29 February of a leap year is accepted, and badly formed input still exits with status 2."
+kind = "preserve"
