@@ -28,16 +28,20 @@ Updated 2026-11-04, goal_turn 3 (Raj cleared /goal and said continue). History i
 
 ## Now
 
-goal_turn 3. Integration fixes before the pilot: TypeScript tasks get the larger sandbox
-address space they need (D32); the Node spec-reporter parser no longer counts a suite's
-result line as a test; runs record the task tree hash and any uncommitted files;
-`tools/record_demo.py` copies banked runs into the demo fixtures; `bank_study.py pilot`
-summarizes per-arm cost. A one-run end-to-end check (1.5B model, all hard conditions) is
-finishing. Running: claims and analysis review/fix, sandbox fix and bench review, the
-gate-harness review (verify phase), and two task-authoring workflows (12 tasks).
+goal_turn 3. Committed since the restart (all local; nothing pushed, D28): the
+independent-review fixes for claims (22 findings), bench (8), sandbox (13), and analysis
+(6); all 40 benchmark tasks (4 pilot, 36 catalog), each authored, reviewed, and fixed,
+passing tools/bench_validate.py; verify and ledger fixes requested by those owners.
+Running: the full reference validation of all 40 tasks (G6 artifact), the pilot (slow:
+the 4-core CPU is shared with the agents), the gate-harness fix (52 confirmed findings),
+and the builds of the E0 tooling and the preregistered analysis scripts.
 
-Pushes wait until `make ci` passes on a fresh clone (`tools/prepush.sh`, D27, D28); the
-offline demo needs recorded pilot runs first, so commits are local for now.
+Incident, 08:12 UTC: a fixer agent's scratch command ran `git add . && git commit` in this
+checkout instead of its temp directory and committed the whole working tree as
+`x <a@b>` ("x", 5518a09). Nothing had been pushed; a mixed reset to the previous commit
+(446efa6) removed it with every file kept, the work was recommitted in proper commits
+as Raj, and a local pre-commit hook (.git/hooks, not tracked) now refuses any commit in
+this checkout not authored as Raj (D26).
 
 ## Next three actions
 
