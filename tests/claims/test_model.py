@@ -13,6 +13,7 @@ from receipts.claims.model import (
     REQUIRED_PARAMS,
     ModelExtractor,
     build_prompt,
+    grounded_params,
     normalize_command,
     normalize_params,
     parse_response,
@@ -35,9 +36,28 @@ def reply(*claims: dict[str, object]) -> str:
 
 
 def item(
-    claim_type: str, text: str, params: dict[str, object] | None = None, negated: bool = False
+    claim_type: str,
+    text: str,
+    params: dict[str, object] | None = None,
+    negated: bool = False,
+    passage: int = 1,
 ) -> dict[str, object]:
-    return {"type": claim_type, "text": text, "params": params or {}, "negated": negated}
+    return {
+        "passage": passage,
+        "type": claim_type,
+        "text": text,
+        "params": params or {},
+        "negated": negated,
+    }
+
+
+def passage_of(prompt: str, text: str) -> int:
+    """The number of the prompt passage ("P2: ...") that contains ``text`` (0 for none)."""
+    for line in prompt.splitlines():
+        head, _, body = line.partition(": ")
+        if head.startswith("P") and head[1:].isdigit() and text in body:
+            return int(head[1:])
+    return 0
 
 
 class FakeModel:
@@ -60,7 +80,8 @@ def test_schema_lists_every_claim_type_and_known_param() -> None:
     entry = claims["items"]
     assert CLAIM_JSON_SCHEMA["required"] == ["claims"] and claims["type"] == "array"
     assert entry["properties"]["type"]["enum"] == [t.value for t in ClaimType]
-    assert entry["required"] == ["type", "text", "params", "negated"]
+    assert entry["required"] == ["passage", "type", "text", "params", "negated"]
+    assert entry["properties"]["passage"] == {"type": "integer", "minimum": 1}
     assert entry["additionalProperties"] is False
     params = entry["properties"]["params"]
     assert params["additionalProperties"] is False
@@ -98,8 +119,19 @@ def test_schema_errors_accepts_a_valid_reply() -> None:
         ({"claims": [item("test_count", "x", {"passed": True})]}, "expected integer or null"),
         ({"claims": [item("test_count", "x", {"passed": "3"})]}, "expected integer or null"),
         ({"claims": [item("other", "x", {"colour": "red"})]}, "unexpected key 'colour'"),
-        ({"claims": [{"type": "other", "text": "x", "params": {}}]}, "missing 'negated'"),
-        ({"claims": [item("other", "x", negated="no")]}, "negated: expected boolean"),  # type: ignore[arg-type]
+        (
+            {"claims": [{"passage": 1, "type": "other", "text": "x", "params": {}}]},
+            "missing 'negated'",
+        ),
+        ({"claims": [item("other", "x", passage=0)]}, "0 is below 1"),
+        (
+            {"claims": [{"type": "other", "text": "x", "params": {}, "negated": False}]},
+            "missing 'passage'",
+        ),
+        (
+            {"claims": [item("other", "x", negated="no")]},  # type: ignore[arg-type]  # not a bool
+            "negated: expected boolean",
+        ),
     ],
 )
 def test_schema_errors_reports_each_problem(data: object, fragment: str) -> None:
@@ -261,6 +293,19 @@ def test_normalize_params(
     assert normalize_params(claim_type, params, negated) == expected
 
 
+def test_grounded_params_passes_malformed_values_on_and_rejects_empty_commands() -> None:
+    # Values of the wrong JSON type are left for normalize_params to reject.
+    assert grounded_params({"path": ["a.py"], "passed": True}, "Updated a.py") == {
+        "path": ["a.py"],
+        "passed": True,
+    }
+    assert grounded_params({"command": "``"}, "Ran it") is None
+    assert grounded_params({"version": "latest", "name": "django"}, "Upgraded django") == {
+        "version": "latest",
+        "name": "django",
+    }
+
+
 # --- prompt --------------------------------------------------------------------------------
 
 
@@ -335,7 +380,14 @@ def test_parse_response_drops_claims_that_fail_a_check() -> None:
         item("tests_pass", "unit tests pass"),  # case differs: not verbatim
         item("other", "..."),  # no letter or digit
         item("file_modified", "The old shim is gone", {"path": "the shim"}),  # bad path
-        {"type": "tests_pass", "text": "Unit tests pass", "params": {}, "negated": False, "x": 1},
+        {
+            "passage": 1,
+            "type": "tests_pass",
+            "text": "Unit tests pass",
+            "params": {},
+            "negated": False,
+            "x": 1,
+        },
         item("lint_clean", "Unit tests pass", {"scope": "unit"}),  # wrong param for type
         item(
             "file_deleted",
@@ -356,6 +408,94 @@ def test_parse_response_within_picks_an_occurrence_inside_the_spans() -> None:
     assert [c.span for c in parse_response(text, report)] == [(0, 5)]
     assert [c.span for c in parse_response(text, report, within=[later])] == [later]
     assert parse_response(text, report, within=[(6, 20)]) == []
+    assert (
+        parse_response(reply(item("task_complete", "Done.", passage=2)), report, within=[later])
+        == []
+    )
+
+
+def test_parse_response_places_identical_texts_in_the_passage_they_name() -> None:
+    report = "The cache is warm.\n\nSome notes here.\n\nThe cache is warm."
+    spans = [u.span for u in segment(report).units]
+    text = reply(
+        item("other", "The cache is warm.", {"description": "cache warm"}, passage=1),
+        item("other", "The cache is warm.", {"description": "cache still warm"}, passage=3),
+    )
+    claims = parse_response(text, report, within=spans)
+    assert [c.span for c in claims] == [spans[0], spans[2]]
+
+
+#: (claim text, type, params the model gave, params kept or None when the claim is
+#: rejected). Identifying params the text never states are invented, so the claim goes;
+#: a tool or scope the text does not name is dropped and the claim kept; descriptions may
+#: paraphrase. Hand-written test input.
+GROUNDING_CASES: list[tuple[str, str, dict[str, object], dict[str, object] | None]] = [
+    ("I updated the config", "file_modified", {"path": "src/settings/prod.py"}, None),
+    (
+        "I updated `src/settings/prod.py:12`",
+        "file_modified",
+        {"path": "src/settings/prod.py"},
+        {"path": "src/settings/prod.py"},
+    ),
+    ("Updated src/app.py", "file_modified", {"path": "app.py"}, {"path": "app.py"}),
+    ("Updated data.py", "file_modified", {"path": "a.py"}, None),
+    ("Added a test", "tests_added", {"path": "tests/test_x.py"}, None),
+    ("the service", "dependency_added", {"name": "requests", "version": "2.32"}, None),
+    ("Added Requests", "dependency_added", {"name": "requests"}, {"name": "requests"}),
+    (
+        "Added `typing-extensions`",
+        "dependency_added",
+        {"name": "typing_extensions"},
+        {"name": "typing_extensions"},
+    ),
+    ("Bumped lodash", "dependency_updated", {"name": "lodash", "version": "4.17.21"}, None),
+    (
+        "Bumped lodash to v4.17.21",
+        "dependency_updated",
+        {"name": "lodash", "version": "4.17.21"},
+        {"name": "lodash", "version": "4.17.21"},
+    ),
+    ("The cache is warm.", "ran_command", {"command": "pytest -q"}, None),
+    ("Ran `$ pytest -q`", "ran_command", {"command": "$ pytest -q"}, {"command": "pytest -q"}),
+    (
+        "I ran the slow tests",
+        "ran_command",
+        {"command": "the slow tests"},
+        {"command": "the tests"},
+    ),
+    ("More notes.", "test_count", {"passed": 99, "total": 99}, None),
+    ("All 42 tests pass", "test_count", {"passed": 42, "total": 42}, {"passed": 42, "total": 42}),
+    ("All 42 tests pass", "test_count", {"passed": 42, "total": 42, "failed": 0}, None),
+    (
+        "twelve passed, none failed",
+        "test_count",
+        {"passed": 12, "failed": 0},
+        {"passed": 12, "failed": 0},
+    ),
+    ("Lint is clean", "lint_clean", {"tool": "ruff"}, {}),
+    ("ruff is clean", "lint_clean", {"tool": "ruff"}, {"tool": "ruff"}),
+    ("The suite is green", "tests_pass", {"scope": "all"}, {}),
+    (
+        "Fixed the date bug",
+        "bug_fixed",
+        {"description": "dates before 1970"},
+        {"description": "dates before 1970"},
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("text", "claim_type", "params", "kept"), GROUNDING_CASES, ids=[c[0] for c in GROUNDING_CASES]
+)
+def test_parse_response_requires_params_stated_in_the_text(
+    text: str, claim_type: str, params: dict[str, object], kept: dict[str, object] | None
+) -> None:
+    report = f"Notes. {text} More notes."
+    claims = parse_response(reply(item(claim_type, text, params)), report)
+    if kept is None:
+        assert claims == []
+    else:
+        assert [dict(c.params) for c in claims] == [kept]
 
 
 def test_parse_response_applies_normalization() -> None:
@@ -401,6 +541,8 @@ def test_model_extractor_batches_units_and_keeps_claims_inside_them() -> None:
                 {"path": "src/compat.py"},
             ),
         ]
+        for claim in claims:  # each claim names the passage its text is in (0: not sent)
+            claim["passage"] = passage_of(prompt, str(claim["text"])) or 99
         return reply(*claims)
 
     fake = FakeModel(answer)
@@ -428,7 +570,8 @@ def test_model_extractor_dedupes_identical_claims_of_one_unit() -> None:
         item("tests_pass", "Unit tests pass", {"scope": "all"}),
     )
     claims = ModelExtractor(lambda prompt: text).extract(report, units_of(report))
-    assert [dict(c.params) for c in claims] == [{"scope": "unit"}, {"scope": "all"}]
+    # the text never says "all", so that scope is dropped, which leaves a different claim
+    assert [dict(c.params) for c in claims] == [{"scope": "unit"}, {}]
 
 
 def test_model_extractor_lets_model_errors_propagate() -> None:

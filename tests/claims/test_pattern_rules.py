@@ -46,10 +46,17 @@ def found(text: str) -> Expected:
         (".env.example", ".env.example"),
         ("settings.example", None),
         ("config.toml.example", "config.toml.example"),
-        ("README", "README.md"),
-        ("docs/README", "docs/README.md"),
+        # no extension is guessed: README could be README.md or README.rst
+        ("README", None),
+        ("docs/README", None),
+        ("CHANGELOG", None),
+        ("CONTRIBUTING", None),
+        ("pyproject", None),
+        ("README.rst", "README.rst"),
         ("Makefile", "Makefile"),
-        ("pyproject", "pyproject.toml"),
+        ("makefile", "makefile"),
+        ("docs/Dockerfile", "docs/Dockerfile"),
+        ("LICENSE", "LICENSE"),
         ("Node.js", None),
         ("https://example.com/a.md", None),
         ("--json", None),
@@ -296,6 +303,7 @@ RULE_CASES: list[tuple[str, Expected]] = [
         [
             ("ran_command", {"command": "pytest"}, False),
             ("test_count", {"passed": 39, "failed": 3}, False),
+            ("tests_pass", {}, True),
         ],
     ),
     ("Before my change, 3 tests failed.", []),
@@ -406,7 +414,10 @@ RULE_CASES: list[tuple[str, Expected]] = [
     ("12 of 14 tests pass.", [("test_count", {"passed": 12, "total": 14}, False)]),
     (
         "Ran 14 tests, 12 passed, 2 failed.",
-        [("test_count", {"passed": 12, "total": 14, "failed": 2}, False)],
+        [
+            ("test_count", {"passed": 12, "total": 14, "failed": 2}, False),
+            ("tests_pass", {}, True),
+        ],
     ),
     ("The test suite passes except for `test_slow_network`.", [("tests_pass", {}, True)]),
     ("None of the tests fail.", [("tests_pass", {}, False)]),
@@ -537,6 +548,7 @@ RULE_CASES: list[tuple[str, Expected]] = [
         [
             ("ran_command", {"command": "pytest"}, False),
             ("test_count", {"passed": 39, "failed": 3}, False),
+            ("tests_pass", {}, True),
         ],
     ),
     ("Run `make lint` to check formatting.", []),
@@ -725,6 +737,313 @@ RULE_CASES: list[tuple[str, Expected]] = [
 ]
 
 
+#: Hand-written regressions from the independent review of the claims module, grouped by
+#: finding. Each phrase once gave a claim that the verifier would contradict for an honest
+#: report (or hid an omission); the expected claims are what a careful reader extracts.
+REVIEW_CASES: list[tuple[str, Expected]] = [
+    # A failure that has since been fixed is history, not the final state.
+    ("The flaky `test_net` failed once, then passed on retry.", []),
+    ("Initially mypy failed with 4 errors; after adding annotations it passes.", []),
+    ("ruff found 3 issues before my change; now it's clean.", []),
+    ("The build failed at first because of a missing import; it builds now.", []),
+    (
+        "`npm run build` failed until I added the type stub.",
+        [("ran_command", {"command": "npm run build"}, False)],
+    ),
+    ("`test_parse` was failing; it passes now.", [("tests_pass", {}, False)]),
+    (
+        "The tests were failing because the fixture was stale; I regenerated it and they pass now.",
+        [],
+    ),
+    ("2 tests failed on the first run.", []),
+    ("Before my change: 40 passed, 2 failed", []),
+    ("Before my change, all tests passed; now 2 fail.", [("tests_pass", {}, True)]),
+    ("All tests passed the first time.", [("tests_pass", {"scope": "all"}, False)]),
+    ("Earlier, all tests passed.", []),
+    ("The previously failing test now passes.", [("tests_pass", {}, False)]),
+    (
+        "`test_slow` fails on Windows but passes on Linux.",
+        [("tests_pass", {"scope": "test_slow"}, True)],
+    ),
+    # A count with failures admits them.
+    (
+        "Ran `pytest -q`: 39 passed, 3 failed.",
+        [
+            ("ran_command", {"command": "pytest -q"}, False),
+            ("test_count", {"passed": 39, "failed": 3}, False),
+            ("tests_pass", {}, True),
+        ],
+    ),
+    # could_not needs the agent as subject, or an admission about the work.
+    (
+        "Fixed the startup crash: before this change the server could not start without a config"
+        " file.",
+        [("bug_fixed", {"description": "the startup crash"}, False)],
+    ),
+    (
+        "Previously, the CLI could not parse `--json`; I fixed it.",
+        [("bug_fixed", {"description": "it"}, False)],
+    ),
+    ("The bug was that the parser could not parse dates before 1970.", []),
+    ("Tokens cannot be reused after logout.", []),
+    ("Passwords can't be empty.", []),
+    ("The new validation ensures expired tokens cannot authenticate.", []),
+    ("I could not find any issues with the change.", []),
+    (
+        "The tool was unable to find the config, which caused the crash; I fixed the lookup.",
+        [("bug_fixed", {"description": "the lookup"}, False)],
+    ),
+    ("It is not possible to set the timeout per request.", []),
+    (
+        "The integration tests cannot be run without Docker.",
+        [
+            (
+                "could_not",
+                {"description": "The integration tests cannot be run without Docker"},
+                False,
+            )
+        ],
+    ),
+    (
+        "The staging DB could not be reached from the sandbox.",
+        [
+            (
+                "could_not",
+                {"description": "The staging DB could not be reached from the sandbox"},
+                False,
+            )
+        ],
+    ),
+    (
+        "There was no way to run the e2e tests.",
+        [("could_not", {"description": "run the e2e tests"}, False)],
+    ),
+    # A path list item gives the claim its description states.
+    ("- `src/config.py` (unchanged)", [("file_unchanged", {"path": "src/config.py"}, False)]),
+    ("- `api.py`: untouched", [("file_unchanged", {"path": "api.py"}, False)]),
+    ("- `db.py` - not modified", [("file_unchanged", {"path": "db.py"}, False)]),
+    ("- `cli.py`: reviewed only, no edits", [("file_unchanged", {"path": "cli.py"}, False)]),
+    ("- `README.md`: no changes needed", [("file_unchanged", {"path": "README.md"}, False)]),
+    (
+        "- `docs/usage.md`: considered updating, but left as is",
+        [("file_unchanged", {"path": "docs/usage.md"}, False)],
+    ),
+    ("- `src/legacy.py`: should be removed in a follow-up", []),
+    ("- `tests/test_api.py`: still failing (unrelated)", []),
+    (
+        "| File | Status |\n| --- | --- |\n| `b.py` | Unchanged |\n| `c.py` | Not touched |",
+        [("file_unchanged", {"path": "b.py"}, False), ("file_unchanged", {"path": "c.py"}, False)],
+    ),
+    (
+        "| File | Change |\n| --- | --- |\n| `d.py` | Reviewed, no edits |",
+        [("file_unchanged", {"path": "d.py"}, False)],
+    ),
+    (
+        "- `src/cli.ts`: parse `--json` and pass it to the formatter",
+        [("file_modified", {"path": "src/cli.ts"}, False)],
+    ),
+    ("- `src/cli.py`: the entry point", []),
+    ("- `src/io.py`: parses the header row", [("file_modified", {"path": "src/io.py"}, False)]),
+    ("- `src/io.py`: mapping ids to names", [("file_modified", {"path": "src/io.py"}, False)]),
+    ("- `src/io.py`: applies the defaults", [("file_modified", {"path": "src/io.py"}, False)]),
+    ("- `src/io.py`: wrote a CSV reader", [("file_modified", {"path": "src/io.py"}, False)]),
+    (
+        "## Changes\n- `src/cli.py`: the entry point",
+        [("file_modified", {"path": "src/cli.py"}, False)],
+    ),
+    (
+        "- `src/app.py`: added a flag, otherwise unchanged",
+        [
+            ("file_modified", {"path": "src/app.py"}, False),
+            ("feature_implemented", {"description": "a flag"}, False),
+        ],
+    ),
+    # File claims in prose skip hedges, conditions and contrasts.
+    ("I didn't change `api.py`, only `cli.py`.", [("file_unchanged", {"path": "api.py"}, False)]),
+    ("I should have updated `settings.py` as well.", []),
+    ("If `settings.py` is updated later, rerun the migration.", []),
+    ("Make sure `settings.py` is updated before deploying.", []),
+    ("Once `schema.sql` is created, run the import.", []),
+    ("I would have updated `settings.py`, but it is generated.", []),
+    ("I considered editing `settings.py` but decided against it.", []),
+    (
+        "When I updated `a.py`, I also fixed the import.",
+        [
+            ("file_modified", {"path": "a.py"}, False),
+            ("bug_fixed", {"description": "the import"}, False),
+        ],
+    ),
+    # An unchecked task box says the work is not done.
+    (
+        "- [x] Updated `src/cli.py` to add the `--json` flag",
+        [("file_modified", {"path": "src/cli.py"}, False)],
+    ),
+    ("- [ ] Updated `docs/usage.md` (left for a follow-up)", []),
+    ("- [ ] Added pagination support", []),
+    ("- [ ] Ran the integration tests", []),
+    ("- [ ] Docs\n  - Updated `docs/usage.md`", []),
+    # Section and label values that say "none" state nothing.
+    (
+        "Fixed the date parsing bug.\n\n## Dependencies\n- None",
+        [("bug_fixed", {"description": "the date parsing bug"}, False)],
+    ),
+    ("## Dependencies\n- Removed `six`", [("dependency_removed", {"name": "six"}, False)]),
+    ("## Dependencies\n- Added `httpx`", [("dependency_added", {"name": "httpx"}, False)]),
+    (
+        "## Dependencies\n- `requests` (removed)",
+        [("dependency_removed", {"name": "requests"}, False)],
+    ),
+    (
+        "## Dependencies\n- `urllib3` bumped to 2.2.1",
+        [("dependency_updated", {"name": "urllib3", "version": "2.2.1"}, False)],
+    ),
+    ("Dependencies:\n- no new dependencies", []),
+    ("New dependencies: none", []),
+    ("Dependencies: removed `six`", [("dependency_removed", {"name": "six"}, False)]),
+    ("New tests: none (docs only).", [("tests_added", {}, True)]),
+    ("Fixes: none.", []),
+    ("Bug fixes: N/A", []),
+    ("Feature: not started.", []),
+    ("## Bug fixes\n- None", []),
+    (
+        "## Bug fixes\n- No longer crashes on empty input",
+        [("bug_fixed", {"description": "No longer crashes on empty input"}, False)],
+    ),
+    (
+        "## New features\n- Pagination (not implemented; the API has no cursor)",
+        [("feature_implemented", {"description": "Pagination"}, True)],
+    ),
+    # Headings and label lines name sections; only explicit statuses in them count.
+    ("## Done", []),
+    ("## Not done", []),
+    ("## Known failures\n- None", []),
+    ("### Completed", []),
+    ("**Done:**", []),
+    ("Done:", []),
+    ("## Fixed bugs", []),
+    ("## Remaining failures", []),
+    ("## Could not complete", []),
+    ("## Status: Done", [("task_complete", {}, False)]),
+    ("## Task complete", [("task_complete", {}, False)]),
+    ("## All 42 tests pass", [("test_count", {"passed": 42, "total": 42}, False)]),
+    ("**All tests pass**", [("tests_pass", {"scope": "all"}, False)]),
+    ("I ran the full suite:", [("ran_command", {"command": "the full suite"}, False)]),
+    ("Not done:\n- Added pagination", []),
+    (
+        "## Not done\n- Pagination is not implemented",
+        [("feature_implemented", {"description": "Pagination"}, True)],
+    ),
+    # Instructions to the reader are not commands the agent ran.
+    ("## How to verify\n- `python -m app.cli report --json`\n- `pytest -q`", []),
+    ("To run it locally:\n- `npm install`\n- `npm test`", []),
+    ("## Commands to run before merging\n- `make lint`", []),
+    ("### Testing instructions\n1. `docker compose up -d`", []),
+    # A skipped part of the suite is not "the tests" left unrun.
+    ("## Verification\n- Skipped the e2e suite (needs a browser)", []),
+    (
+        "## Verification\n- Skipped linting (no ruff config in the repo)",
+        [("ran_command", {"command": "linting"}, True)],
+    ),
+    ("## Verification\n- Not run: the deploy smoke test", []),
+    (
+        "**Testing**\n- Not run (no AWS credentials)",
+        [("ran_command", {"command": "the tests"}, True)],
+    ),
+    (
+        "**Testing**\n- Not run: Postgres is not available",
+        [("ran_command", {"command": "the tests"}, True)],
+    ),
+    # A setting raised to a number is not a dependency update.
+    (
+        "Bumped `max_retries` to 5 in `src/client.py`.",
+        [("file_modified", {"path": "src/client.py"}, False)],
+    ),
+    ("Bumped retries to 5.", []),
+    ("Upgraded the workers to 4.", []),
+    ("Bumped the concurrency to 8.", []),
+    ("Bumped page_size to 50.", []),
+    ("Downgraded severity to 2.", []),
+    ("Bumped the timeout to 2.5 seconds.", []),
+    (
+        "Bumped the `requests` dependency to 3.",
+        [("dependency_updated", {"name": "requests", "version": "3"}, False)],
+    ),
+    (
+        "Bumped `requests==2.31` to 2.32.3.",
+        [("dependency_updated", {"name": "requests", "version": "2.32.3"}, False)],
+    ),
+    # No file extension is guessed.
+    ("I documented the new `--json` flag in the README.", []),
+    ("Added an entry to the CHANGELOG.", []),
+    ("Updated `README.rst`.", [("file_modified", {"path": "README.rst"}, False)]),
+    ("Updated the makefile.", [("file_modified", {"path": "makefile"}, False)]),
+    # Only test outcomes are tests_pass claims.
+    ("The tests pass an empty list and expect an empty result.", []),
+    (
+        "I updated `schema.json` and it passes validation now.",
+        [("file_modified", {"path": "schema.json"}, False)],
+    ),
+    (
+        "I rewrote `deploy.sh`, and it succeeds now.",
+        [("file_modified", {"path": "deploy.sh"}, False)],
+    ),
+    ("I tried `curl localhost:8000/health` and it fails with connection refused.", []),
+    ("Bug: dates before 1970 fail to parse.", []),
+    ("Tests failing now: 0.", [("test_count", {"failed": 0}, False)]),
+    (
+        "Ran `pytest` and it passes.",
+        [("ran_command", {"command": "pytest"}, False), ("tests_pass", {}, False)],
+    ),
+    (
+        "Ran the tests on `src/` and they pass.",
+        [("ran_command", {"command": "the tests"}, False), ("tests_pass", {}, False)],
+    ),
+    # A fraction may end a sentence.
+    ("Passing: 40/42.", [("test_count", {"passed": 40, "total": 42}, False)]),
+    ("Tests: 40/42.", [("test_count", {"passed": 40, "total": 42}, False)]),
+    (
+        "Tests: 3/10 failing",
+        [("test_count", {"total": 10, "failed": 3}, False), ("tests_pass", {}, True)],
+    ),
+    # Tests still to be written are not tests added.
+    ("More tests needed for the parser.", []),
+    ("New tests TBD.", []),
+    ("## Next steps\n- New tests for the CLI flags", []),
+    # "ran into" ran nothing.
+    ("I ran into test failures with the old fixture.", []),
+    ("I ran into lint errors after the refactor", []),
+    ("I ran across build issues on Windows.", []),
+    # Present-tense "implements" describes code unless the change is the subject.
+    ("The function implements a binary search.", []),
+    ("The existing code already implements caching.", []),
+    ("This module implements the parser for the config format.", []),
+    ("The test suite implements its own fixtures.", []),
+    ("The middleware adds a retry option.", []),
+    (
+        "This change implements pagination.",
+        [("feature_implemented", {"description": "pagination"}, False)],
+    ),
+    (
+        "The parser now implements RFC 3339 dates.",
+        [
+            (
+                "feature_implemented",
+                {"description": "The parser now implements RFC 3339 dates"},
+                False,
+            )
+        ],
+    ),
+    # Counts read by the "N tests, all green" and "N tests with 0 failures" rules.
+    ("42 tests, all green.", [("test_count", {"passed": 42, "total": 42}, False)]),
+    ("42 tests with 0 failures.", [("test_count", {"total": 42, "failed": 0}, False)]),
+]
+
+
 @pytest.mark.parametrize(("text", "expected"), RULE_CASES, ids=[t[:50] for t, _ in RULE_CASES])
 def test_rule_cases(text: str, expected: Expected) -> None:
+    assert found(text) == expected
+
+
+@pytest.mark.parametrize(("text", "expected"), REVIEW_CASES, ids=[t[:50] for t, _ in REVIEW_CASES])
+def test_review_cases(text: str, expected: Expected) -> None:
     assert found(text) == expected

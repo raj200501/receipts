@@ -8,6 +8,7 @@ it is deterministic.
 from __future__ import annotations
 
 import random
+import time
 
 import pytest
 
@@ -38,6 +39,37 @@ def test_seeded_fuzz_never_raises_and_keeps_spans() -> None:
     rng = random.Random(20261104)
     for _ in range(400):
         assert_consistent("".join(rng.choice(PIECES) for _ in range(rng.randint(0, 60))))
+
+
+#: Opening words that the filler rules repeat ("So, and also ..."). Each is followed by
+#: runs of spaces, the shape that once made the rules backtrack exponentially (8 fillers
+#: with 6 spaces each took 30 seconds; Markdown masking turns "**and**" into such runs).
+FILLERS = [
+    "so", "and", "also", "now", "then", "overall", "however", "unfortunately", "note",
+    "okay", "great", "status", "summary", "but", "still", "currently", "caveat", "in short",
+]  # fmt: skip
+
+
+@pytest.mark.parametrize("filler", FILLERS)
+@pytest.mark.parametrize("separator", ["      ", "  ,  ", " :   ", " -  "])
+def test_runs_of_fillers_and_spaces_stay_fast(filler: str, separator: str) -> None:
+    for text in ((filler + separator) * 16 + "x", (filler + separator) * 16 + "the parser"):
+        started = time.perf_counter()
+        assert_consistent(text)
+        assert time.perf_counter() - started < 2.0, repr(text[:40])
+
+
+def test_markdown_masking_does_not_create_slow_inputs() -> None:
+    for text in (
+        ("so" + " " * 6) * 12 + "x",
+        " ".join(["**and**"] * 20) + " the parser",
+        " ".join(["**so**,"] * 20) + " I could not run it",
+        " ".join(["<b>so</b>"] * 20) + " done",
+        "| " + " | ".join(["and"] * 20) + " | x |",
+    ):
+        started = time.perf_counter()
+        assert_consistent(text)
+        assert time.perf_counter() - started < 2.0, repr(text[:40])
 
 
 @pytest.mark.parametrize(

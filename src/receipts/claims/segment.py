@@ -19,12 +19,17 @@ text stays available in :attr:`Segmentation.code_blocks`.
 Each unit also carries a ``context``: the nearest label it sits under (a heading, a
 paragraph ending in ":" such as "Files changed:", a bold label line, or a parent list
 item ending in ":"). Pattern extractors use it for bare list items such as "- app.py".
+
+Headings and label lines ("**Done:**", "Not done:") are units too, marked ``label``:
+they name a section rather than state a claim. A list item with a task box records
+whether the box is checked (``checked``), and every unit keeps the rest of its sentence
+(``rest``) so that rules can see a later clause ("`test_x` was failing; it passes now").
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import pairwise
 from typing import Literal
 
@@ -47,6 +52,13 @@ class Unit:
         first: True for the first unit of its block.
         header: For table rows, the table's header cells, lowercased; otherwise empty.
         previous: Text of the unit just before this one in the report ("" for the first).
+        rest: The rest of the sentence the unit was cut from, verbatim, after the unit
+            ("" when the unit ends its sentence).
+        label: True for a heading or a label line (see :func:`is_label_line`), which
+            names a section instead of stating a claim.
+        checked: For a list item with a task box, True when the box is checked
+            ("[x]") and False when it is not ("[ ]"); items nested under an unchecked
+            item are unchecked too. None for every other unit.
     """
 
     text: str
@@ -57,6 +69,9 @@ class Unit:
     first: bool = True
     header: tuple[str, ...] = ()
     previous: str = ""
+    rest: str = ""
+    label: bool = False
+    checked: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -212,6 +227,52 @@ def clean_label(text: str) -> str:
     plain = mask_markdown(text).replace("`", " ")
     plain = " ".join(plain.split()).strip()
     return plain.lstrip("#").strip().rstrip(":").strip()
+
+
+_BOLD_ONLY = re.compile(r"^\s*(\*\*|__)(?P<body>[^*_\n]+)\1\s*(?P<colon>:)?\s*$")
+#: Words that make a short bold line a statement ("**All tests pass**") rather than a
+#: section label ("**Known failures**").
+_FINITE = re.compile(
+    r"\b(?:is|are|was|were|has|have|had|been|pass(?:es|ed)?|fail(?:s|ed)?|succeed(?:s|ed)?"
+    r"|works?|worked|builds?|compiles?)\b|'s\b|'re\b",
+    re.IGNORECASE,
+)
+#: Opening verbs of a short line that reports an action ("Ran the tests:").
+_ACTION_START = re.compile(
+    r"^(?:re-?ran|ran|executed|invoked|updated|added|created|wrote|removed|deleted|fixed"
+    r"|resolved|implemented|modified|changed|edited|refactored|renamed|moved|bumped|upgraded"
+    r"|installed|verified|tested|checked|tried|made|replaced|documented)$",
+    re.IGNORECASE,
+)
+
+
+def is_label_line(text: str) -> bool:
+    """True when one whole line of text is a section label, not a statement.
+
+    A label is a line that is all bold ("**Done:**", "**Known failures**") and either
+    ends in a colon or has at most three words and no verb such as "is" or "pass"; or
+    a plain line ending in a colon ("Not done:", "Known failures:") with at most four
+    words before the colon, no inline code, and no opening "I", "we", or action verb
+    ("Ran the tests:" reports an action). A one-word line ("Fixed:") is always a label.
+    """
+    bold = _BOLD_ONLY.match(text)
+    if bold is not None:
+        body = bold.group("body").strip()
+        if body.endswith((".", "!", "?")):
+            return False
+        if body.endswith(":") or bold.group("colon"):
+            return True
+        return len(body.split()) <= 3 and not _FINITE.search(body)
+    stripped = text.strip()
+    if not stripped.endswith(":") or "`" in stripped:
+        return False
+    words = clean_label(stripped).split()
+    if not words or len(words) > 4:
+        return False
+    if len(words) == 1:
+        return True
+    first = words[0].lower().strip("*_")
+    return first not in ("i", "we", "i've", "we've") and not _ACTION_START.match(first)
 
 
 def table_cells(row: str) -> list[Span]:
@@ -427,11 +488,11 @@ _JOINER = re.compile(
 )
 _ADVERBS = (
     r"(?:(?:also|then|now|finally|additionally|afterwards|subsequently|next|still|again"
-    r"|separately|lastly|first|second|third|i\s+also|we\s+also)\s+)*"
+    r"|separately|lastly|first|second|third|i\s+also|we\s+also)\s+){0,6}"
 )
 _PRONOUN_STATUS = re.compile(
     r"(?:they|it|both|all|each|everything|all\s+of\s+them|both\s+of\s+them)\s+"
-    r"(?:(?:now|still|all|also|both|again)\s+)*"
+    r"(?:(?:now|still|all|also|both|again)\s+){0,6}"
     r"(?:pass(?:es|ed|ing)?|fail(?:s|ed|ing)?|succeed(?:s|ed)?|are\s+(?:passing|failing|green)"
     r"|is\s+(?:passing|failing|green)|(?:do|does|did)\s*n[o']?t\s+pass|(?:do|does|did)\s+not\s+pass"
     r"|are\s*n[o']?t\s+passing|are\s+not\s+passing|green)\b",
@@ -439,17 +500,17 @@ _PRONOUN_STATUS = re.compile(
 )
 #: Inline code (masked as C) followed by a status verb: "and `npm test` reports 31 passing".
 _CODE_STATUS = (
-    r"`C+`\s+(?:(?:now|also|still|again|then)\s+)*(?:reports?|reported|pass(?:es|ed)?"
+    r"`C+`\s+(?:(?:now|also|still|again|then)\s+){0,6}(?:reports?|reported|pass(?:es|ed)?"
     r"|succeeds?|succeeded|fails?|failed|shows?|showed|returns?|returned|exits?|exited"
     r"|completes?|completed|works?|gives?|gave|says|said|prints?|printed|outputs?|finds?"
     r"|found|flags?|flagged|complains?|complained|builds?|compiles?"
-    r"|(?:is|are|was|were)\s+(?:(?:now|still|also|all)\s+)*(?:green|clean|passing|failing|red"
+    r"|(?:is|are|was|were)\s+(?:(?:now|still|also|all)\s+){0,6}(?:green|clean|passing|failing|red"
     r"|happy|ok|successful|broken))\b"
 )
 _STARTERS = (
     r"(?:i|we)\b(?!\.)",
     r"(?:it|they|this|that|these|those|everything|nothing|there)\s+"
-    r"(?:(?:now|still|also|all|both|only|just|again|then|really|actually|already)\s+)*"
+    r"(?:(?:now|still|also|all|both|only|just|again|then|really|actually|already)\s+){0,6}"
     r"(?:is|are|was|were|has|have|had|does|do|did|can|cannot|could|should|would|will"
     r"|isn'?t|aren'?t|wasn'?t|weren'?t|doesn'?t|don'?t|didn'?t|hasn'?t|haven'?t|won'?t"
     r"|can'?t|couldn'?t|'s|'re|works?|worked|looks?|seems?|remains?|builds?|compiles?"
@@ -592,7 +653,7 @@ _LIST_ITEM = re.compile(
 )
 _RULE = re.compile(r"^[ \t]{0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$")
 _QUOTE = re.compile(r"^[ \t]{0,3}>[ \t]?")
-_BOLD_LINE = re.compile(r"^\s*(\*\*|__)[^*_\n]+\1\s*$")
+_BOLD_LINE = re.compile(r"^\s*(\*\*|__)[^*_\n]+\1\s*:?\s*$")
 
 
 def _lines(report: str) -> list[Span]:
@@ -624,6 +685,7 @@ class _Item:
     start: int
     end: int
     context: str
+    checked: bool | None = None
 
 
 @dataclass
@@ -645,17 +707,7 @@ class _Parser:
         self._flush_all()
         ordered = sorted(self.units, key=lambda u: u.span)
         linked = [
-            Unit(
-                text=u.text,
-                span=u.span,
-                kind=u.kind,
-                context=u.context,
-                block=u.block,
-                first=u.first,
-                header=u.header,
-                previous=ordered[k - 1].text if k else "",
-            )
-            for k, u in enumerate(ordered)
+            replace(u, previous=ordered[k - 1].text if k else "") for k, u in enumerate(ordered)
         ]
         return Segmentation(self.report, tuple(linked), tuple(self.code_blocks))
 
@@ -727,7 +779,7 @@ class _Parser:
         span = _trim(self.report, start, end)
         if span is None:
             return
-        self._add(span, "heading", "", span, True)
+        self._add(span, "heading", "", span, True, label=True)
         self.section = clean_label(self._text(span))
         self.lead = ""
         self.last_block = "heading"
@@ -763,18 +815,22 @@ class _Parser:
         indent = _width(match.group("indent"))
         while self.items and self.items[-1].indent >= indent:
             self._flush_item(self.items.pop())
+        box = match.group("box")
+        checked = None if box is None else box[1] in "xX"
         if self.items:
             parent = self.items[-1]
             label = self._text((parent.start, parent.end)).strip()
             context = clean_label(label) if label.endswith(":") else parent.context
+            if checked is None and parent.checked is False:
+                checked = False  # a sub-item of an unchecked task is not done either
         else:
             lead = self.lead if self.last_block in ("paragraph", "list") else ""
             context = lead or self.section
         content = start + match.end()
-        self.items.append(_Item(indent, content, self._rstrip(content, end), context))
+        self.items.append(_Item(indent, content, self._rstrip(content, end), context, checked))
 
     def _flush_item(self, item: _Item) -> None:
-        self._emit(item.start, item.end, "list_item", item.context)
+        self._emit(item.start, item.end, "list_item", item.context, item.checked)
         self.last_block = "list"
 
     def _flush_paragraph(self) -> None:
@@ -797,15 +853,31 @@ class _Parser:
         while self.items:
             self._flush_item(self.items.pop())
 
-    def _emit(self, start: int, end: int, kind: UnitKind, context: str) -> None:
+    def _emit(
+        self, start: int, end: int, kind: UnitKind, context: str, checked: bool | None = None
+    ) -> None:
         block = _trim(self.report, start, end)
         if block is None:
             return
         first = True
         for s_start, s_end in split_sentences(self.report, block[0], block[1]):
-            for span in split_clauses(self.report, s_start, s_end):
-                self._add(span, kind, context, block, first)
+            clauses = split_clauses(self.report, s_start, s_end)
+            label = kind == "sentence" and len(clauses) == 1 and self._label_line(clauses[0])
+            for span in clauses:
+                rest = self.report[span[1] : s_end]
+                self._add(
+                    span, kind, context, block, first, rest=rest, label=label, checked=checked
+                )
                 first = False
+
+    def _label_line(self, span: Span) -> bool:
+        """True when ``span`` is a whole line of the report and that line is a label."""
+        line_start = self.report.rfind("\n", 0, span[0]) + 1
+        line_end = self.report.find("\n", span[1])
+        line_end = len(self.report) if line_end < 0 else line_end
+        if self.report[line_start : span[0]].strip() or self.report[span[1] : line_end].strip():
+            return False
+        return is_label_line(self._text(span))
 
     def _add(
         self,
@@ -815,6 +887,10 @@ class _Parser:
         block: Span,
         first: bool,
         header: tuple[str, ...] = (),
+        *,
+        rest: str = "",
+        label: bool = False,
+        checked: bool | None = None,
     ) -> None:
         self.units.append(
             Unit(
@@ -825,6 +901,9 @@ class _Parser:
                 block=block,
                 first=first,
                 header=header,
+                rest=rest,
+                label=label,
+                checked=checked,
             )
         )
 

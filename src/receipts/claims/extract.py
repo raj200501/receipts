@@ -23,15 +23,17 @@ def extract_claims(report: str, *, model: ModelExtractor | None = None) -> list[
     Pattern claims (extractor ``"pattern"``) come from every unit; claims of one unit
     with identical (type, params) are kept once. With ``model``, the units that yielded
     no pattern claim are sent to it, and its claims (extractor ``"model"``) are merged
-    in. Claims are ordered by where they start in the report, and claims of one unit
-    keep the order the rules found them in. Exceptions raised by the model's
-    ``complete`` callable propagate.
+    in; headings, label lines and unchecked task boxes are never sent, because they
+    name a section or work not done rather than state a claim. Claims are ordered by
+    where they start in the report, and claims of one unit keep the order the rules
+    found them in. Exceptions raised by the model's ``complete`` callable propagate.
     """
     claims: list[Claim] = []
     uncovered: list[Unit] = []
     for matches in match_units(segment(report)):
-        if not matches.hits:
-            uncovered.append(matches.unit)
+        unit = matches.unit
+        if not matches.hits and not unit.label and unit.checked is not False:
+            uncovered.append(unit)
         claims.extend(hit_claim(matches.unit, hit, "") for hit in matches.hits)
     if model is not None and uncovered:
         claims.extend(model.extract(report, uncovered))

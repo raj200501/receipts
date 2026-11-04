@@ -1,14 +1,18 @@
 """Model-based claim extraction (``extractor = "model"``) for units no pattern covers.
 
-The model sees the whole report for context and a numbered list of the units to read,
-and answers with one JSON object that must validate against :data:`CLAIM_JSON_SCHEMA`.
-:func:`parse_response` keeps a claim only when:
+The model sees the whole report for context and a numbered list of the units to read
+(passages ``P1``, ``P2``, ...), and answers with one JSON object that must validate
+against :data:`CLAIM_JSON_SCHEMA`. :func:`parse_response` keeps a claim only when:
 
 - it validates against the schema (unknown keys, wrong types, or a type outside
   :class:`~receipts.claims.types.ClaimType` reject it);
 - its params are the ones its type carries (:data:`PARAM_SPECS`), with every required
   param present (:data:`REQUIRED_PARAMS`);
-- its ``text`` occurs verbatim in the report, so the model can never invent a claim;
+- its ``text`` occurs verbatim in the report, inside the passage it names, so the model
+  can never invent a claim;
+- the text states every identifying param (:func:`grounded_params`): a path, command,
+  dependency name, version or test count must appear in the claim text, so the model
+  cannot invent the details of a claim either;
 - its params normalize the way the pattern extractor normalizes them
   (:func:`normalize_params`): a path must look like a file path, a command like a
   command or a generic phrase such as "the tests", and a dependency name like a
@@ -96,9 +100,11 @@ def _param_schemas() -> dict[str, Any]:
 
 #: Strict JSON schema of a model response: an object whose ``claims`` list holds one
 #: object per claim. It is an object rather than a bare list because structured-output
-#: modes require an object at the top level. ``params`` may hold only known keys
-#: (null means not stated); which keys a type may carry is checked in code against
-#: :data:`PARAM_SPECS` and :data:`REQUIRED_PARAMS`.
+#: modes require an object at the top level. ``passage`` is the number of the passage
+#: (``P1`` is 1) the claim's text comes from, so that two passages with the same text
+#: stay apart. ``params`` may hold only known keys (null means not stated); which keys
+#: a type may carry is checked in code against :data:`PARAM_SPECS` and
+#: :data:`REQUIRED_PARAMS`.
 CLAIM_JSON_SCHEMA: Mapping[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "receipts claims",
@@ -111,8 +117,9 @@ CLAIM_JSON_SCHEMA: Mapping[str, Any] = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["type", "text", "params", "negated"],
+                "required": ["passage", "type", "text", "params", "negated"],
                 "properties": {
+                    "passage": {"type": _COUNT, "minimum": 1},
                     "type": {"type": _STRING, "enum": [t.value for t in ClaimType]},
                     "text": {"type": _STRING, "minLength": 1},
                     "params": {
@@ -287,6 +294,101 @@ def normalize_params(
     return (claim_type, out, negated)
 
 
+def _flat(text: str) -> str:
+    """``text`` lowercased, without backticks, with runs of whitespace as one space."""
+    return " ".join(text.replace("`", " ").split()).lower()
+
+
+def _occurs(needle: str, haystack: str, *, suffix: bool = False) -> bool:
+    """True when ``needle`` occurs in ``haystack`` and is not part of a longer word.
+
+    With ``suffix`` a path may also end a longer path ("app.py" in "src/app.py").
+    """
+    if not needle:
+        return False
+    before = r"(?<![\w.-])" if suffix else r"(?<![\w./-])"
+    return re.search(before + re.escape(needle) + r"(?![\w/-])", haystack) is not None
+
+
+_NUMBER_WORDS: Mapping[str, int] = {
+    "zero": 0,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+}
+
+
+def _states_number(text: str, value: int) -> bool:
+    """True when ``text`` writes ``value`` as digits or a number word ("12", "twelve")."""
+    if re.search(rf"(?<![\w.]){value}(?!\w|\.\d)", text):
+        return True
+    words = [word for word, number in _NUMBER_WORDS.items() if number == value]
+    if value == 0:
+        words += ["no", "none"]
+    return any(re.search(rf"\b{word}\b", text, re.IGNORECASE) for word in words)
+
+
+def grounded_params(params: Mapping[str, object], text: str) -> dict[str, object] | None:
+    """``params`` with every value checked against the claim ``text``, or None to reject.
+
+    The model must take a claim's details from its text, never add them. Identifying
+    params must appear in the text, or the claim is rejected: a path (after
+    :func:`~receipts.claims.patterns.path_param`), a command (as written, or its generic
+    phrase), a dependency name (case and ``-``/``_`` ignored), a version number, and test
+    counts (as digits or number words). A ``tool`` or ``scope`` the text does not name is
+    dropped and the claim kept. Descriptions and targets may paraphrase and are kept.
+    Values of the wrong type are passed on for :func:`normalize_params` to reject.
+    """
+    flat = _flat(text)
+    out: dict[str, object] = {}
+    for key, value in params.items():
+        if value is None or key in ("description", "target"):
+            out[key] = value
+            continue
+        if isinstance(value, bool) or not isinstance(value, str | int):
+            out[key] = value
+            continue
+        if isinstance(value, int):
+            if not _states_number(text, value):
+                return None
+            out[key] = value
+            continue
+        raw = value.strip().strip("`").strip()
+        if key == "path":
+            path = path_param(raw)
+            if path is not None and not _occurs(path, text, suffix=True):
+                return None
+        elif key == "command":
+            command = normalize_command(raw)
+            spoken = [_flat(raw), _flat(re.sub(r"^(?:\$|>|%)\s+", "", raw))]
+            if command is not None:
+                spoken.append(_flat(command[0]))
+            if not any(_occurs(phrase, flat) for phrase in spoken):
+                return None
+        elif key == "name":
+            parsed = dependency_param(raw)
+            name = (parsed[0] if parsed else raw).lower().replace("_", "-")
+            if not _occurs(name, flat.replace("_", "-")):
+                return None
+        elif key == "version":
+            version = _VERSION_NUMBER.search(raw)
+            if version is not None and version.group(0) not in text:
+                return None
+        elif key in ("tool", "scope") and not _occurs(_flat(raw), flat):
+            continue  # "lint is clean" names no tool: keep the claim, drop the guess
+        out[key] = value
+    return out
+
+
 # --- prompt and response ---------------------------------------------------------------
 
 _TYPE_TABLE = """\
@@ -323,6 +425,7 @@ descriptions of code that say nothing about the agent's own work. One passage ca
 several claims; many passages hold none.
 
 For each claim give:
+- "passage": the number of the passage the claim comes from (1 for P1, 2 for P2, ...);
 - "type": one of the types below;
 - "text": the passage, or the part of it that states the claim, copied character for
   character from the report (a claim whose text is not in the report is discarded);
@@ -339,7 +442,7 @@ trailing ":line"; a command exactly as written inside backticks; a package name 
 a version operator, with the version number in "version".
 
 Reply with only one JSON object of this form and nothing else:
-{{"claims": [{{"type": "...", "text": "...", "params": {{}}, "negated": false}}]}}
+{{"claims": [{{"passage": 1, "type": "...", "text": "...", "params": {{}}, "negated": false}}]}}
 If no passage states a checkable claim, reply {{"claims": []}}."""
 
 
@@ -378,15 +481,11 @@ def _json_object(text: str) -> object:
             return None
 
 
-def _locate(text: str, report: str, within: Sequence[Span] | None) -> Span | None:
-    """Span of the first verbatim occurrence of ``text`` (inside one of ``within``)."""
-    start = report.find(text)
-    while start >= 0:
-        end = start + len(text)
-        if within is None or any(a <= start and end <= b for a, b in within):
-            return (start, end)
-        start = report.find(text, start + 1)
-    return None
+def _locate(text: str, report: str, span: Span | None) -> Span | None:
+    """Span of the first verbatim occurrence of ``text`` in ``report`` (inside ``span``)."""
+    start, end = span if span is not None else (0, len(report))
+    found = report.find(text, start, end)
+    return None if found < 0 else (found, found + len(text))
 
 
 def parse_response(text: str, report: str, *, within: Sequence[Span] | None = None) -> list[Claim]:
@@ -395,10 +494,13 @@ def parse_response(text: str, report: str, *, within: Sequence[Span] | None = No
     ``text`` must hold one JSON object that validates against
     :data:`CLAIM_JSON_SCHEMA` at the top level (a Markdown code fence around it is
     allowed); otherwise no claims are returned. Each claim must then validate on its
-    own, have a verbatim ``text`` in ``report`` (located inside one of the ``within``
-    spans when they are given), and pass :func:`normalize_params`; failing claims are
-    dropped. Claims get ids ``"c0"``, ``"c1"``, ... by position and extractor
-    ``"model"``.
+    own, have a verbatim ``text`` in ``report``, state its identifying params
+    (:func:`grounded_params`), and pass :func:`normalize_params`; failing claims are
+    dropped. ``within`` holds the spans of the passages ``P1``, ``P2``, ... in prompt
+    order: a claim's text must then lie inside the span of the passage it names, and a
+    passage number outside the list rejects the claim. Without ``within`` the first
+    occurrence in the report is used. Claims get ids ``"c0"``, ``"c1"``, ... by
+    position and extractor ``"model"``.
     """
     data = _json_object(text)
     top = dict(CLAIM_JSON_SCHEMA)
@@ -413,14 +515,23 @@ def parse_response(text: str, report: str, *, within: Sequence[Span] | None = No
         claim_text = str(item["text"]).strip()
         if not re.search(r"[A-Za-z0-9]", claim_text):
             continue
-        span = _locate(claim_text, report, within)
+        passage: Span | None = None
+        if within is not None:
+            if item["passage"] > len(within):
+                continue
+            passage = within[item["passage"] - 1]
+        span = _locate(claim_text, report, passage)
         if span is None:
             continue
-        normalized = normalize_params(ClaimType(item["type"]), item["params"], item["negated"])
+        claim_type = ClaimType(item["type"])
+        params = grounded_params(item["params"], claim_text)
+        if params is None:
+            continue
+        normalized = normalize_params(claim_type, params, item["negated"])
         if normalized is None:
             continue
-        claim_type, params, negated = normalized
-        found.append((span, claim_type, params, negated, claim_text))
+        claim_type, clean, negated = normalized
+        found.append((span, claim_type, clean, negated, claim_text))
     found.sort(key=lambda entry: entry[0])
     return [
         Claim(
@@ -460,10 +571,11 @@ class ModelExtractor:
     def extract(self, report: str, units: Sequence[Unit]) -> list[Claim]:
         """Claims the model finds in ``units`` of ``report``, in report order.
 
-        Only claims whose text lies inside one of the given units are kept, and claims
-        with identical (type, params) inside one unit are kept once. Claim ids are
-        ``"c0"``, ``"c1"``, ... in report order; :func:`receipts.claims.extract.
-        extract_claims` renumbers them together with the pattern claims.
+        Only claims whose text lies inside the unit they name (its passage number) are
+        kept, and claims with identical (type, params) inside one unit are kept once.
+        Claim ids are ``"c0"``, ``"c1"``, ... in report order;
+        :func:`receipts.claims.extract.extract_claims` renumbers them together with the
+        pattern claims.
         """
         claims: list[Claim] = []
         for batch in _batches(list(units), self.max_units):

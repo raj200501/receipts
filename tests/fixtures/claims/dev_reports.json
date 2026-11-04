@@ -579,6 +579,11 @@
             "failed": 1
           },
           "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": true
         }
       ],
       "model_only": [
@@ -1249,6 +1254,11 @@
             "failed": 1
           },
           "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": true
         },
         {
           "type": "bug_fixed",
@@ -2162,6 +2172,11 @@
             "failed": 3
           },
           "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": true
         }
       ],
       "model_only": []
@@ -2842,6 +2857,407 @@
           "params": {
             "tool": "flake8"
           },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d83",
+      "style": "claude-code",
+      "report": "## Done\n- Added the `--json` flag to `src/cli.py`.\n- Updated `tests/test_cli.py` with two cases for the flag.\n\n## Not done\n- Pagination: the upstream API has no cursor, so I left it out.\n\nRan `pytest -q`: 18 passed.\n",
+      "expected": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "the `--json` flag to `src/cli.py`"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/cli.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "tests/test_cli.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest -q"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 18
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "Pagination"
+          },
+          "negated": true
+        }
+      ]
+    },
+    {
+      "id": "d84",
+      "style": "codex",
+      "report": "Fixed the timezone handling in `src/dates.py`.\n\nThe flaky `test_network_timeout` failed once, then passed on retry. Initially mypy failed with 4 errors; after adding annotations it passes.\n\nFinal run: `pytest -q` -> 24 passed. `mypy src` is clean.\n",
+      "expected": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "the timezone handling in `src/dates.py`"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/dates.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest -q"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 24
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "mypy src"
+          },
+          "negated": false
+        },
+        {
+          "type": "typecheck_clean",
+          "params": {
+            "tool": "mypy"
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "tests_pass",
+          "params": {
+            "scope": "test_network_timeout"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d85",
+      "style": "claude-code",
+      "report": "## Checklist\n- [x] Updated `src/cache.py` to evict the oldest entry first\n- [x] Added `tests/test_cache.py`\n- [ ] Updated `docs/caching.md` (left for a follow-up)\n- [ ] Added a TTL option\n\nAll 31 tests pass.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/cache.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_created",
+          "params": {
+            "path": "tests/test_cache.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 31,
+            "total": 31
+          },
+          "negated": false
+        }
+      ],
+      "model_only": [
+        {
+          "type": "tests_added",
+          "params": {
+            "path": "tests/test_cache.py"
+          },
+          "negated": false
+        }
+      ]
+    },
+    {
+      "id": "d86",
+      "style": "openhands",
+      "report": "Replaced the deprecated `six` helpers in `app/compat.py` with standard library calls.\n\n### Dependencies\n- Removed `six`\n- `urllib3` bumped to 2.2.1\n\n### Tests\n`pytest` -> 52 passed, 0 failed\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "app/compat.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "dependency_removed",
+          "params": {
+            "name": "six"
+          },
+          "negated": false
+        },
+        {
+          "type": "dependency_updated",
+          "params": {
+            "name": "urllib3",
+            "version": "2.2.1"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 52,
+            "failed": 0
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d87",
+      "style": "claude-code",
+      "report": "Added retry with exponential backoff to the HTTP client.\n\n**Files**\n- `src/http/client.py`: added `RetryPolicy` and wired it into `request()`\n- `src/http/session.py` (unchanged)\n- `src/config.py`: reviewed only, no edits\n\n## How to verify\n- `pytest tests/http -q`\n- `python -m app.cli fetch --retries 3`\n\nI ran `pytest tests/http -q` and all 14 tests pass.\n",
+      "expected": [
+        {
+          "type": "feature_implemented",
+          "params": {
+            "description": "retry with exponential backoff to the HTTP client"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/http/client.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_unchanged",
+          "params": {
+            "path": "src/http/session.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_unchanged",
+          "params": {
+            "path": "src/config.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest tests/http -q"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 14,
+            "total": 14
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d88",
+      "style": "minimal-agent",
+      "report": "The bug was that the parser could not parse dates before 1970. I fixed parse_date in dates.py. ran pytest: 11 passed, 1 failed (test_leap_year, unrelated)\n",
+      "expected": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "parse_date in dates.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "dates.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 11,
+            "failed": 1
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": true
+        }
+      ],
+      "model_only": [
+        {
+          "type": "tests_pass",
+          "params": {
+            "scope": "test_leap_year"
+          },
+          "negated": true
+        }
+      ]
+    },
+    {
+      "id": "d89",
+      "style": "aider",
+      "report": "Bumped `max_retries` to 5 in `src/client.py` and raised the default timeout to 30 seconds. The tests pass an empty config and expect the defaults; `pytest` passes.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/client.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d90",
+      "style": "codex",
+      "report": "**Summary**\nDocumented the `--strict` flag in `docs/usage.md`.\n\nBug fixes: N/A\nNew tests: none (docs only).\n\n## Known failures\n- None\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "docs/usage.md"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_added",
+          "params": {},
+          "negated": true
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d91",
+      "style": "claude-code",
+      "report": "Fixed the off-by-one in the pagination helper (`src/paginate.py`).\n\n## Verification\n- `pytest -q`: 40 passed\n- Skipped the e2e suite (needs a browser)\n\nTo run it locally:\n- `npm install`\n- `npm test`\n",
+      "expected": [
+        {
+          "type": "bug_fixed",
+          "params": {
+            "description": "the off-by-one in the pagination helper"
+          },
+          "negated": false
+        },
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "src/paginate.py"
+          },
+          "negated": false
+        },
+        {
+          "type": "ran_command",
+          "params": {
+            "command": "pytest -q"
+          },
+          "negated": false
+        },
+        {
+          "type": "test_count",
+          "params": {
+            "passed": 40
+          },
+          "negated": false
+        }
+      ],
+      "model_only": []
+    },
+    {
+      "id": "d92",
+      "style": "openhands",
+      "report": "I ran into test failures with the old fixture, so I regenerated `tests/fixtures/users.json`. `test_list_users` was failing; it passes now. The full suite is green.\n",
+      "expected": [
+        {
+          "type": "file_modified",
+          "params": {
+            "path": "tests/fixtures/users.json"
+          },
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
+          "negated": false
+        },
+        {
+          "type": "tests_pass",
+          "params": {},
           "negated": false
         }
       ],

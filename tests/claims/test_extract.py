@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -45,18 +46,21 @@ def test_model_is_asked_only_about_units_without_pattern_claims() -> None:
             {
                 "claims": [
                     {
+                        "passage": 1,
                         "type": "feature_implemented",
                         "text": "I wired the retry logic into the HTTP client.",
                         "params": {"description": "the retry logic"},
                         "negated": False,
                     },
                     {
+                        "passage": 2,
                         "type": "other",
                         "text": "The backoff is capped at 30 seconds.",
                         "params": {"description": "backoff capped at 30 seconds"},
                         "negated": False,
                     },
                     {  # a unit the patterns already cover: dropped
+                        "passage": 1,
                         "type": "tests_pass",
                         "text": "All 12 tests pass",
                         "params": {},
@@ -78,6 +82,20 @@ def test_model_is_asked_only_about_units_without_pattern_claims() -> None:
         ("c3", ClaimType.TEST_COUNT, "pattern"),
         ("c4", ClaimType.LINT_CLEAN, "pattern"),
     ]
+
+
+def test_model_never_sees_headings_labels_or_unchecked_items() -> None:
+    prompts: list[str] = []
+
+    def complete(prompt: str) -> str:
+        prompts.append(prompt)
+        return json.dumps({"claims": []})
+
+    report = "## Plan\n\n**Open items:**\n\n- [ ] Wire the cache\n- [x] Wrote the notes\n"
+    assert extract_claims(report, model=ModelExtractor(complete)) == []
+    (prompt,) = prompts
+    passages = [line for line in prompt.splitlines() if re.match(r"P\d+: ", line)]
+    assert passages == ["P1: Wrote the notes"]
 
 
 def test_model_is_not_called_when_patterns_cover_every_unit() -> None:

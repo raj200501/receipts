@@ -10,6 +10,7 @@ from receipts.claims.segment import (
     Unit,
     clean_label,
     code_spans,
+    is_label_line,
     mask_markdown,
     segment,
     split_clauses,
@@ -258,6 +259,82 @@ def test_list_markers_checkboxes_and_numbering() -> None:
     assert {u.kind for u in segment(report).units} == {"list_item"}
 
 
+def test_task_boxes_record_whether_they_are_checked() -> None:
+    report = (
+        "- [x] Updated `a.py`. Second sentence.\n- [ ] Updated `b.py`\n  - nested under it\n"
+        "  - [x] checked child\n- [X] upper case\n- plain item\n\nA paragraph.\n"
+    )
+    checked = {u.text: u.checked for u in segment(report).units}
+    assert checked == {
+        "Updated `a.py`.": True,
+        "Second sentence.": True,
+        "Updated `b.py`": False,
+        "nested under it": False,
+        "checked child": True,
+        "upper case": True,
+        "plain item": None,
+        "A paragraph.": None,
+    }
+
+
+def test_headings_and_label_lines_are_labels() -> None:
+    report = (
+        "## Done\n- Added `a.py`\n\n**Known failures:**\n- None\n\nNot done:\n- Pagination\n\n"
+        "I ran the full suite:\n\n**All tests pass**\n\nAll done. Next:\n"
+    )
+    labels = {u.text: u.label for u in segment(report).units}
+    assert labels == {
+        "Done": True,
+        "Added `a.py`": False,
+        "**Known failures:**": True,
+        "None": False,
+        "Not done:": True,
+        "Pagination": False,
+        "I ran the full suite:": False,
+        "**All tests pass**": False,
+        "All done.": False,
+        "Next:": False,
+    }
+
+
+@pytest.mark.parametrize(
+    ("line", "label"),
+    [
+        ("**Done:**", True),
+        ("**Done**:", True),
+        ("**Known failures**", True),
+        ("__Files changed__", True),
+        ("**All tests pass**", False),
+        ("**Everything is done**", False),
+        ("**Done.**", False),
+        ("**Pagination is not implemented yet in the API**", False),
+        ("Not done:", True),
+        ("Known failures:", True),
+        ("Fixed:", True),
+        ("What I changed:", True),
+        ("Ran the tests:", False),
+        ("I ran the full suite:", False),
+        ("Ran `pytest -q`:", False),
+        ("The changes in this pull request are:", False),
+        ("Done.", False),
+        ("", False),
+    ],
+)
+def test_is_label_line(line: str, label: bool) -> None:
+    assert is_label_line(line) is label
+
+
+def test_units_keep_the_rest_of_their_sentence() -> None:
+    report = "`test_x` was failing; I fixed it and it passes now. Done.\n\n- `a.py`: one, and two\n"
+    rests = [(u.text, u.rest) for u in segment(report).units]
+    assert rests == [
+        ("`test_x` was failing", "; I fixed it and it passes now."),
+        ("I fixed it and it passes now.", ""),
+        ("Done.", ""),
+        ("`a.py`: one, and two", ""),
+    ]
+
+
 def test_nested_items_take_the_parent_label_as_context() -> None:
     report = "- Files changed:\n  - `a.py`\n  - `b.py`\n- Other\n"
     units = {u.text: u for u in segment(report).units}
@@ -377,3 +454,4 @@ def test_table_cells() -> None:
 def test_unit_defaults() -> None:
     unit = Unit("x", (0, 1), "sentence")
     assert unit.context == "" and unit.first and unit.header == () and unit.previous == ""
+    assert unit.rest == "" and not unit.label and unit.checked is None

@@ -14,30 +14,45 @@ region of the unit so that later rules do not read it again:
 1. ``tests_added``, ``bug_fixed``, ``feature_implemented``: their descriptions are not
    read again as test, lint, or build claims ("fixed the failing test" admits nothing).
 2. ``could_not``: from "could not" to the end of the unit is the description, and
-   nothing in it becomes another claim ("I couldn't update `legacy.py`").
+   nothing in it becomes another claim ("I couldn't update `legacy.py`"). The subject
+   must be the agent, or the clause must be an admission about the work ("the tests
+   could not be run"); descriptions of the code or of the old bug ("tokens cannot be
+   reused", "previously the CLI could not parse `--json`") are not admissions.
 3. ``task_complete`` and ``ran_command``.
 4. Test numbers: a unit that states test counts yields one ``test_count`` claim with
-   every number it states and no ``tests_pass`` claim. A unit that only counts
-   failures ("1 test is still failing") yields a negated ``tests_pass`` instead: a
-   failure count is an admission, and ``test_count`` is a success type.
+   every number it states and no other test claim, except that a count of failures
+   ("39 passed, 3 failed") also yields a negated ``tests_pass``: the count admits the
+   failures. A unit that only counts failures ("1 test is still failing") yields only
+   the negated ``tests_pass``, because ``test_count`` is a success type.
 5. ``tests_pass``, ``lint_clean``, ``typecheck_clean``, ``build_succeeds`` (also from
    check-mark lines such as "- ✅ `ruff check src`" and from "Ran `pytest` and
    `ruff check .`: both pass"), dependency claims, file claims, and last, commands
    cited as evidence for a status claim ("All 12 tests pass (`pytest -q`)").
 
-Statements are skipped when hedged ("should pass", "once the build passes", "I believe
-this resolves"), given as advice ("you can run `pytest`"), or dated ("3 tests failed
-before my change"). A negated run of part of a suite ("I didn't run the integration
-tests") yields no claim, because the verifier matches generic runs of any part of the
-suite and would contradict an honest admission.
+Statements are skipped when hedged ("should pass", "once the build passes", "I should
+have updated `a.py`", "I believe this resolves"), given as advice or instructions ("you
+can run `pytest`", the commands under "How to verify"), or dated: a failure the unit
+dates ("3 tests failed before my change", "Initially mypy failed") or that a later
+clause of the sentence undoes ("`test_x` was failing; it passes now", "failed once, then
+passed on retry") is history, not the final state. A negated run of part of a suite ("I
+didn't run the integration tests") yields no claim, because the verifier matches generic
+runs of any part of the suite and would contradict an honest admission.
+
+Headings and label lines ("## Done", "**Known failures:**") name a section and are read
+only for explicit status statements ("## All 42 tests pass", "Status: done"). Unchecked
+task boxes ("- [ ] Added pagination") yield no claim, and the items listed under a
+section of work not done ("Not done", "Next steps", "TODO") keep only admissions and
+status claims. Empty or negative values under a label or section ("Dependencies: none",
+"## Bug fixes" then "- N/A") yield no claim.
 
 Claims of one unit with identical (type, params) are kept once (the first). Params
 follow what :mod:`receipts.verify` reads: commands as written inside backticks (a
 leading ``$`` prompt removed) or a generic phrase that
 :func:`receipts.verify.commands.generic_kind` recognizes ("the tests", "the linter");
 paths without backticks, quotes, trailing punctuation, ``:line`` suffixes, or test names
-after ``::``; integer test counts; dependency names without version operators, with the
-version (its first number) separately.
+after ``::``, and never with a guessed extension ("the README" names no path);
+integer test counts; dependency names without version operators, with the version (its
+first number) separately.
 """
 
 from __future__ import annotations
@@ -166,10 +181,6 @@ class _View:
             end -= 1
         return self.text[start:end].strip()
 
-    def in_code(self, pos: int) -> bool:
-        """True when ``pos`` lies inside an inline code span (backticks included)."""
-        return any(start <= pos < end for start, end in self.codes)
-
 
 _PATH_PREFIX = re.compile(r"^\W*`C+`\s*(?::|-{1,2}|→|->)\s*$")
 
@@ -251,24 +262,23 @@ _DOTFILE_EXTENSIONS = _words(
     "env gitignore gitattributes dockerignore editorconfig npmrc nvmrc prettierrc"
     " eslintrc babelrc flake8 coveragerc pylintrc"
 )
-_SPECIAL_FILES: Mapping[str, str] = {
-    "makefile": "Makefile",
-    "gnumakefile": "GNUmakefile",
-    "dockerfile": "Dockerfile",
-    "containerfile": "Containerfile",
-    "procfile": "Procfile",
-    "pipfile": "Pipfile",
-    "gemfile": "Gemfile",
-    "justfile": "justfile",
-    "license": "LICENSE",
-    "licence": "LICENCE",
-    "readme": "README.md",
-    "changelog": "CHANGELOG.md",
-    "contributing": "CONTRIBUTING.md",
-    "codeowners": "CODEOWNERS",
-    "pyproject": "pyproject.toml",
-    "tsconfig": "tsconfig.json",
-}
+#: Well-known file names that have no extension. They are kept exactly as written: the
+#: verifier matches paths exactly, so "makefile" is not turned into "Makefile".
+_SPECIAL_FILES = frozenset(
+    {
+        "makefile",
+        "gnumakefile",
+        "dockerfile",
+        "containerfile",
+        "procfile",
+        "pipfile",
+        "gemfile",
+        "justfile",
+        "license",
+        "licence",
+        "codeowners",
+    }
+)
 _NOT_PATHS = frozenset(
     {
         "node.js",
@@ -297,9 +307,10 @@ def path_param(raw: str) -> str | None:
     Backticks, quotes, brackets, trailing punctuation, a ``:line`` or ``#L`` suffix, and
     a test name after ``::`` are removed. A file path has a known extension
     (``app.py``, ``docs/usage.md``), is a dotfile (``.gitignore``), or is a well-known
-    name (``Makefile``; "README" becomes ``README.md`` and "pyproject" becomes
-    ``pyproject.toml``). URLs, flags, directories, globs, npm scopes, and library names
-    such as "Node.js" are not paths.
+    name that has no extension (``Makefile``, ``Dockerfile``, ``LICENSE``), kept as
+    written. No extension is ever guessed: "README", "CHANGELOG" or "pyproject" without
+    one could be ``README.md`` or ``README.rst``, so they are not paths. URLs, flags,
+    directories, globs, npm scopes, and library names such as "Node.js" are not paths.
     """
     token = raw.strip().strip("`'\"").split("::", 1)[0]
     token = _LINE_SUFFIX.sub("", token)
@@ -312,9 +323,8 @@ def path_param(raw: str) -> str | None:
     if token.lower() in _NOT_PATHS:
         return None
     last = token.replace("\\", "/").rsplit("/", 1)[-1]
-    special = _SPECIAL_FILES.get(last.lower())
-    if special is not None and "." not in last:
-        return token[: len(token) - len(last)] + special
+    if last.lower() in _SPECIAL_FILES:
+        return token
     stem, dot, ext = last.rpartition(".")
     ext = ext.lower()
     if not dot:
@@ -353,9 +363,8 @@ _BARE_PATH = re.compile(
 )
 _DOTFILE = re.compile(r"(?<![\w@/.\-`~$])(?:[\w@.\-]+/)*\.[A-Za-z][\w\-]*(?![\w/\-(]|\.\w)")
 _SPECIAL_RE = re.compile(
-    r"(?<![\w@/.\-`~$])(?:[\w@.\-]+/)*(?:README|[Rr]eadme|Makefile|makefile|Dockerfile"
-    r"|dockerfile|CHANGELOG|LICENSE|Procfile|Pipfile|Justfile|justfile|pyproject|tsconfig)"
-    r"(?![\w/\-(]|\.\w)"
+    r"(?<![\w@/.\-`~$])(?:[\w@.\-]+/)*(?:Makefile|makefile|Dockerfile|dockerfile|LICENSE"
+    r"|Procfile|Pipfile|Justfile|justfile)(?![\w/\-(]|\.\w)"
 )
 
 
@@ -725,9 +734,10 @@ _NEGATOR = (
 _DESCRIPTION_END = re.compile(
     r"\s+\((?!\))|\s*;\s|\s*:\s|\s+-{1,2}\s|\s+→\s"
     r"|,\s+(?:which|so|and|but|because|since|as|making|meaning|now|while|then|plus|after"
-    r"|before|so\s+that)\b"
+    r"|before|so\s+that|otherwise)\b"
     r"|\s+(?:so\s+that|so|because|since|which|making|meaning|and\s+now|now\s+that|while"
     r"|whereas|but)\b"
+    r"|(?<!\be\.g)(?<!\bi\.e)(?<!\betc)(?<!\bvs)\.\s+(?=\S)"  # "... in dates.py. ran pytest"
     r"|\s*[.!]+\s*$|$",
     _I,
 )
@@ -752,10 +762,47 @@ def _description(v: _View, start: int, end: int | None = None) -> tuple[str, Spa
     return v.text[span[0] : span[1]], span
 
 
+#: A label value or list item that says there is nothing: "None", "N/A", "no new
+#: dependencies", "not started", "TBD", "-".
+_NONE_VALUE = re.compile(
+    r"\s*\(?\s*(?:(?:none|nothing|nil|n/?a|tbd|todo|pending|deferred|unchanged|skipped)\b"
+    r"|no\b(?!\s+longer)|not\b|-+\s*$|\)|$)",
+    _I,
+)
+#: A status after a section item saying it was not done: "Pagination (not implemented;
+#: the API has no cursor)", "Retries - deferred".
+_NOT_DONE_STATUS = re.compile(
+    r"\s*(?:\(|:|-{1,2}|->|=>)?\s*(?:not\s+(?:yet\s+)?(?:implemented|done|started|fixed|finished"
+    r"|completed?|addressed|supported|included|attempted)|deferred|skipped|blocked|pending|todo"
+    r"|tbd|partial(?:ly\s+(?:implemented|done))?|won'?t\s+(?:fix|do)|out\s+of\s+scope"
+    r"|left\s+(?:out|for))\b",
+    _I,
+)
+
+
+def _section_item(v: _View, start: int) -> tuple[tuple[str, Span], bool] | None:
+    """The description of a labeled item and whether its status says it was not done.
+
+    Used for items under a "Bug fixes" or "New features" section and for label values
+    ("Fixes: ..."). An empty or negative value ("None", "N/A", "not started") gives None.
+    """
+    if _NONE_VALUE.match(v.prose, start):
+        return None
+    desc = _description(v, start)
+    if desc is None:
+        return None
+    return desc, bool(_NOT_DONE_STATUS.match(v.prose, desc[1][1]))
+
+
+#: Opening filler words ("So,", "Overall:", "Unfortunately"). Each filler ends in one
+#: unambiguous separator (punctuation with optional spaces, or spaces alone), so a run of
+#: fillers followed by several spaces matches in one way only and cannot backtrack
+#: exponentially (``\s*[,:]?\s+`` could split the same spaces in many ways).
+_SEP = r"(?:\s*[,:]\s*|\s+)"
 _LEAD_FILLERS = (
     r"^[^\w`]*(?:(?:so|and|also|now|finally|thus|therefore|overall|then|additionally"
     r"|as\s+a\s+result"
-    r"|in\s+(?:short|summary)|note|however|unfortunately|good\s+news)\s*[,:]?\s+)*"
+    r"|in\s+(?:short|summary)|note|however|unfortunately|good\s+news)" + _SEP + r"){0,8}"
 )
 
 _LEAD = re.compile(_LEAD_FILLERS, _I)
@@ -772,7 +819,7 @@ _TESTS_ADDED = re.compile(
     r"|new|more|extra|additional|a\s+few|a\s+couple\s+of|the|missing|regression|unit"
     r"|integration|e2e|end-to-end|smoke|parametri[sz]ed|parameteri[sz]ed|property-based"
     r"|focused|targeted|edge-case|edge\s+case|failing|basic|thorough|comprehensive|dedicated"
-    r"|separate|corresponding|matching|its|their|own|simple|small|quick|pytest|jest|vitest)\s+)*"
+    r"|separate|corresponding|matching|its|their|own|simple|small|quick|pytest|jest|vitest)\s+){0,6}"
     r"(?:test\s+suite|test\s+cases?|tests?|specs?|test\s+coverage|coverage|cases))\b"
     r"(?!\s+(?:dependenc\w*|fixtures?|helpers?|utils?|utilities|data|files?|config\w*|setup"
     r"|runner|commands?|scripts?|harness|framework|requirements?|extras?|groups?|matrix"
@@ -793,9 +840,10 @@ _TESTS_ADDED_NEGATED = re.compile(
 _TESTS_NEW = re.compile(
     r"^\W*(?:`C+`(?:\s*(?::|-{1,2}|→|->)\s*|\s+))?(?P<noun>(?:(?:\d+|one|two|three|four"
     r"|five|six|seven|eight|nine|ten|a\s+few|several|some)\s+)?(?:new|additional|extra|more)\s+"
-    r"(?:(?:unit|regression|integration|e2e|edge-case)\s+)*(?:tests?|test\s+cases?|specs?))\b"
-    r"(?!\s+(?:were|was|are|is|will|should|would|could|might|need|needs|pass\w*|fail\w*"
-    r"|cover\w*|run|ran)\b)",
+    r"(?:(?:unit|regression|integration|e2e|edge-case)\s+){0,6}(?:tests?|test\s+cases?|specs?))\b"
+    r"(?!\s+(?:were|was|are|is|will|should|would|could|might|need\w*|requir\w*|tbd|pending"
+    r"|to\s+be\b|to\s+come|to\s+follow|planned|todo|later|welcome|wanted|missing|pass\w*"
+    r"|fail\w*|cover\w*|run|ran)\b)",
     _I,
 )
 #: A unit opening with a "Tests:" label, as in "**Tests**: added a case for empty input".
@@ -803,17 +851,17 @@ _TESTS_LABEL = re.compile(r"^\W*(?:tests?|testing|test\s+changes)\s*:\s*", _I)
 #: A create verb whose object is inline code naming a test ("added `tests/t.py::test_x`").
 _ADDED_TEST_CODE = re.compile(
     r"\b(?:added|adds|wrote|writes|created|introduced)\s+(?:(?:a|an|the|new|regression|unit"
-    r"|parametri[sz]ed)\s+)*(?:(?:tests?|test\s+cases?)\s+)?(?=`)",
+    r"|parametri[sz]ed)\s+){0,6}(?:(?:tests?|test\s+cases?)\s+)?(?=`)",
     _I,
 )
 _ADD_TEST_CODE = re.compile(
-    r"\badd\s+(?:(?:a|an|the|new|regression|unit|parametri[sz]ed)\s+)*"
+    r"\badd\s+(?:(?:a|an|the|new|regression|unit|parametri[sz]ed)\s+){0,6}"
     r"(?:(?:tests?|test\s+cases?)\s+)?(?=`)",
     _I,
 )
 _TEST_CODE_NAME = re.compile(r"^(?:[\w/.\-]+\.[A-Za-z]+::)?(?:\w+::)*test\w*(?:\[[^\]]*\])?$")
 _TESTS_ADDED_PASSIVE = re.compile(
-    r"\b(?:(?:new|regression|unit|more)\s+)*(?:tests?|test\s+cases?|specs?)\s+"
+    r"\b(?:(?:new|regression|unit|more)\s+){0,6}(?:tests?|test\s+cases?|specs?)\s+"
     r"(?:were|was|have\s+been|has\s+been)\s+(?:added|written|created)\b",
     _I,
 )
@@ -870,6 +918,9 @@ def _tests_added(v: _View) -> list[_Candidate]:
     found += [m.span() for m in _TESTS_ADDED_PASSIVE.finditer(v.prose)]
     label = _TESTS_ADDED_LABEL.match(v.prose)
     if label is not None:
+        if _NONE_VALUE.match(v.prose, label.end()):  # "New tests: none (docs only)"
+            hit = PatternHit(ClaimType.TESTS_ADDED, {}, True, label.span())
+            return [_Candidate(hit, "tests_added", blocks, (0, len(v.text)))]
         found.append(label.span())
     if _CREATE_WRITE.search(v.prose):
         found += [m.span() for m in _TESTS_WITH.finditer(v.prose)]
@@ -956,13 +1007,13 @@ _BUG_NOUNS = re.compile(
 _BUG_PASSIVE = re.compile(
     _LEAD_FILLERS + r"(?P<subj>[^;]{2,120}?)\s+(?:is|are|was|were|has\s+been|have\s+been"
     r"|is\s+now|are\s+now|now|got|gets)\s+(?:(?:now|also|fully|properly|finally|completely"
-    r"|definitely)\s+)*(?:fixed|resolved|corrected|patched)\b"
+    r"|definitely)\s+){0,3}(?:fixed|resolved|corrected|patched)\b"
     r"(?!\s*-|\s+(?:at|to|width|size|point|seed|in\s+place)\b)",
     _I,
 )
 _BUG_PASSIVE_NEGATED = re.compile(
     _LEAD_FILLERS + r"(?P<subj>[^;]{2,120}?)\s+(?:(?:is|are|was|were|has|have)\s*(?:n[o']?t|not)"
-    r"\s+(?:(?:yet|been|fully|actually|completely)\s+)*(?:fixed|resolved)"
+    r"\s+(?:(?:yet|been|fully|actually|completely)\s+){0,3}(?:fixed|resolved)"
     r"|(?:is|are)\s+still\s+(?:broken|present|there|happening|reproducible))\b",
     _I,
 )
@@ -987,7 +1038,7 @@ _BUG_SUBJECT = re.compile(
     r"(?:^|[,:;(]|\b(?:i|we|i'?ve|we'?ve|i\s+have|we\s+have|i\s+had|we\s+had|this|that|which"
     r"|it|(?:this|that|the|my|our)\s+(?:change|commit|pr|patch|fix|update|diff|edit|refactor"
     r"|rewrite)s?))\s*(?:(?:also|now|then|finally|just|already|successfully|properly|correctly"
-    r"|actually|thereby|both|have|has|had)\s+)*$",
+    r"|actually|thereby|both|have|has|had)\s+){0,6}$",
     _I,
 )
 _BELIEF = re.compile(
@@ -995,11 +1046,25 @@ _BELIEF = re.compile(
     r"|likely|hopefully|presumably)\b",
     _I,
 )
+#: "..., which I" right before a fix verb. The antecedent is found with rfind, not inside
+#: the regex: a pattern that also matched the antecedent backtracked in cubic time.
 _RELATIVE_FIX = re.compile(
-    r"(?P<ante>[^,;:]*[A-Za-z0-9`][^,;:]*?),?\s+which\s+(?:i|we)\s+(?:(?:also|then|have|had|now"
-    r"|just)\s+)*$",
-    _I,
+    r",?\s+which\s+(?:i|we)\s+(?:(?:also|then|have|had|now|just)\s+){0,6}$", _I
 )
+
+
+def _relative_antecedent(before: str) -> Span | None:
+    """Span of the phrase a "which I fixed" clause refers to, or None if there is none."""
+    relative = _RELATIVE_FIX.search(before)
+    if relative is None:
+        return None
+    end = relative.start()
+    start = max(before.rfind(char, 0, end) for char in ",;:") + 1
+    if not re.search(r"[A-Za-z0-9`]", before[start:end]):
+        return None
+    return (start, end)
+
+
 _DESC_BLOCKS = frozenset(
     {"tests", "lint", "typecheck", "build", "complete", "could_not", "feature", "bug"}
 )
@@ -1015,12 +1080,12 @@ def _bug_fixed(v: _View) -> list[_Candidate]:
         region = (min(anchor[0], desc[1][0]), max(anchor[1], desc[1][1]))
         out.append(_Candidate(hit, "bug", _DESC_BLOCKS - {"bug"}, region))
 
-    if _BUG_CONTEXT.match(v.context) and v.unit.kind == "list_item":
-        add(_description(v, 0), False, (0, len(v.text)))
-        return out
     label = _BUG_LABEL.match(v.prose)
-    if label is not None:
-        add(_description(v, label.end()), False, label.span())
+    in_section = _BUG_CONTEXT.match(v.context) and v.unit.kind == "list_item"
+    if in_section or label is not None:
+        item = _section_item(v, label.end() if label is not None else 0)
+        if item is not None:  # "## Bug fixes" then "- None" says nothing was fixed
+            add(item[0], item[1], label.span() if label is not None else (0, len(v.text)))
         return out
     for match in _BUG_VERB.finditer(v.prose):
         verb = match.group("verb").lower()
@@ -1037,13 +1102,9 @@ def _bug_fixed(v: _View) -> list[_Candidate]:
             continue  # "The old implementation fixed the seed": not the agent's fix
         if _BELIEF.search(before):
             continue  # "I believe this resolves the race": a hope, not a claim
-        relative = _RELATIVE_FIX.search(before)
-        if relative is not None:  # "The failure is test_x, which I fixed afterwards"
-            add(
-                _description(v, relative.start("ante"), relative.end("ante")),
-                negated,
-                match.span("verb"),
-            )
+        antecedent = _relative_antecedent(before)
+        if antecedent is not None:  # "The failure is test_x, which I fixed afterwards"
+            add(_description(v, antecedent[0], antecedent[1]), negated, match.span("verb"))
             continue
         add(_description(v, match.end()), negated, match.span("verb"))
     for match in _BUG_GERUND.finditer(v.prose):
@@ -1092,22 +1153,31 @@ _FEATURE_ADDED = re.compile(
     r"\b(?P<verb>added|adds|add|introduced|introduces|introduce|created|creates|create|exposed"
     r"|exposes|expose)\s+"
     r"(?P<obj>(?:(?:a|an|the|new|optional|basic|full|simple|proper|initial|first-class|built-in"
-    r"|configurable|dedicated|separate)\s+)*"
+    r"|configurable|dedicated|separate)\s+){0,6}"
     r"(?:(?:(?!(?:with|to|for|in|from|of|on|at|by|into|and|or|that|which)\b)"
     r"(?:`C+`|--?[A-Za-z][\w-]*|[A-Za-z][\w'-]*)\s+){0,4}?" + _FEATURE_NOUNS + r"\b"
     r"|(?P<flag>`C+`|--[A-Za-z][\w-]*)(?=\s|$|[.,;:)])))",
     _I,
 )
 _FEATURE_BASE_FORMS = frozenset({"implement", "add", "introduce", "create", "expose"})
+#: Present-tense forms, which describe existing code ("The function implements a binary
+#: search") unless their subject is the change itself ("This PR adds a flag").
+_FEATURE_PRESENT_FORMS = frozenset({"implements", "adds", "introduces", "creates", "exposes"})
+_CHANGE_SUBJECT = re.compile(
+    r"(?:^|[,:;(]|\b(?:this|that|which|it|(?:this|that|the|my|our)\s+(?:change|commit|pr|patch"
+    r"|fix|update|diff|edit|refactor|rewrite|pull\s+request|merge\s+request|mr|branch)s?))\s*"
+    r"(?:(?:also|now|then|finally|just|additionally)\s+){0,3}$",
+    _I,
+)
 _BE_BEFORE = re.compile(
     r"\b(?:is|are|was|were|be|been|being|get|got|gets|isn'?t|aren'?t|wasn'?t|weren'?t|not)\s+"
-    r"(?:(?:now|also|fully|properly|finally|completely|already|yet|still|all|both|just|not)\s+)*$",
+    r"(?:(?:now|also|fully|properly|finally|completely|already|yet|still|all|both|just|not)\s+){0,6}$",
     _I,
 )
 _FEATURE_SKIP_OBJECT = re.compile(
     r"^\s*(?:all\b|everything\b|the\s+(?:requested\s+|required\s+)?changes\b"
     r"|all\s+(?:the\s+)?(?:requested\s+)?(?:changes|requirements|features|items|tasks)\b"
-    r"|the\s+task\b|it\b|this\b|that\b|them\b|(?:the\s+|a\s+|new\s+|some\s+)*(?:tests?|specs?)\b)",
+    r"|the\s+task\b|it\b|this\b|that\b|them\b|(?:the\s+|a\s+|new\s+|some\s+){0,6}(?:tests?|specs?)\b)",
     _I,
 )
 _FEATURE_FIX_OBJECT = re.compile(r"^\s*(?:a|the)\s+(?:bug\s*)?fix\b", _I)
@@ -1132,7 +1202,7 @@ _FEATURE_SUBJECT_SKIP = re.compile(
 )
 _FEATURE_NOW = re.compile(
     r"\bnow\s+(?:supports|accepts|respects|honou?rs|provides|exposes|offers|emits|outputs|has"
-    r"|includes|validates)\b",
+    r"|includes|validates|implements)\b",
     _I,
 )
 _FEATURE_LABEL = re.compile(
@@ -1158,19 +1228,26 @@ def _feature(v: _View) -> list[_Candidate]:
         out.append(_Candidate(hit, family, _DESC_BLOCKS - {family}, region))
 
     feature = ClaimType.FEATURE_IMPLEMENTED
-    if _FEATURE_CONTEXT.match(v.context) and v.unit.kind == "list_item":
-        add(_description(v, 0), False, (0, len(v.text)), feature)
-        return out
     label = _FEATURE_LABEL.match(v.prose)
-    if label is not None:
-        add(_description(v, label.end()), False, label.span(), feature)
+    in_section = _FEATURE_CONTEXT.match(v.context) and v.unit.kind == "list_item"
+    if in_section or label is not None:
+        item = _section_item(v, label.end() if label is not None else 0)
+        if item is not None:  # "Pagination (not implemented; ...)" admits it is missing
+            anchor = label.span() if label is not None else (0, len(v.text))
+            add(item[0], item[1], anchor, feature)
         return out
+
+    def describes_code(match: re.Match[str]) -> bool:
+        verb = match.group("verb").lower().split()[0]
+        before = _LEAD.sub("", v.prose[: match.start()], count=1)
+        return verb in _FEATURE_PRESENT_FORMS and not _CHANGE_SUBJECT.search(before)
+
     for match in _FEATURE_IMPLEMENTED.finditer(v.prose):
         negated = match.group("neg") is not None
         base = match.group("verb").lower() in _FEATURE_BASE_FORMS and not negated
         if base and not _after_path_prefix(v, match.start("verb")):
             continue
-        if _BE_BEFORE.search(v.prose[: match.start()]):
+        if _BE_BEFORE.search(v.prose[: match.start()]) or describes_code(match):
             continue
         rest = v.prose[match.end() :]
         if _FEATURE_SKIP_OBJECT.match(rest):
@@ -1180,7 +1257,7 @@ def _feature(v: _View) -> list[_Candidate]:
     for match in _FEATURE_ADDED.finditer(v.prose):
         negated = match.group("neg") is not None
         base = match.group("verb").lower() in _FEATURE_BASE_FORMS and not negated
-        if base and not _after_path_prefix(v, match.start("verb")):
+        if (base and not _after_path_prefix(v, match.start("verb"))) or describes_code(match):
             continue
         flag = match.group("flag")
         if flag and flag.startswith("`"):
@@ -1223,28 +1300,98 @@ _COULD_NOT = re.compile(
 _COULD_NOT_AGENT = re.compile(
     r"^\W*(?:(?:unfortunately|however|sadly|note|but|so|and|also|still|then|ultimately"
     r"|in\s+the\s+end|at\s+the\s+moment|currently|right\s+now|for\s+now|caveat|limitation"
-    r"|known\s+issue|blocker|blocked)\s*[,:]?\s*)*(?:(?:i|we)\s+)?"
-    r"(?:(?:also|still|just|really|unfortunately|ultimately|simply|then|now|currently)\s+)*$",
+    r"|known\s+issue|blocker|blocked)" + _SEP + r"){0,8}(?:(?:i|we)\s+)?"
+    r"(?:(?:also|still|just|really|unfortunately|ultimately|simply|then|now|currently)\s+){0,4}$",
     _I,
 )
-_COULD_NOT_IMPERSONAL = re.compile(r"^(?:ran|had|there|it|was|is)\b", _I)
-_COULD_NOT_ANY_SUBJECT = re.compile(
-    r"(?:be\s+\w+|run|start|connect|reach|complete|finish|load|import|find|access|install"
-    r"|execute|build|compile|pass|reproduce|verify|resolve|download|fetch|open|launch|bind"
-    r"|authenticate|parse)\b",
+#: Cues that name no subject because the agent is meant: "ran out of time to", "had no
+#: way to", "there was no way to", "it was not possible to" (past tense only: "it is not
+#: possible to set X" describes the code).
+_COULD_NOT_IMPERSONAL = re.compile(r"^(?:ran|had|there\s+was|it\s+was)\b", _I)
+#: Present-tense cues that carry their own subject ("it is not possible to", "there is no
+#: way to"): like another subject, they need an admission about the work.
+_COULD_NOT_PRESENT_IMPERSONAL = re.compile(r"^(?:it\s+is|there\s+is|is)\b", _I)
+#: Past-tense cues: an event in the run ("could not", "was unable to"), not a rule.
+_COULD_NOT_PAST = re.compile(r"^(?:could|was|were|had|have|has|did|ran|there\s+was|it\s+was)", _I)
+#: A passive admission about the work: "the tests could not be run".
+_WORK_PASSIVE = re.compile(
+    r"be\s+(?:re-?)?(?:run|executed|tested|verified|reproduced|started|installed|reached|built"
+    r"|compiled|completed|finished|checked|exercised|validated|confirmed|measured|fetched"
+    r"|downloaded|accessed|loaded|imported|deployed|launched|evaluated|benchmarked|profiled"
+    r"|tried|done|set\s+up|configured|connected)\b",
+    _I,
+)
+#: An active work verb whose subject is not the agent: "the e2e suite can't run here".
+_WORK_ACTIVE = re.compile(
+    r"(?:re-?)?(?:run|start|connect|reach|complete|finish|load|import|install|execute|build"
+    r"|compile|pass|download|fetch|launch|bind|access|authenticate)\b",
+    _I,
+)
+#: Where or why the work could not happen: the sandbox, a missing service or credential.
+_ENV_QUALIFIER = re.compile(
+    r"\b(?:here|locally|offline|in\s+(?:this|the|my|our)\s+(?:environment|sandbox|container"
+    r"|workspace|vm|machine|session|setup)|in\s+(?:the\s+)?ci|on\s+this\s+(?:machine|box|host)"
+    r"|without\s+(?:network(?:\s+access)?|internet|docker|postgres(?:ql)?|redis|kafka|a\s+database"
+    r"|database|credentials|an?\s+api\s+key|api\s+keys|access|a\s+gpu|gpu|a\s+browser|browser"
+    r"|aws|cloud\s+credentials)"
+    r"|(?:because|since|as|due\s+to)\b[^.;]{0,100}?\b(?:(?:is|are|was|were)\s*(?:n[o']?t|not)\s+"
+    r"(?:available|installed|running|reachable|accessible|configured|set|present|allowed"
+    r"|permitted|provided)|(?:is|are|was|were)\s+(?:missing|unavailable|down|blocked|offline"
+    r"|disabled|unreachable)|no\s+(?:network|internet|access|credentials|docker|database|gpu"
+    r"|browser|api\s+key)))\b|\(\s*(?:no|missing|needs?|requires?)\b",
+    _I,
+)
+#: Words before the cue that make it a description of the code or of the old bug rather
+#: than an admission: "before this change the server could not start", "the bug was that
+#: the parser could not parse", "the validation ensures tokens cannot be reused".
+_COULD_NOT_DESCRIBES = re.compile(
+    r"\b(?:previously|originally|formerly|used\s+to|before\s+(?:this|the|my|our|that)\s+"
+    r"(?:change|fix|patch|commit|pr|update|refactor)|before\s+(?:fixing|the\s+fix|my\s+fix)"
+    r"|without\s+(?:the|this|my)\s+(?:fix|change|patch)|(?:the|a)\s+(?:bug|problem|issue|root"
+    r"\s+cause|cause|crash|regression)\s+(?:was|is)|ensures?|ensuring|makes?\s+sure"
+    r"|guarantees?|prevents?|so\s+that)\b",
+    _I,
+)
+#: "I could not find any issues": a clean result, not an admission.
+_FOUND_NOTHING = re.compile(
+    r"(?:find|see|spot|detect|identify|observe)\s+(?:any\s+(?:other\s+|more\s+"
+    r"|remaining\s+|new\s+)?|a\s+single\s+|an?\s+)?(?:issues?|problems?|failures?|errors?"
+    r"|bugs?|regressions?|differences?|discrepanc(?:y|ies)|anything\s+(?:wrong|else|broken))\b",
     _I,
 )
 
 
 def _could_not(v: _View) -> list[_Candidate]:
+    """``could_not`` claims: the agent admits something it could not do.
+
+    The subject must be the agent: "I" or "we", no subject at all ("Couldn't reproduce
+    the failure"), or an impersonal past cue ("ran out of time to", "there was no way
+    to"). Another subject counts only for an admission about the work: a past passive
+    of a work verb ("the tests could not be run"), or a work verb with a reason in the
+    environment ("the e2e suite can't run here since Docker isn't available"). Dated
+    statements and descriptions of the code or of the old bug ("previously the CLI could
+    not parse `--json`", "tokens cannot be reused") and clean results ("I could not find
+    any issues") give no claim.
+    """
     for match in _COULD_NOT.finditer(v.prose):
         cue = match.group("cue").lower()
         before = v.prose[: match.start()]
-        agent = bool(_COULD_NOT_AGENT.match(before)) or bool(_COULD_NOT_IMPERSONAL.match(cue))
-        if not agent and (
-            cue.startswith("failed") or not _COULD_NOT_ANY_SUBJECT.match(v.prose, match.end())
-        ):
+        after = v.prose[match.end() :]
+        if _COULD_NOT_DESCRIBES.search(before) or _FOUND_NOTHING.match(after):
             continue
+        agent = bool(_COULD_NOT_IMPERSONAL.match(cue)) or (
+            bool(_COULD_NOT_AGENT.match(before)) and not _COULD_NOT_PRESENT_IMPERSONAL.match(cue)
+        )
+        if not agent:
+            if cue.startswith("failed"):
+                continue
+            past = bool(_COULD_NOT_PAST.match(cue))
+            if _WORK_PASSIVE.match(after):
+                admits = past or bool(_ENV_QUALIFIER.search(after))
+            else:
+                admits = bool(_WORK_ACTIVE.match(after)) and bool(_ENV_QUALIFIER.search(after))
+            if not admits:
+                continue
         lead = _LEAD.match(v.prose)
         start = match.end() if agent else (lead.end() if lead is not None else 0)
         desc = _description(v, start)
@@ -1260,7 +1407,7 @@ def _could_not(v: _View) -> list[_Candidate]:
 _COMPLETE_LEAD = (
     r"^\W*(?:(?:ok(?:ay)?|great|alright|all\s+right|so|and|yes|overall|in\s+short|in\s+summary"
     r"|summary|to\s+summari[sz]e|tl;?dr|status|result|final\s+status|update|good\s+news)"
-    r"\s*[,:!.\-]*\s+)*"
+    r"(?:\s*[,:!.\-]+\s*|\s+)){0,8}"
 )
 _COMPLETE = re.compile(
     _COMPLETE_LEAD + r"(?P<claim>"
@@ -1306,29 +1453,46 @@ _NOT_COMPLETE = re.compile(
 )
 
 
+#: In a heading or label line, only an explicit status counts as a task_complete claim:
+#: a "Status:" prefix, a verb ("Everything is done"), or a status phrase ("Task complete").
+#: A bare "Done", "Not done" or "Completed" names a section.
+_STATUS_PREFIX = re.compile(r"^\W*(?:(?:final|overall)\s+)?(?:status|result|state)\s*[:\-]", _I)
+_STATUS_STATEMENT = re.compile(
+    r"\b(?:is|are|was|were|am|has\s+been|have\s+been)\b|'(?:s|re|m|ve)\b|\b(?:task|work)\s+complete"
+    r"|\ball\s+set\b|\bready\s+(?:for\s+review|to\s+merge)\b|\bgood\s+to\s+go\b"
+    r"|\bthat'?s\s+(?:it|everything)\b|\b(?:i|we)\s+(?:have|'ve)\b",
+    _I,
+)
+
+
 def _task_complete(v: _View) -> list[_Candidate]:
     for regex, negated in ((_NOT_COMPLETE, True), (_COMPLETE, False)):
         match = regex.match(v.prose)
-        if match is not None:
-            hit = PatternHit(ClaimType.TASK_COMPLETE, {}, negated, match.span("claim"))
-            return [_Candidate(hit, "complete", frozenset({"feature"}), match.span("claim"))]
+        if match is None:
+            continue
+        explicit = _STATUS_PREFIX.match(v.prose) or _STATUS_STATEMENT.search(match.group("claim"))
+        if v.unit.label and not explicit:
+            return []  # "## Done", "**Not done:**": a section name, not a claim
+        hit = PatternHit(ClaimType.TASK_COMPLETE, {}, negated, match.span("claim"))
+        return [_Candidate(hit, "complete", frozenset({"feature"}), match.span("claim"))]
     return []
 
 
 _RAN_VERB = re.compile(
     r"(?P<neg>\b(?:did\s*n[o']?t|did\s+not|have\s*n[o']?t|have\s+not|has\s*n[o']?t|has\s+not"
     r"|had\s*n[o']?t|had\s+not|never)\s+(?:(?:yet|actually|even|get\s+to|bother\s+to)\s+)?)?"
-    r"\b(?P<verb>re-?ran|reran|ran|executed|invoked|kicked\s+off|triggered|re-?run|run|execute)\b",
+    r"\b(?P<verb>re-?ran|reran|ran|executed|invoked|kicked\s+off|triggered|re-?run|run|execute)\b"
+    r"(?!\s+(?:into|across|out\s+of)\b)",  # "ran into test failures" ran nothing
     _I,
 )
 _RAN_BASE_FORMS = frozenset({"run", "rerun", "re-run", "execute"})
 _PERFECT = re.compile(
-    r"(?:\b(?:have|has|had)|'ve|'d)\s+(?:(?:also|now|just|already|then|since|both)\s+)*$", _I
+    r"(?:\b(?:have|has|had)|'ve|'d)\s+(?:(?:also|now|just|already|then|since|both)\s+){0,6}$", _I
 )
 _ADVICE_BEFORE = re.compile(
     r"\b(?:will|would|should|could|can|might|may|must|need\s+to|needs\s+to|have\s+to|has\s+to"
     r"|going\s+to|want\s+to|to|please|you|recommend|suggest|try|let'?s|lets|i'?ll|we'?ll)\s+"
-    r"(?:(?:also|then|now|just|first|still|re-?)\s+)*$",
+    r"(?:(?:also|then|now|just|first|still|re-?)\s+){0,6}$",
     _I,
 )
 _ADVICE = re.compile(
@@ -1341,7 +1505,7 @@ _VERIFIED_WITH = re.compile(
     r"\b(?:verified|tested|checked|confirmed|validated|exercised|smoke-tested|sanity-checked)"
     r"\s+(?:(?:it|this|that|them|everything|the\s+(?:fix|change|changes|behaviou?r|output|feature"
     r"|flag|cli|result|endpoint|script|command|patch))\s+)?(?:(?:manually|locally"
-    r"|end[- ]to[- ]end|again|also|further)\s+)*(?:with|using|via|by\s+running|through"
+    r"|end[- ]to[- ]end|again|also|further)\s+){0,6}(?:with|using|via|by\s+running|through"
     r"|by\s+executing)\s+",
     _I,
 )
@@ -1378,6 +1542,9 @@ _NOT_RUN = re.compile(
     _I,
 )
 _BARE_NOT_RUN = re.compile(r"^[^\w`]*(?:not\s+(?:yet\s+)?run|none\s+run|skipped)\b", _I)
+#: What may follow a bare "Not run" for it to mean the tests: nothing, or only a reason.
+_REASON_ONLY = re.compile(r"\s*(?:[.!;]\s*)?$|\s*\(|\s*,?\s*(?:because|since|as|due\s+to)\b", _I)
+_NOT_RUN_LEAD = re.compile(r"\s*(?::|-{1,2}|->)\s*", _I)
 _TESTING_CONTEXT = re.compile(r"\b(?:tests?|testing|verification|validation)\b", _I)
 _NEGATED_BEFORE = re.compile(r"(?:\bnot|n't|\bnever)\b", _I)
 _UNIT_START_CODE = re.compile(r"^[^\w`]*(?:[A-Za-z][\w /-]{0,30}?\s*:\s*)?(?=`)")
@@ -1393,9 +1560,21 @@ _UNIT_START_BARE = re.compile(
     r"|npm\s+test|npm\s+run\s+[\w:-]+|yarn\s+test|pnpm\s+test)\s*(?::|→|->|=>|\s-\s)",
     _I,
 )
+#: Section labels that list commands the agent ran ("Commands run", "How I verified",
+#: "Verification"). Labels that give the reader instructions do not count.
 _COMMANDS_CONTEXT = re.compile(
-    r"\b(?:commands?|ran|run|executed|verification|verified|verify|testing|tests?\s+run"
-    r"|checks?\s+run|how\s+(?:i\s+)?(?:tested|verified)|validation|validated)\b",
+    r"\b(?:commands?\s+(?:i\s+|we\s+)?(?:ran|run|executed|used)|ran|executed|verification"
+    r"|verified|testing|tests?\s+(?:run|ran|executed)|test\s+results?|checks?(?:\s+run)?"
+    r"|how\s+(?:i|we)\s+(?:tested|verified|checked|validated)|what\s+(?:i|we)\s+ran|validation"
+    r"|validated)\b",
+    _I,
+)
+#: Instruction labels: "How to verify", "To run it locally", "Commands to run before
+#: merging", "Testing instructions", "Steps to reproduce".
+_INSTRUCTION_CONTEXT = re.compile(
+    r"\b(?:how\s+to|to\s+(?:run|verify|test|check|reproduce|try|use|build|install|deploy)"
+    r"|instructions?|steps\s+to|reproduc\w*|before\s+merg\w*|usage|you\s+can|next\s+steps?"
+    r"|manual(?:ly)?|try\s+it|recommended|suggested|optional)\b",
     _I,
 )
 
@@ -1434,9 +1613,20 @@ def _ran_command(v: _View) -> list[_Candidate]:
             items = _command_items(v, running.end())
             if items and _RUNNING_RESULT.match(v.prose, items[-1].end):
                 add(items, False, running.start())
-    if _BARE_NOT_RUN.match(v.prose) and _TESTING_CONTEXT.search(v.context):
-        # "**Testing**" then "- Not run (no AWS credentials)"
-        add([_CommandItem(0, len(v.text), "the tests")], True, 0)
+    bare_not_run = _BARE_NOT_RUN.match(v.prose)
+    if bare_not_run is not None and _TESTING_CONTEXT.search(v.context):
+        # "**Testing**" then "- Not run (no AWS credentials)": only a reason follows, so
+        # the tests were not run. "- Skipped the e2e suite" names what was skipped.
+        rest = bare_not_run.end()
+        lead = _NOT_RUN_LEAD.match(v.prose, rest)
+        if _REASON_ONLY.match(v.prose, rest):
+            add([_CommandItem(0, len(v.text), "the tests")], True, 0)
+        elif lead is not None:
+            items = _command_items(v, lead.end())
+            if items:
+                add(items, True, 0)
+            else:
+                add([_CommandItem(0, len(v.text), "the tests")], True, 0)  # "Not run: no DB"
     not_run = _NOT_RUN.match(v.prose)
     generic = generic_command(not_run.group("subj")) if not_run is not None else None
     if not_run is not None and generic is not None:
@@ -1461,9 +1651,8 @@ def _ran_command(v: _View) -> list[_Candidate]:
         command = command_param(v.content(span))
         result = _RESULT_AFTER.match(v.prose, span[1])
         at_end = not v.prose[span[1] :].strip(" .:;,")
-        if command is not None and (
-            result is not None or (at_end and _COMMANDS_CONTEXT.search(v.context))
-        ):
+        listed = _COMMANDS_CONTEXT.search(v.context) and not _INSTRUCTION_CONTEXT.search(v.context)
+        if command is not None and (result is not None or (at_end and listed)):
             add([_CommandItem(span[0], span[1], command)], False, span[0])
     bare = _UNIT_START_BARE.match(v.prose)
     if bare is not None and not advice:
@@ -1475,12 +1664,18 @@ def _ran_command(v: _View) -> list[_Candidate]:
 _TEST_NOUN = r"(?:test\s+cases?|tests?|specs?|cases?)"
 _COUNT_GAP = r"(?:(?:(?:[a-z][\w-]*)\s+)?" + _TEST_NOUN + r"\s+)?"
 _NOT_REFERENCE = r"(?<![\w.])(?<!the\s)(?<!these\s)(?<!those\s)(?<!both\s)(?<!of\s)"
+#: A number after one of these words is a date, a version or a quantity, not a test count
+#: ("dates before 1970 fail to parse").
+_NOT_AFTER_PREPOSITION = (
+    r"(?<!before\s)(?<!after\s)(?<!since\s)(?<!until\s)(?<!from\s)(?<!than\s)(?<!in\s)"
+    r"(?<!on\s)(?<!at\s)(?<!by\s)(?<!over\s)(?<!under\s)(?<!to\s)"
+)
 _ALL_N = re.compile(
     r"(?<!not\s)\ball\s+(?:of\s+the\s+|the\s+|of\s+)?(?P<n>"
     + _NUM
     + r")\s+"
     + _COUNT_GAP
-    + r"(?:(?:now|still|also|are|were)\s+)*(?:pass(?:es|ed|ing)?|succeed(?:s|ed)?|green|ok)\b",
+    + r"(?:(?:now|still|also|are|were)\s+){0,6}(?:pass(?:es|ed|ing)?|succeed(?:s|ed)?|green|ok)\b",
     _I,
 )
 _N_ALL = re.compile(
@@ -1493,37 +1688,52 @@ _N_ALL = re.compile(
     r"|succeed(?:ed|s)?)",
     _I,
 )
+#: "12/13", "12 of 13", "12 out of 13", with an optional test noun and pass verb. The
+#: denominator may end a sentence ("Tests: 40/42."), but a decimal ("40/42.5") is no count.
 _FRACTION = re.compile(
-    r"(?<![\w./])(?P<p>\d+)\s*(?:/|of|out\s+of)\s*(?:the\s+)?(?P<t>\d+)(?![\w.])"
+    r"(?<![\w./])(?P<p>\d+)\s*(?:/|of|out\s+of)\s*(?:the\s+)?(?P<t>\d+)(?!\w|\.\d)"
     r"(?P<noun>\s+(?:(?:[a-z][\w-]*)\s+)?" + _TEST_NOUN + r")?"
-    r"(?P<verb>\s+(?:(?:are|now|still|were)\s+)*(?:pass(?:es|ed|ing)?|succeed(?:s|ed)?|green"
+    r"(?P<verb>\s+(?:(?:are|now|still|were)\s+){0,6}(?:pass(?:es|ed|ing)?|succeed(?:s|ed)?|green"
     r"|ok))?",
     _I,
 )
 _FAIL_AFTER = re.compile(
-    r"\s+(?:(?:are|is|were|was|still|now|also|currently)\s+)*(?:fail(?:s|ed|ing)?|broken|red"
+    r"\s+(?:(?:are|is|were|was|still|now|also|currently)\s+){0,6}(?:fail(?:s|ed|ing)?|broken|red"
     r"|erroring|error(?:s|ed)?)\b",
     _I,
 )
+#: A fraction after a pass word or a tests label: "Passing: 40/42", "Tests: 40/42.".
 _FRACTION_LEAD = re.compile(
-    r"\b(?:passing|passed|pass)\s*[:=]?\s*(?P<p>\d+)\s*/\s*(?P<t>\d+)(?![\w.])", _I
+    r"\b(?:(?:passing|passed|pass)\s*[:=]?|(?:tests?|test\s+results?|unit\s+tests?)\s*[:=])"
+    r"\s*(?P<p>\d+)\s*/\s*(?P<t>\d+)(?!\w|\.\d|\s*(?:\w+\s+)?(?:fail|broken|red|error))",
+    _I,
 )
 _N_PASSED = re.compile(
     _NOT_REFERENCE
+    + _NOT_AFTER_PREPOSITION
     + r"(?P<n>"
     + _NUM
-    + r")\s+"
+    + r")\s+(?P<gap>"
     + _COUNT_GAP
-    + r"(?:(?:now|all|still|also|are|were|have|had)\s+)*(?:pass(?:ed|es|ing)?|succeed(?:ed|s)?)\b",
+    + r")(?:(?:now|all|still|also|are|were|have|had)\s+){0,6}(?:pass(?:ed|es|ing)?"
+    r"|succeed(?:ed|s)?)\b(?!\s+(?:validation|the|a|an|through)\b)",
     _I,
 )
 _N_FAILED = re.compile(
     _NOT_REFERENCE
+    + _NOT_AFTER_PREPOSITION
     + r"(?P<n>"
     + _NUM
-    + r")\s+"
+    + r")\s+(?P<gap>"
     + _COUNT_GAP
-    + r"(?:(?:are|is|were|was|still|now|also|currently)\s+)*(?:fail(?:ed|s|ing)?|failures?)\b",
+    + r")(?:(?:are|is|were|was|still|now|also|currently)\s+){0,6}(?:fail(?:ed|s|ing)?"
+    r"|failures?)\b(?!\s+to\b)",
+    _I,
+)
+#: A failure count after a label: "Failures: 0", "Tests failing now: 0", "Failed: 2".
+_LABELED_FAILURES = re.compile(
+    r"\b(?:(?:tests?|specs?)\s+)?(?:failing(?:\s+tests?)?|failed(?:\s+tests?)?|failures?)"
+    r"(?:\s+(?:now|remaining|left|still))?\s*[:=]\s*(?P<n>\d+|none|zero)\b(?!\s*/|\.\d)",
     _I,
 )
 _TOTALS = (
@@ -1554,12 +1764,85 @@ _TOTAL_NO_FAILURES = re.compile(
 _NO_FAILURES = re.compile(
     r"\b(?:no|zero|0)\s+(?:test\s+)?(?:failures|failed|failing\s+tests)\b", _I
 )
+#: Words that date a statement to before the agent's work ("3 tests failed before my
+#: change", "Initially mypy reported 4 errors", "failed until I added the stub").
+#: "previously failing tests" is an adjective, not a date.
 _HISTORICAL = re.compile(
-    r"\b(?:initially|originally|previously|before\s+(?:my|the|this|i|we|that|these)\b"
-    r"|at\s+first|at\s+the\s+start|earlier|used\s+to|prior\s+to|beforehand|were\s+failing\s+before"
-    r"|was\s+failing\s+before)",
+    r"\b(?:initially|originally|previously(?![- ](?:failing|failed|broken|flaky|skipped|red"
+    r"|passing)\s+(?:tests?|specs?|cases?|suites?|checks?))|before\s+(?:my|the|this|i|we|that"
+    r"|these|any)\b|at\s+first|at\s+the\s+(?:start|beginning)|earlier|used\s+to|prior\s+to"
+    r"|beforehand|on\s+the\s+first\s+(?:run|try|attempt|pass)|the\s+first\s+time"
+    r"|(?:were|was)\s+failing\s+before|until\s+(?:i|we)\s+(?:had\s+|have\s+|finally\s+)?"
+    r"(?:\w+ed|wrote|made|set|put|ran|reran|re-ran|got|found|took|built|rebuilt|undid|split))\b",
     _I,
 )
+#: A failure in the past tense; only such a failure can be undone by a later clause.
+_PAST_FAILURE = re.compile(
+    r"\b(?:failed|(?:was|were)\s+(?:still\s+)?(?:failing|broken|red|erroring)|broke|errored"
+    r"|crashed|timed\s+out|found|reported|flagged|showed|gave|had|complained|returned|produced"
+    r"|listed|exited)\b",
+    _I,
+)
+#: A later clause saying the thing now succeeds: "then passed on retry", "it passes now",
+#: "now it's clean", "after adding annotations it passes", "which I fixed". Its subject
+#: is a pronoun or nothing, so "now the build passes" does not undo a test failure.
+_LATER_SUCCESS = re.compile(
+    r"\b(?:then|now|later|eventually|finally|afterwards|after\s+that|since\s+then)\s+"
+    r"(?:(?:it|they|both|all(?:\s+of\s+them)?|everything)\s+)?(?:(?:all|also|again|now)\s+)?"
+    r"(?:pass(?:es|ed|ing)?|succeed(?:s|ed)?|builds?|built|compiles?|compiled|works?|worked"
+    r"|(?:is|are|was|were|comes?\s+back|came\s+back)\s+(?:all\s+)?(?:clean|green|passing|fine"
+    r"|happy))\b"
+    r"|\bnow\s+(?:it|they|everything)(?:'s|'re|\s+is|\s+are)\s+(?:all\s+)?(?:clean|green"
+    r"|passing|fine)\b"
+    r"|\b(?:it|they|both|everything|all\s+of\s+them)(?:'s|'re|\s+is|\s+are)?\s+(?:(?:all|also"
+    r"|now)\s+)?(?:pass(?:es)?|succeeds?|builds?|compiles?|works?|clean|green|passing|fine)\s+"
+    r"(?:now|again)\b"
+    r"|\bpass(?:es|ed)?\s+on\s+(?:a\s+|the\s+)?(?:retry|re-?run|second\s+(?:try|attempt|run))\b"
+    r"|\bafter\s+[^.;]{1,80}?\b(?:it|they|everything|both)\s+(?:now\s+)?(?:all\s+)?"
+    r"(?:pass(?:es)?|succeeds?|builds?|compiles?|works?|(?:is|are)\s+(?:clean|green))\b"
+    r"|\b(?:which|that)\s+(?:i|we)\s+(?:then\s+|have\s+|also\s+|since\s+)?(?:fixed|resolved"
+    r"|addressed|corrected)\b"
+    r"|\b(?:i|we)\s+(?:then\s+|also\s+)?(?:fixed|resolved|addressed)\s+(?:them|those|these|it"
+    r"|both|all\s+of\s+them)\b",
+    _I,
+)
+#: A pass in the past tense, which a dating word turns into history ("Before my change
+#: all tests passed").
+_PAST_PASS = re.compile(
+    r"\b(?:passed|succeeded|built|compiled|(?:was|were)\s+(?:all\s+)?(?:passing|green|clean"
+    r"|happy|ok)|came\s+back\s+(?:green|clean))\b",
+    _I,
+)
+_NOW = re.compile(r"\bnow\b", _I)
+#: Dating words for a pass. "On the first run" dates a failure ("2 tests failed on the
+#: first run") but not a pass ("all tests passed the first time" still holds).
+_FIRST_TRY = re.compile(
+    r"\b(?:on\s+the\s+first\s+(?:run|try|attempt|pass)|the\s+first\s+time)\b", _I
+)
+
+
+def _is_history(v: _View, span: Span, negated: bool) -> bool:
+    """True when the status claim at ``span`` is about an earlier state, not the final one.
+
+    A failure is history when the unit dates it ("Initially", "before my change", "at
+    first", "until I added ...") or, for a failure in the past tense, when a later
+    clause of the same sentence says it now succeeds ("`test_x` was failing; it passes
+    now", "failed once, then passed on retry"). A pass is history when it is in the
+    past tense in a dated unit with no "now" ("Before my change, all tests passed").
+    """
+    stated = v.prose[span[0] : span[1]]
+    dated = bool(_HISTORICAL.search(v.prose))
+    if not negated:
+        dated = bool(_HISTORICAL.search(_FIRST_TRY.sub(" ", v.prose)))
+        return dated and bool(_PAST_PASS.search(stated)) and not _NOW.search(v.prose)
+    if dated:
+        return True
+    if not _PAST_FAILURE.search(stated):
+        return False
+    later = v.prose[span[1] :] + " " + mask_markdown(v.unit.rest, blank_code=True)
+    return bool(_LATER_SUCCESS.search(later))
+
+
 _SCOPE_WORDS = (
     "unit",
     "integration",
@@ -1582,6 +1865,19 @@ def _scope_of(phrase: str, *, allow_all: bool = True) -> str | None:
         if word in words:
             return word
     return None
+
+
+def _about_tests(v: _View) -> bool:
+    """True when a bare count ("12 passed", "3 failed") in ``v`` can only count tests.
+
+    The unit, its section, or the unit before it names tests, or the unit cites a
+    command ("Ran `make check`: 12 passed").
+    """
+    if _MENTIONS_TESTS.search(v.prose) or _TESTING_CONTEXT.search(v.context):
+        return True
+    if any(command_param(v.content(span)) is not None for span in v.codes):
+        return True
+    return bool(_MENTIONS_TESTS.search(v.unit.previous))
 
 
 def _test_numbers(v: _View) -> list[_Candidate]:
@@ -1613,10 +1909,12 @@ def _test_numbers(v: _View) -> list[_Candidate]:
         if not free(match.span()):
             continue
         groups = match.groupdict()
-        if "noun" in groups and not (groups.get("noun") or groups.get("verb")):
-            continue
-        failing = "noun" in groups and not groups.get("verb")
-        if failing and _FAIL_AFTER.match(v.prose, match.end()):
+        plain = "noun" in groups  # _FRACTION; _FRACTION_LEAD has a pass word or label
+        fails = plain and not groups.get("verb") and _FAIL_AFTER.match(v.prose, match.end())
+        unlabeled = plain and not (groups.get("noun") or groups.get("verb"))
+        if unlabeled and not (fails and _about_tests(v)):
+            continue  # "3/10" alone; "Tests: 3/10 failing" counts failures
+        if fails:
             put("failed", int(match.group("p")), match.span())  # "3 of 10 tests fail"
         else:
             put("passed", int(match.group("p")), match.span())
@@ -1632,13 +1930,25 @@ def _test_numbers(v: _View) -> list[_Candidate]:
             if free(match.span()):
                 put("total", _number(match.group("n")), match.span())
                 taken.append(match.span())
-    for match in _N_PASSED.finditer(v.prose):
+    for match in _LABELED_FAILURES.finditer(v.prose):
         if free(match.span()):
-            put("passed", _number(match.group("n")), match.span())
+            put("failed", _number(match.group("n")) or 0, match.span())
             taken.append(match.span())
-    for match in _N_FAILED.finditer(v.prose):
-        if free(match.span()):
-            put("failed", _number(match.group("n")), match.span())
+    bare: list[tuple[str, re.Match[str]]] = []
+    for key, regex in (("passed", _N_PASSED), ("failed", _N_FAILED)):
+        for match in regex.finditer(v.prose):
+            if not free(match.span()):
+                continue
+            if match.group("gap").strip():  # "12 tests passed": a test noun says what counts
+                put(key, _number(match.group("n")), match.span())
+                taken.append(match.span())
+            else:
+                bare.append((key, match))
+    # "39 passed, 3 failed" is a test summary by its shape; a lone "12 passed" or
+    # "1970 fail" counts tests only when the unit or its section is about tests.
+    if bare and (numbers or len({key for key, _ in bare}) > 1 or _about_tests(v)):
+        for key, match in bare:
+            put(key, _number(match.group("n")), match.span())
             taken.append(match.span())
     if not numbers:
         return []
@@ -1648,16 +1958,16 @@ def _test_numbers(v: _View) -> list[_Candidate]:
             put("failed", 0, none.span())
     anchor = (min(a for a, _ in anchors), max(b for _, b in anchors))
     whole = (0, len(v.text))
+    if _is_history(v, anchor, negated=bool(numbers.get("failed"))):
+        # "3 tests failed before the fix", "Before my change: 40 passed, 2 failed": not
+        # about the final state. Reserve the unit so no other test rule reads it.
+        hit = PatternHit(ClaimType.TESTS_PASS, {}, True, anchor)
+        return [_Candidate(hit, _RESERVE_ONLY, frozenset({"tests"}), whole)]
     if "passed" in numbers or "total" in numbers or numbers.get("failed") == 0:
         keys = ("passed", "total", "failed")
         params: Params = {key: numbers[key] for key in keys if key in numbers}
         hit = PatternHit(ClaimType.TEST_COUNT, params, False, anchor)
         return [_Candidate(hit, "tests", frozenset({"tests"}), whole)]
-    if _HISTORICAL.search(v.prose):
-        # "3 tests failed before the fix": not about the final state. Reserve the unit so
-        # no other test rule reads it, and claim nothing.
-        hit = PatternHit(ClaimType.TESTS_PASS, {}, True, anchor)
-        return [_Candidate(hit, _RESERVE_ONLY, frozenset({"tests"}), whole)]
     scope = _scope_of(v.prose[anchor[0] : anchor[1]]) or _scope_of(
         v.prose[: anchor[0]], allow_all=False
     )
@@ -1666,11 +1976,14 @@ def _test_numbers(v: _View) -> list[_Candidate]:
     return [_Candidate(hit, "tests", frozenset({"tests"}), whole)]
 
 
+#: Premodifiers of a test noun. Every alternative is one word or a phrase none of whose
+#: prefixes is another alternative ("all the" is "all" then "the"), so a run of them
+#: matches in one way only.
 _PREMOD = (
-    r"(?:(?:the|all|all\s+the|all\s+of\s+the|our|my|its|their|existing|new|added|remaining|other"
+    r"(?:(?:the|all|all\s+of\s+the|our|my|its|their|existing|new|added|remaining|other"
     r"|full|whole|entire|unit|integration|e2e|end-to-end|python|typescript|js|ts|relevant"
     r"|related|affected|both|previously[- ]failing|failing|original|old|local|updated|modified"
-    r"|regression|smoke|focused|targeted|frontend|backend|api|cli|parser|core|these|those)\s+)*"
+    r"|regression|smoke|focused|targeted|frontend|backend|api|cli|parser|core|these|those)\s+){0,6}"
 )
 _TNOUN = r"(?:test\s+suites?|test-suites?|testsuites?|suites?|tests?|specs?|test\s+cases?)"
 _LOCATION = r"(?P<loc>\s+(?:in|for|under|of)\s+(?:`C+`|[\w./\-]+))?"
@@ -1692,17 +2005,22 @@ _TESTS_POSITIVE = re.compile(
     + r")"
     + _LOCATION
     + r"\s+(?:(?:are|is|were|was|have|has|now|all|still|also|both|again|fully|consistently"
-    r"|cleanly|successfully|then|back\s+to)\s+)*(?P<status>" + _PASS_WORD + r")\b"
-    r"(?!\s+(?:through|to|if|unless|only\s+when|when(?!\s+(?:re-?)?run(?:ning)?\b))\b)",
+    r"|cleanly|successfully|then|back\s+to)\s+){0,6}(?P<status>" + _PASS_WORD + r")\b"
+    # "pass" with an object is not a test outcome: "the tests pass an empty list". A time
+    # phrase is no object: "all tests passed the first time".
+    r"(?!\s+(?:through|to|if|unless|only\s+when|when(?!\s+(?:re-?)?run(?:ning)?\b))\b"
+    r"|\s+(?:a|an|the|this|that|these|those|its|their|our|my|your|some|any|each|every|no)\b"
+    r"(?!\s+(?:(?:first|second|third|last|next|whole|entire)\s+)?(?:time|try|attempt|run|round"
+    r"|way)\b)|\s+[`\"'])",
     _I,
 )
 _TESTS_STATE = re.compile(
     r"\b(?P<subj>(?:the\s+)?(?:test\s+suite|tests|suite|test\s+run))\s+(?:is|are|was|were)\s+"
-    r"(?:(?:now|all|fully|back|still)\s+)*(?:clean|happy|ok|passing|green)\b",
+    r"(?:(?:now|all|fully|back|still)\s+){0,6}(?:clean|happy|ok|passing|green)\b",
     _I,
 )
 _EVERYTHING_PASSES = re.compile(
-    r"\b(?:everything|all)\s+(?:(?:is|still|now|else)\s+)*(?:pass(?:es|ing)?|green)\b", _I
+    r"\b(?:everything|all)\s+(?:(?:is|still|now|else)\s+){0,6}(?:pass(?:es|ing)?|green)\b", _I
 )
 _NO_FAILURES_PHRASE = re.compile(
     r"\b(?:with\s+)?no\s+(?:test\s+)?failures\b|\bnothing\s+(?:is\s+)?fail(?:s|ing)\b", _I
@@ -1710,7 +2028,7 @@ _NO_FAILURES_PHRASE = re.compile(
 _RUNNER_PASSES = re.compile(
     r"(?P<cmd>`C+`|\b(?:pytest|py\.test|jest|vitest|mocha|ava|tox|nox|unittest|npm\s+test"
     r"|npm\s+run\s+test|yarn\s+test|pnpm\s+test|bun\s+test|go\s+test|cargo\s+test|make\s+test"
-    r"|run_tests(?:\(\))?)\b)\s+(?:(?:now|also|still|again|then|all|fully|cleanly)\s+)*"
+    r"|run_tests(?:\(\))?)\b)\s+(?:(?:now|also|still|again|then|all|fully|cleanly)\s+){0,6}"
     r"(?P<status>pass(?:es|ed)?|succeeds?|succeeded|is\s+green|comes\s+back\s+green"
     r"|reports?\s+(?:all\s+(?:tests\s+)?passing|no\s+failures)|runs?\s+(?:green|clean(?:ly)?)"
     r"|exits?\s+(?:0|cleanly|successfully|with\s+(?:code\s+)?0)|is\s+(?:clean|happy|passing)"
@@ -1727,7 +2045,7 @@ _TESTS_NEGATIVE = re.compile(
     + _TNOUN
     + r")"
     + _LOCATION
-    + r"\s+(?:(?:are|is|were|was|still|now|also|currently|consistently|all|both)\s+)*"
+    + r"\s+(?:(?:are|is|were|was|still|now|also|currently|consistently|all|both)\s+){0,6}"
     r"(?P<status>" + _FAIL_WORD + r")\b",
     _I,
 )
@@ -1736,7 +2054,7 @@ _TESTS_NOT_PASSING = re.compile(
     r"|do(?:es)?\s+not|are\s*n[o']?t|is\s*n[o']?t|are\s+not|is\s+not|won'?t|will\s+not"
     r"|no\s+longer|never|did\s*n[o']?t|did\s+not|were\s*n[o']?t|was\s*n[o']?t|were\s+not"
     r"|was\s+not)\s+"
-    r"(?:(?:yet|all|fully|currently|quite|reliably|consistently|even)\s+)*"
+    r"(?:(?:yet|all|fully|currently|quite|reliably|consistently|even)\s+){0,6}"
     r"(?P<status>pass(?:es|ing)?|green|succeed(?:ing)?|run(?:ning)?)\b",
     _I,
 )
@@ -1758,7 +2076,7 @@ _NOT_ALL_PASS = re.compile(
 )
 _SOME_FAIL = re.compile(
     r"\b(?:some|several|a\s+few|few|many|a\s+couple\s+of|a\s+handful\s+of|multiple|a)\s+"
-    r"(?:(?:[a-z][\w-]*)\s+)?" + _TNOUN + r"\s+(?:(?:are|is|still|now|also|currently)\s+)*"
+    r"(?:(?:[a-z][\w-]*)\s+)?" + _TNOUN + r"\s+(?:(?:are|is|still|now|also|currently)\s+){0,6}"
     r"(?:fail(?:s|ed|ing)?|broken|erroring)\b",
     _I,
 )
@@ -1778,22 +2096,55 @@ _ALL_EXCEPT = re.compile(
     _I,
 )
 _TEST_NAME_STATUS = re.compile(
-    r"(?P<name>`C+`|\btest_\w+)\s+(?:(?:is|are|was|still|now|also|currently|all)\s+)*"
+    r"(?P<name>`C+`|\btest_\w+)\s+(?:(?:is|are|was|still|now|also|currently|all)\s+){0,6}"
     r"(?:(?P<fail>fail(?:s|ed|ing)?|broken|erroring|errors)|(?P<pass>pass(?:es|ed)?|is\s+passing"
     r"|succeeds?))\b",
     _I,
 )
-_ANAPHORA = re.compile(
-    r"(?:\btests?\b|\bsuite\b|\bspecs?\b|\bpytest\b|\bjest\b|\bvitest\b|\bmocha\b|`C+`)"
-    r"[^.]{0,200}?(?:\band\b|,|;)\s+(?P<pron>(?:they|it|both|all\s+of\s+them|all|everything)\s+"
-    r"(?:(?:now|all|still|also|both|again)\s+)*"
+#: "..., and they pass": a pronoun with a test status. Its antecedent is checked in code
+#: (:func:`_anaphora`), so "I rewrote `deploy.sh`, and it succeeds now" is not a test.
+_PRONOUN_STATUS = re.compile(
+    r"(?:\band\b|,|;)\s+(?P<pron>(?:they|it|both|all\s+of\s+them|all|everything)\s+"
+    r"(?:(?:now|all|still|also|both|again)\s+){0,6}"
     r"(?:(?P<pos>pass(?:es|ed|ing)?|succeed(?:s|ed)?|are\s+(?:passing|green)|is\s+(?:passing"
     r"|green)|green)|(?P<neg>fail(?:s|ed|ing)?|are\s+(?:still\s+)?failing|(?:do|does|did)\s*n[o']?t"
     r"\s+pass|(?:do|does|did)\s+not\s+pass|are\s*n[o']?t\s+passing|are\s+not\s+passing)))\b",
     _I,
 )
+_ANTECEDENT = re.compile(
+    r"\btests?\b|\bsuites?\b|\bspecs?\b|\bpytest\b|\bjest\b|\bvitest\b|\bmocha\b|`C+`", _I
+)
+
+
+def _anaphora(v: _View) -> tuple[bool, Span] | None:
+    """A pronoun test status and its anchor: "Ran `pytest` and it passes" gives (False, ...).
+
+    The antecedent is the nearest test word or inline code before the pronoun, in the
+    same sentence and at most 200 characters back. Inline code counts only when it is a
+    test command or a test name; a plural pronoun ("they") skips other code to reach an
+    earlier test word ("Ran the tests on `src/` and they pass"). Returns (negated,
+    anchor) or None.
+    """
+    for match in _PRONOUN_STATUS.finditer(v.prose):
+        start = match.start()
+        window = max(v.prose.rfind(".", 0, start) + 1, start - 200)
+        plural = not match.group("pron").lower().startswith(("it", "everything"))
+        for ante in reversed(list(_ANTECEDENT.finditer(v.prose, window, start))):
+            if not ante.group(0).startswith("`"):
+                return match.group("neg") is not None, (match.start("pron"), match.end())
+            span = v.code_at(ante.start())
+            command = command_param(v.content(span)) if span is not None else None
+            if (command is not None and "test" in command_kinds(command)) or _test_name_ok(
+                v, ante.start()
+            ):
+                return match.group("neg") is not None, (match.start("pron"), match.end())
+            if not plural:
+                break
+    return None
+
+
 _PREVIOUS_ANAPHORA = re.compile(
-    r"^\W*(?:they|it|both|all\s+of\s+them)\s+(?:(?:now|all|still|also|both|again)\s+)*"
+    r"^\W*(?:they|it|both|all\s+of\s+them)\s+(?:(?:now|all|still|also|both|again)\s+){0,6}"
     r"(?:(?P<pos>pass(?:es|ed|ing)?|succeed(?:s|ed)?|are\s+(?:passing|green))"
     r"|(?P<neg>fail(?:s|ed|ing)?|are\s+(?:still\s+)?failing|do\s*n[o']?t\s+pass"
     r"|do\s+not\s+pass))\b",
@@ -1819,6 +2170,8 @@ def _tests_pass(v: _View) -> list[_Candidate]:
     out: list[_Candidate] = []
 
     def add(negated: bool, span: Span, scope: str | None = None) -> None:
+        if _is_history(v, span, negated):
+            return  # "3 tests failed before my change", "`test_x` was failing; it passes now"
         params: Params = {"scope": scope} if scope else {}
         hit = PatternHit(ClaimType.TESTS_PASS, params, negated, span)
         out.append(_Candidate(hit, "tests", frozenset({"tests"}), span))
@@ -1826,22 +2179,22 @@ def _tests_pass(v: _View) -> list[_Candidate]:
     def hedged(start: int) -> bool:
         return bool(_HEDGE_BEFORE.search(v.prose[:start]))
 
-    historical = bool(_HISTORICAL.search(v.prose))
     for match in _ALL_EXCEPT.finditer(v.prose):
         add(True, match.span(), None)
     for match in _NOT_ALL_PASS.finditer(v.prose):
         add(True, match.span(), None)
     for regex in (_SOME_FAIL, _FAILURES_REMAIN):
+        if regex is _FAILURES_REMAIN and v.unit.label:
+            continue  # "## Known failures" names a section; its items say what fails
         for match in regex.finditer(v.prose):
-            if not historical:
-                add(True, match.span(), _scope_of(match.group(0)))
+            add(True, match.span(), _scope_of(match.group(0)))
     for match in _TESTS_NOT_PASSING.finditer(v.prose):
         passive = match.group("status").lower() == "run" and _BE_AUX.match(match.group("aux"))
-        if passive or hedged(match.start()) or historical:
+        if passive or hedged(match.start()):
             continue  # "the suite was not run" is about the agent, not test outcomes
         add(True, match.span(), _scope_of(match.group("subj")))
     for match in _TESTS_NEGATIVE.finditer(v.prose):
-        if hedged(match.start()) or historical:
+        if hedged(match.start()):
             continue
         scope = _location_scope(v, match) or _scope_of(match.group("subj"))
         # "None of the tests fail" and "No tests fail" say the tests pass.
@@ -1864,22 +2217,18 @@ def _tests_pass(v: _View) -> list[_Candidate]:
             if command is None or "test" not in command_kinds(command):
                 continue
         status = match.group("status").lower()
-        negative = bool(re.search(r"fail|red|non-?zero|[1-9]", status))
-        if negative and historical:
-            continue
-        add(negative, match.span(), None)
+        add(bool(re.search(r"fail|red|non-?zero|[1-9]", status)), match.span(), None)
     for match in _TEST_NAME_STATUS.finditer(v.prose):
         name = _test_name_ok(v, match.start("name"))
-        if name is None or (match.group("fail") and historical):
-            continue
-        add(bool(match.group("fail")), match.span(), name)
+        if name is not None:
+            add(bool(match.group("fail")), match.span(), name)
     for regex in (_EVERYTHING_PASSES, _NO_FAILURES_PHRASE):
         for match in regex.finditer(v.prose):
             if not hedged(match.start()):
                 add(False, match.span(), None)
-    anaphora = _ANAPHORA.search(v.prose)
+    anaphora = _anaphora(v)
     if anaphora is not None:  # anchored at "they pass", which no description reserves
-        add(anaphora.group("neg") is not None, (anaphora.start("pron"), anaphora.end()), None)
+        add(anaphora[0], anaphora[1], None)
     previous = _PREVIOUS_ANAPHORA.match(v.prose)
     if previous is not None and _MENTIONS_TESTS.search(v.unit.previous):
         add(previous.group("neg") is not None, previous.span(), None)
@@ -1921,7 +2270,7 @@ _TYPE_GENERIC = (
 _STATUS_GAP = (
     r"\s*(?:\((?P<paren>[^)]*)\)\s*)?(?:[:|→]|->|=>|-)?\s*(?:(?:is|are|was|were|reports?"
     r"|reported|shows?|showed|returns?|returned|gives|gave|comes?\s+back|came\s+back|runs?|ran"
-    r"|now|also|still|completely|fully|all|both|again|with|and|says|said)\s+)*"
+    r"|now|also|still|completely|fully|all|both|again|with|and|says|said)\s+){0,6}"
 )
 _CLEAN = (
     r"(?:clean(?:ly)?|pass(?:es|ed|ing)?|green|happy|ok(?:ay)?|succeed(?:s|ed)?"
@@ -2047,8 +2396,8 @@ def _static(
     out: list[_Candidate] = []
 
     def add(negated: bool, match: re.Match[str]) -> None:
-        if _HEDGE_BEFORE.search(v.prose[: match.start()]):
-            return
+        if _HEDGE_BEFORE.search(v.prose[: match.start()]) or _is_history(v, match.span(), negated):
+            return  # "if mypy passes", "Initially mypy failed with 4 errors"
         tool = _tool_param(v, match, kind)
         if tool == "\0":
             return
@@ -2112,7 +2461,7 @@ _BUILD_SUBJECT = (
 _BUILD = re.compile(
     r"(?P<subj>\b" + _BUILD_SUBJECT + r"|(?P<cmd>`C+`|\b" + _BUILD_COMMANDS + r"))"
     r"(?:\s*\((?P<paren>[^)]*)\))?"
-    r"\s*(?::|→|->)?\s*(?:(?:now|also|still|again)\s+)*(?:(?P<ok>"
+    r"\s*(?::|→|->)?\s*(?:(?:now|also|still|again)\s+){0,6}(?:(?P<ok>"
     + _BUILD_OK
     + r")|(?P<bad>"
     + _BUILD_BAD
@@ -2145,8 +2494,9 @@ def _cited_command(v: _View, start: int, end: int, kind: str) -> str | None:
 def _build(v: _View) -> list[_Candidate]:
     out: list[_Candidate] = []
     for match in _BUILD.finditer(v.prose):
-        if _HEDGE_BEFORE.search(v.prose[: match.start()]):
-            continue
+        negated = bool(match.group("bad"))
+        if _HEDGE_BEFORE.search(v.prose[: match.start()]) or _is_history(v, match.span(), negated):
+            continue  # "once the build passes", "the build failed at first"
         params: Params = {}
         cmd = match.group("cmd")
         if cmd:
@@ -2162,11 +2512,13 @@ def _build(v: _View) -> list[_Candidate]:
             cited = _cited_command(v, match.start("paren"), match.end("paren"), "build")
             if cited is not None:
                 params["tool"] = cited
-        hit = PatternHit(ClaimType.BUILD_SUCCEEDS, params, bool(match.group("bad")), match.span())
+        hit = PatternHit(ClaimType.BUILD_SUCCEEDS, params, negated, match.span())
         out.append(_Candidate(hit, "build", frozenset(), match.span()))
     for regex, negated in ((_BUILDS_FINE, False), (_DOES_NOT_BUILD, True)):
         for match in regex.finditer(v.prose):
-            if _HEDGE_BEFORE.search(v.prose[: match.start()]):
+            if _HEDGE_BEFORE.search(v.prose[: match.start()]) or _is_history(
+                v, match.span(), negated
+            ):
                 continue
             hit = PatternHit(ClaimType.BUILD_SUCCEEDS, {}, negated, match.span())
             out.append(_Candidate(hit, "build", frozenset(), match.span()))
@@ -2187,7 +2539,7 @@ _PACKAGE_LIST = (
 )
 _DEP_NOUN = (
     r"(?:(?:new\s+|runtime\s+|dev(?:elopment)?\s+|test\s+|optional\s+|direct\s+|third-party\s+"
-    r"|python\s+|npm\s+|pip\s+|project\s+)*(?:dependency|dependencies|dep|deps|requirements?"
+    r"|python\s+|npm\s+|pip\s+|project\s+){0,6}(?:dependency|dependencies|dep|deps|requirements?"
     r"|packages?|librar(?:y|ies)|devDependency|devDependencies))"
 )
 _MANIFEST = (
@@ -2205,10 +2557,6 @@ _DEP_ADDED = re.compile(
     + _PACKAGE_LIST
     + r"\s+(?:as\s+(?:a\s+|an\s+)?|to\s+(?:the\s+)?(?:project(?:'s)?\s+)?|in\s+(?:the\s+)?"
     r"|under\s+(?:the\s+)?|into\s+(?:the\s+)?)?(?:" + _DEP_NOUN + r"|" + _MANIFEST + r")",
-    _I,
-)
-_DEP_ADDED_LABEL = re.compile(
-    r"^\W*(?:new\s+)?(?:dependenc(?:y|ies)|deps?|packages?)(?:\s+added)?\s*:\s*" + _PACKAGE_LIST,
     _I,
 )
 _DEP_ADDED_PASSIVE = re.compile(
@@ -2230,19 +2578,25 @@ _DEP_CONTEXT = re.compile(
     _I,
 )
 _VERSION = r"(?P<ver>`[^`\n]+`|v?\d[\w.\-*]*|latest|the\s+latest(?:\s+version)?)"
+#: A word after the new value that makes it a quantity, not a version ("to 5 seconds").
+_NOT_A_VERSION_AFTER = (
+    r"(?!\s*(?:%|percent|seconds?|secs?|s\b|ms\b|minutes?|mins?|hours?|days?|retries"
+    r"|attempts|workers|threads|processes|items|rows|lines|chars|characters|bytes|kb|mb|gb"
+    r"|px|times|x\b))"
+)
 _DEP_UPDATED = re.compile(
     r"\b(?P<verb>bumped|bumps|upgraded|upgrades|updated|updates|pinned|pins|raised|moved"
-    r"|downgraded|downgrades)\s+(?:the\s+)?(?:(?:vendored|pinned|bundled)\s+)?(?:"
+    r"|downgraded|downgrades)\s+(?:the\s+)?(?:(?:vendored|pinned|bundled)\s+)?(?P<noun1>"
     + _DEP_NOUN
     + r"\s+)?(?P<pkg>"
     + _PACKAGE
-    + r")(?:\s+(?:"
+    + r")(?P<noun2>\s+(?:"
     + _DEP_NOUN
-    + r"|version|pin|requirement|constraint))?(?:\s+(?:in|within)\s+"
+    + r"|version|pin|requirement|constraint))?(?P<manifest>\s+(?:in|within)\s+"
     + _MANIFEST
     + r")?"
     r"\s+(?:from\s+(?:version\s+)?`?v?[\w.\-^~<>=*]+`?\s+)?(?:to|->|→)\s+(?:version\s+"
-    r"|v(?=\d))?" + _VERSION,
+    r"|v(?=\d))?" + _VERSION + _NOT_A_VERSION_AFTER,
     _I,
 )
 _DEP_UPDATED_NOUN = re.compile(
@@ -2255,7 +2609,29 @@ _DEP_UPDATED_NOUN = re.compile(
 )
 _DEP_UPDATED_PASSIVE = re.compile(
     r"\b(?P<pkg>" + _PACKAGE + r")\s+(?:was|has\s+been|is\s+now)\s+(?P<verb>bumped|upgraded"
-    r"|updated|pinned)\s+(?:from\s+\S+\s+)?to\s+(?:version\s+|v(?=\d))?" + _VERSION,
+    r"|updated|pinned)\s+(?:from\s+\S+\s+)?to\s+(?:version\s+|v(?=\d))?"
+    + _VERSION
+    + _NOT_A_VERSION_AFTER,
+    _I,
+)
+#: A "Dependencies:" label; the packages after it are read like a dependency list item.
+_DEP_LABEL = re.compile(
+    r"^\W*(?:new\s+)?(?:dependenc(?:y|ies)|deps?|packages?)(?:\s+(?:added|changes|changed))?"
+    r"\s*:\s*",
+    _I,
+)
+#: The change a dependency list item states, before the packages ("Removed `six`") or
+#: after them ("`requests` (removed)", "`urllib3` bumped to 2.2.1").
+_DEP_ITEM_VERB = re.compile(
+    r"(?:(?P<add>added|adds|add|new|introduced|installed)|(?P<remove>removed|removes|dropped"
+    r"|drops|deleted|uninstalled)|(?P<update>bumped|bumps|upgraded|upgrades|updated|updates"
+    r"|downgraded|downgrades|pinned|pins|raised))\s*:?\s+(?=\S)",
+    _I,
+)
+_DEP_ITEM_STATUS = re.compile(
+    r"\s*(?:\(\s*|[:,-]\s*)?(?:(?P<add>added|new)|(?P<remove>removed|dropped|deleted|uninstalled)"
+    r"|(?P<update>bumped|upgraded|updated|downgraded|pinned))\b(?:\s+(?:from\s+\S+\s+)?to\s+"
+    r"(?:version\s+)?(?P<ver>v?\d[\w.\-]*))?",
     _I,
 )
 _DEP_UPDATED_INLINE = re.compile(
@@ -2265,7 +2641,7 @@ _DEP_UPDATED_INLINE = re.compile(
 )
 _DEP_REMOVED = re.compile(
     r"\b(?:removed|removes|dropped|drops|uninstalled|deleted|eliminated|got\s+rid\s+of)\s+"
-    r"(?:the\s+)?(?:(?:unused|obsolete|legacy|old|stale|deprecated|redundant|unnecessary|dead)\s+)*"
+    r"(?:the\s+)?(?:(?:unused|obsolete|legacy|old|stale|deprecated|redundant|unnecessary|dead)\s+){0,6}"
     r"(?:(?P<before>"
     + _DEP_NOUN
     + r")\s+(?:on\s+)?)?"
@@ -2290,7 +2666,9 @@ _DEP_NAME_STOPWORDS = _words(
     " checks value values regex pattern patterns path paths url urls query signature"
     " behavior behaviour support validation flag flags option options helper helpers new"
     " unused old some all both any requirements requirement library libraries python npm"
-    " pip node"
+    " pip node none nothing nil no not n/a na tbd added adds add removed removes remove"
+    " dropped drops deleted bumped bumps upgraded upgrades downgraded downgrades updated"
+    " updates pinned pins installed uninstalled unchanged changed"
 )
 _VERSION_NUMBER = re.compile(r"\d+(?:\.\d+)*")
 _DEP_HEDGE = re.compile(
@@ -2355,6 +2733,38 @@ def _version_value(raw: str | None) -> str | None:
     return match.group(0) if match else None
 
 
+_DEP_KINDS: Mapping[str, ClaimType] = {
+    "add": ClaimType.DEPENDENCY_ADDED,
+    "remove": ClaimType.DEPENDENCY_REMOVED,
+    "update": ClaimType.DEPENDENCY_UPDATED,
+}
+
+
+def _listed_dependencies(v: _View, start: int) -> list[tuple[ClaimType, str, str | None, Span]]:
+    """The dependency changes a list item or label value states from ``start`` on.
+
+    The change is added unless a leading verb ("Removed `six`") or a status after the
+    packages ("`requests` (removed)", "`urllib3` bumped to 2.2.1") says otherwise. An
+    empty or negative value ("None", "no new dependencies") states none.
+    """
+    start = _skip_space(v.plain, start)
+    if _NONE_VALUE.match(v.prose, start):
+        return []
+    kind = ClaimType.DEPENDENCY_ADDED
+    status_version: str | None = None
+    verb = _DEP_ITEM_VERB.match(v.plain, start)
+    if verb is not None:
+        kind = _DEP_KINDS[next(k for k in _DEP_KINDS if verb.group(k))]
+        start = verb.end()
+    packages = _split_packages(v, start, len(v.text))
+    if packages and verb is None:
+        status = _DEP_ITEM_STATUS.match(v.plain, packages[-1][2][1])
+        if status is not None:
+            kind = _DEP_KINDS[next(k for k in _DEP_KINDS if status.group(k))]
+            status_version = _version_value(status.group("ver"))
+    return [(kind, name, status_version or version, span) for name, version, span in packages]
+
+
 def _dependencies(v: _View) -> list[_Candidate]:
     out: list[_Candidate] = []
 
@@ -2367,7 +2777,7 @@ def _dependencies(v: _View) -> list[_Candidate]:
 
     added = ClaimType.DEPENDENCY_ADDED
     advice = bool(_ADVICE.search(v.prose))
-    for regex in (_DEP_ADDED_ON, _DEP_ADDED, _DEP_ADDED_LABEL, _DEP_ADDED_PASSIVE):
+    for regex in (_DEP_ADDED_ON, _DEP_ADDED, _DEP_ADDED_PASSIVE):
         for match in regex.finditer(v.plain):
             if advice or _DEP_HEDGE.search(v.prose[: match.start()]):
                 continue  # "You need to add `httpx` as a dependency"
@@ -2377,9 +2787,13 @@ def _dependencies(v: _View) -> list[_Candidate]:
         for match in _MANIFEST_LABEL_ADDED.finditer(v.plain):
             for name, version, span in _split_packages(v, match.start("pkgs"), match.end("pkgs")):
                 add(added, name, version, span)
+        label = _DEP_LABEL.match(v.plain)
+        if label is not None:  # "New dependencies: `httpx`", "Dependencies: none"
+            for kind, name, version, span in _listed_dependencies(v, label.end()):
+                add(kind, name, version, span)
     if _DEP_CONTEXT.match(v.context) and v.unit.kind == "list_item" and v.unit.first:
-        for name, version, span in _split_packages(v, _skip_space(v.plain, 0), len(v.text)):
-            add(added, name, version, span)
+        for kind, name, version, span in _listed_dependencies(v, 0):
+            add(kind, name, version, span)
     updated = ClaimType.DEPENDENCY_UPDATED
     for regex in (_DEP_UPDATED, _DEP_UPDATED_PASSIVE):
         for match in regex.finditer(v.plain):
@@ -2387,23 +2801,24 @@ def _dependencies(v: _View) -> list[_Candidate]:
             raw = match.group("ver")
             if parsed is None:
                 continue
-            version = None if "latest" in raw.lower() else _version_value(raw)
-            strong = match.group("verb").lower() in (
-                "bumped",
-                "bumps",
-                "upgraded",
-                "upgrades",
-                "downgraded",
-                "downgrades",
-                "pinned",
-                "pins",
+            latest = "latest" in raw.lower()
+            version = None if latest else _version_value(raw)
+            # "Bumped `max_retries` to 5" changes a setting: a dependency update needs a
+            # version-like value, a dependency noun, a manifest, or a version spec.
+            groups = match.groupdict()
+            cue = (
+                latest
+                or bool(re.search(r"\d\.\d|^v\d|[\^~<>=]", raw.strip("` ")))
+                or bool(groups.get("noun1") or groups.get("noun2") or groups.get("manifest"))
+                or parsed[1] is not None
             )
-            dotted = bool(re.search(r"\d\.\d|^v\d|[\^~<>=]", raw.strip("` ")))
-            if not (strong or dotted or "latest" in raw.lower()):
-                continue
-            add(updated, parsed[0], version or parsed[1], match.span())
+            if cue:
+                add(updated, parsed[0], version or parsed[1], match.span())
+    stated = [c.hit.anchor for c in out if c.hit.type is updated]
     for regex in (_DEP_UPDATED_NOUN, _DEP_UPDATED_INLINE):
         for match in regex.finditer(v.plain):
+            if any(_overlaps(match.span(), span) for span in stated):
+                continue  # "Bumped `requests==2.31` to 2.32.3": 2.31 is the old pin
             parsed = dependency_param(match.group("pkg"))
             if parsed is not None:
                 add(updated, parsed[0], parsed[1], match.span())
@@ -2440,7 +2855,7 @@ _FILE_VERB = re.compile(
 _FILE_VERB_NEGATED = re.compile(
     r"\b(?P<neg>did\s*n[o']?t|did\s+not|do\s*n[o']?t|do\s+not|have\s*n[o']?t|have\s+not"
     r"|has\s*n[o']?t|has\s+not|had\s+not|never|not|without|no\s+need\s+to)\s+"
-    r"(?:(?:even|actually|need\s+to|have\s+to|bother\s+to|yet|any)\s+)*"
+    r"(?:(?:even|actually|need\s+to|have\s+to|bother\s+to|yet|any)\s+){0,6}"
     r"(?:(?P<create>create|created|creating|add|added|adding|write|wrote|writing)"
     r"|(?P<delete>delete|deleted|deleting|remove|removed|removing|drop|dropped|dropping)"
     r"|(?P<modify>touch|touched|touching|modify|modified|modifying|change|changed|changing|edit"
@@ -2461,7 +2876,7 @@ _LOCATIONS = _words("in inside within at into of on under across throughout")
 _SEPARATOR_ONLY = re.compile(r"^\s*(?:,|and|&|plus|as\s+well\s+as|along\s+with|\s)*\s*$", _I)
 _PASSIVE_FILE = re.compile(
     r"(?:\s*(?:,|and|&)\s*(?:`[^`]*`|[\w@./\-]+))*\s+(?:(?:was|were|is|are|has\s+been|have\s+been"
-    r"|got|is\s+now|are\s+now)\s+)(?:(?:also|now|both|then|just)\s+)*(?:(?P<modify>updated"
+    r"|got|is\s+now|are\s+now)\s+)(?:(?:also|now|both|then|just)\s+){0,6}(?:(?P<modify>updated"
     r"|modified|changed|edited|refactored|rewritten|touched|fixed|adjusted|patched|reworked)"
     r"|(?P<create>created|added|generated|introduced|new)|(?P<delete>deleted|removed|dropped"
     r"|gone))\b",
@@ -2483,12 +2898,106 @@ _LEFT_UNCHANGED = re.compile(
 )
 _PAREN_STATUS = re.compile(
     r"\s*\(\s*(?:(?P<create>new|new\s+file|added|created)|(?P<delete>deleted|removed)"
-    r"|(?P<modify>modified|updated|changed|edited))\s*\)",
+    r"|(?P<modify>modified|updated|changed|edited)|(?P<unchanged>unchanged|untouched|unmodified"
+    r"|not\s+(?:modified|changed|touched|edited)|no\s+changes?|as[- ]is))\s*\)",
     _I,
 )
-_PREFIX_ITEM = re.compile(
-    r"^\W*?(?=`|[\w.])",
+#: A file description that says the file was not changed: "untouched", "no changes
+#: needed", "reviewed only, no edits", "left as is" ("otherwise unchanged" is not one).
+_ITEM_UNCHANGED = re.compile(
+    r"(?<!otherwise\s)(?<!else\s)(?<!rest\s)\b(?:unchanged|untouched|unmodified|not\s+(?:modified"
+    r"|changed|touched|edited|updated)|no\s+(?:changes?|edits?|modifications?)|left\s+(?:as[- ]is"
+    r"|alone|unchanged|untouched|intact)|kept\s+(?:as[- ]is|unchanged|intact)|as[- ]is|read[- ]only"
+    r"|reviewed\s+only|only\s+reviewed)\b",
+    _I,
 )
+#: A word in a file description that states a change ("added the flag", "fix parsing",
+#: "+12 -3"). It does not count after a negation or hedge ("no edits", "should be removed").
+_CHANGE_CUE = re.compile(
+    r"\b(?:add(?:s|ed|ing)?|new|creat\w*|introduc\w*|fix(?:es|ed|ing)?|updat\w*|chang\w*"
+    r"|modif\w*|edit\w*|refactor\w*|rewr\w*|renam\w*|mov(?:e|es|ed|ing)|remov\w*|delet\w*"
+    r"|drop(?:s|ped|ping)?|replac\w*|extract\w*|implement\w*|handl(?:e|es|ed|ing)|support\w*"
+    r"|wir(?:e|es|ed|ing)|register(?:s|ed|ing)?|export(?:s|ed|ing)?|switch\w*|bump\w*"
+    r"|pin(?:s|ned)?|clean\w*|simplif\w*|document(?:s|ed|ing)?|annotat\w*|tweak\w*|adjust\w*"
+    r"|correct\w*|patch(?:es|ed|ing)?|convert\w*|migrat\w*|expos\w*|guard(?:s|ed|ing)?"
+    r"|harden\w*|improv\w*|optimi[sz]\w*|extend\w*|expand\w*|restructur\w*|rework\w*"
+    r"|reorder\w*|split(?:s|ting)?|merg(?:e|es|ed|ing)|use[sd]?|accept\w*|emit\w*"
+    r"|return(?:s|ed)?|rais(?:e|es|ed)|skip(?:s|ped)?|cach(?:e|es|ed|ing))\b|\+\d+",
+    _I,
+)
+_CUE_BLOCKED = re.compile(
+    r"(?:\b(?:no|not|never|without|nothing|should|would|could|will|might|may|must|considered"
+    r"|consider(?:ing)?|plan(?:ned|ning)?\s+to|need(?:s|ed)?\s+to|to\s+be|going\s+to"
+    r"|want(?:ed)?\s+to|todo|tbd)\s+(?:\w+\s+){0,2}|n't\s+(?:\w+\s+){0,2})$",
+    _I,
+)
+#: A file description that is about something other than a change: a hedge, a plan, a
+#: test status, or a reading note ("still failing (unrelated)", "reviewed", "see below").
+_ITEM_NOT_A_CHANGE = re.compile(
+    r"\b(?:should|would|could|will|might|may|must|considered|plan(?:ned)?\s+to|need(?:s|ed)?\s+to"
+    r"|to\s+be|todo|tbd|follow[- ]?up|later|still|fail(?:s|ed|ing)|flaky|unrelated|reviewed"
+    r"|looked\s+at|inspected|referenced|reference|see|context|nothing|none|n/a)\b",
+    _I,
+)
+#: Verbs a commit-style description may open with ("parse `--json` and pass it on").
+_BASE_VERBS = _words(
+    "add fix update change modify edit refactor rewrite rename move remove delete drop replace"
+    " extract implement handle support wire register export switch bump pin clean simplify"
+    " document annotate tweak adjust correct patch convert migrate expose guard harden improve"
+    " optimize extend expand restructure rework reorder split merge use accept emit return raise"
+    " skip cache parse pass print write read load save call log check validate sort filter"
+    " format render wrap catch retry set compute create introduce make allow enable disable"
+    " prevent avoid ensure keep reject strip trim normalize escape encode decode serialize"
+    " include exclude import inject initialize configure define declare mark warn show hide"
+    " limit cap clamp round count track store fetch send map group join compare detect resolve"
+    " apply schedule cancel close open start stop build run"
+)
+_IRREGULAR_PAST = _words("wrote rewrote made kept ran built sent took got split set put")
+
+
+def _is_verb(word: str) -> bool:
+    """True when ``word`` is a form of a common code-change verb ("parses", "dropped")."""
+    w = word.lower()
+    if w in _BASE_VERBS or w in _IRREGULAR_PAST:
+        return True
+    for suffix in ("ing", "ed", "es", "s", "d"):
+        if not w.endswith(suffix) or len(w) <= len(suffix) + 1:
+            continue
+        stem = w[: -len(suffix)]
+        if stem in _BASE_VERBS or stem + "e" in _BASE_VERBS:
+            return True
+        if suffix in ("ed", "ing") and stem[-1] == stem[-2] and stem[:-1] in _BASE_VERBS:
+            return True  # "dropped", "mapping"
+        if suffix in ("es", "ed") and stem.endswith("i") and stem[:-1] + "y" in _BASE_VERBS:
+            return True  # "applies", "applied"
+    return False
+
+
+_FIRST_WORD = re.compile(r"^\W*(?:(?:now|also|then)\s+)?(?P<word>[A-Za-z][\w'-]*)")
+
+
+def _item_change(description: str, default: ClaimType | None) -> ClaimType | None:
+    """The file claim a path's description states, in a list item or a table row.
+
+    A change cue that is not negated or hedged gives ``file_modified``; otherwise an
+    unchanged cue gives ``file_unchanged``; a hedge, a plan, a test status or a reading
+    note gives no claim; otherwise ``default`` (from a "Files changed" label or a
+    "Change" header) applies, or ``file_modified`` when the description opens with a
+    verb ("parse `--json` and pass it on"). A plain noun phrase gives no claim.
+    """
+    for match in _CHANGE_CUE.finditer(description):
+        if not _CUE_BLOCKED.search(description[: match.start()]):
+            return ClaimType.FILE_MODIFIED
+    if _ITEM_UNCHANGED.search(description):
+        return ClaimType.FILE_UNCHANGED
+    if _ITEM_NOT_A_CHANGE.search(description):
+        return None
+    if default is not None:
+        return default
+    first = _FIRST_WORD.match(description)
+    return ClaimType.FILE_MODIFIED if first is not None and _is_verb(first.group("word")) else None
+
+
 _PREFIX_SEPARATOR = re.compile(r"\s*(?::|-{1,2}(?=\s)|→|->|=>|,|\s\(|$)")
 _PREFIX_CREATED = re.compile(
     r"^\s*(?:\(?\s*new(?:\s+(?:file|module|test\s+file|script))?\s*\)?\s*(?:[:.,;-]|$)"
@@ -2505,6 +3014,16 @@ _FILES_CONTEXT = re.compile(
     _I,
 )
 _STATUS_CELL: Mapping[str, ClaimType] = {
+    "unchanged": ClaimType.FILE_UNCHANGED,
+    "untouched": ClaimType.FILE_UNCHANGED,
+    "unmodified": ClaimType.FILE_UNCHANGED,
+    "nottouched": ClaimType.FILE_UNCHANGED,
+    "notmodified": ClaimType.FILE_UNCHANGED,
+    "notchanged": ClaimType.FILE_UNCHANGED,
+    "nochanges": ClaimType.FILE_UNCHANGED,
+    "nochange": ClaimType.FILE_UNCHANGED,
+    "noedits": ClaimType.FILE_UNCHANGED,
+    "asis": ClaimType.FILE_UNCHANGED,
     "added": ClaimType.FILE_CREATED,
     "new": ClaimType.FILE_CREATED,
     "created": ClaimType.FILE_CREATED,
@@ -2608,6 +3127,50 @@ def _relation(words: list[str], kind: str) -> str | None:
     return None
 
 
+#: Hedges and plans right before a file verb: "I should have updated", "I considered
+#: editing", "make sure ... is updated".
+_FILE_HEDGE = re.compile(
+    r"\b(?:should|would|could|might|must|may|will|shall|can|i'?ll|we'?ll|you'?ll|need\s+to"
+    r"|needs\s+to|want\s+to|wanted\s+to|plan\s+to|planned\s+to|planning\s+to|going\s+to"
+    r"|try\s+to|tried\s+to|forgot\s+to|remember\s+to|meant\s+to|intend(?:ed)?\s+to|about\s+to"
+    r"|considered|consider|considering|thinking\s+of|make\s+sure|ensure|be\s+sure\s+to"
+    r"|don'?t\s+forget\s+to|please|recommend|suggest|todo)\s+(?:(?:not|also|have|just|still"
+    r"|then|first|be|to|really|probably|definitely|eventually|later)\s+){0,3}$",
+    _I,
+)
+#: A condition that governs the rest of its clause: "If `settings.py` is updated later",
+#: "Once `schema.sql` is created". "When I updated `a.py`" reports an event, not a condition.
+_FILE_CONDITION = re.compile(
+    r"\b(?:if|unless|in\s+case|whether|provided\s+that|once|when|whenever|as\s+soon\s+as)\b"
+    r"(?![^,;]*\b(?:i|we)\s+(?:had\s+|have\s+|also\s+|then\s+|first\s+)?(?:\w+ed|wrote|made"
+    r"|ran|set|put|rewrote|split)\b)[^,;]*$",
+    _I,
+)
+_CONTRAST = re.compile(r"\b(?:only|but|instead|rather|except|not|versus|vs)\b", _I)
+_VALUE_TO_IN = re.compile(
+    r"\bto\s+(?:-?\d[\w.%]*|`C+`|true|false|none|null|\"[^\"]*\"|'[^']*')\s+(?:in|inside|within)"
+    r"\s+(?:the\s+)?$",
+    _I,
+)
+
+
+def _file_hedged(v: _View, start: int, end: int) -> bool:
+    """True when a file claim at ``start`` (its verb ending at ``end``) is hedged.
+
+    A hedge or plan right before it ("should have", "considered", "make sure") or a
+    condition earlier in its clause ("if", "once", "when" without "I ... -ed").
+    """
+    return bool(_FILE_HEDGE.search(v.prose[:start]) or _FILE_CONDITION.search(v.prose[:end]))
+
+
+def _drop_last(words: list[str], word: str) -> list[str]:
+    """``words`` without the last occurrence of ``word``."""
+    if word not in words:
+        return words
+    index = len(words) - 1 - words[::-1].index(word)
+    return words[:index] + words[index + 1 :]
+
+
 def _between_words(v: _View, start: int, end: int, refs: Sequence[_PathRef]) -> list[str]:
     chars = list(v.prose[start:end])
     for ref in refs:
@@ -2633,6 +3196,7 @@ def _file_rows(v: _View, refs: list[_PathRef]) -> tuple[list[_Candidate], set[in
             continue
         whole.add(ref.start)
         status: ClaimType | None = None
+        texts: list[str] = []
         for other in cells:
             if other == cell:
                 continue
@@ -2645,8 +3209,10 @@ def _file_rows(v: _View, refs: list[_PathRef]) -> tuple[list[_Candidate], set[in
             if lead is not None:
                 status = _STATUS_CELL[lead.group(1).lower()]
                 break
+            texts.append(raw)
         if status is None and (header_changes or context_kind):
-            status = ClaimType.FILE_MODIFIED
+            # "| `b.py` | Reviewed, no edits |" under a "Change" header is not a change.
+            status = _item_change(" ".join(texts), ClaimType.FILE_MODIFIED)
         if status is not None:
             hit = PatternHit(status, {"path": ref.value}, False, (ref.start, ref.end))
             out.append(_Candidate(hit, "file", frozenset(), (ref.start, ref.end)))
@@ -2683,33 +3249,51 @@ def _files(v: _View) -> list[_Candidate]:
         separator = _PREFIX_SEPARATOR.match(v.prose, rest_at)
         context_kind = _FILES_CONTEXT.search(v.context)
         if after is not None:
-            kind = next(k for k in ("create", "delete", "modify") if after.group(k))
-            add(first, _file_type(kind, "direct", False)[0], False, first.start)
+            kinds = ("create", "delete", "modify", "unchanged")
+            kind = next(k for k in kinds if after.group(k))
+            if kind == "unchanged":  # "- `src/config.py` (unchanged)"
+                add(first, ClaimType.FILE_UNCHANGED, False, first.start)
+            else:
+                add(first, _file_type(kind, "direct", False)[0], False, first.start)
         elif separator is not None:
+            # The rest of the sentence belongs to the description: "- `docs/usage.md`:
+            # considered updating, but left as is" is cut before "left as is".
             description = v.prose[separator.end() :]
+            if description.strip(" .;:,"):
+                description += " " + mask_markdown(v.unit.rest, blank_code=True)
+            default: ClaimType | None = None
+            if context_kind is not None:
+                kind = next(k for k in ("create", "delete", "modify") if context_kind.group(k))
+                default = _file_type(kind, "direct", False)[0]
             if not description.strip(" .;:,"):
-                if context_kind is not None:
-                    kind = next(k for k in ("create", "delete", "modify") if context_kind.group(k))
-                    add(first, _file_type(kind, "direct", False)[0], False, first.start)
+                if default is not None:
+                    add(first, default, False, first.start)
             elif _PREFIX_CREATED.match(description):
                 add(first, ClaimType.FILE_CREATED, False, first.start)
             elif _PREFIX_DELETED.match(description):
                 add(first, ClaimType.FILE_DELETED, False, first.start)
             else:
-                add(first, ClaimType.FILE_MODIFIED, False, first.start)
+                # "- `api.py`: untouched", "- `legacy.py`: should be removed later"
+                claim_type = _item_change(description, default)
+                if claim_type is None:
+                    decided.add(first.start)
+                else:
+                    add(first, claim_type, False, first.start)
     fronted = _FRONTED_LOCATION.match(v.prose)
     if fronted is not None and first.start == fronted.end():
         # "In `src/app.py`, added a `--json` flag": the change happened in the path.
         later = [verb for verb in _file_verbs(v) if verb.start >= first.end]
-        if later:
+        if later and not _file_hedged(v, later[0].start, later[0].end):
             claim_type, negated = _file_type("modify", "location", later[0].negated)
             add(first, claim_type, negated, first.start)
     for match in _LEFT_UNCHANGED.finditer(v.prose):
         start = match.start("path") if match.group("path") else match.start("path2")
         ref = next((r for r in refs if r.start == start), None)
-        if ref is not None:
+        if ref is not None and not _file_hedged(v, match.start(), match.start()):
             add(ref, ClaimType.FILE_UNCHANGED, False, match.start())
     for ref in refs:
+        if _file_hedged(v, ref.start, ref.start):
+            continue  # "If `settings.py` is updated later", "Make sure `a.py` is updated"
         unchanged = _PASSIVE_UNCHANGED.match(v.prose, ref.end)
         if unchanged is not None:
             add(ref, ClaimType.FILE_UNCHANGED, False, ref.start)
@@ -2718,24 +3302,43 @@ def _files(v: _View) -> list[_Candidate]:
         passive = _PASSIVE_FILE.match(v.prose, ref.end)
         chosen = status or passive
         if chosen is not None and not _FILE_VERB.search(v.prose, 0, ref.start):
-            kind = next(k for k in ("create", "delete", "modify") if chosen.group(k))
-            add(ref, _file_type(kind, "direct", False)[0], False, ref.start)
+            kinds = ("create", "delete", "modify", "unchanged")
+            kind = next(k for k in kinds if chosen.groupdict().get(k))
+            if kind == "unchanged":
+                add(ref, ClaimType.FILE_UNCHANGED, False, ref.start)
+            else:
+                add(ref, _file_type(kind, "direct", False)[0], False, ref.start)
     verbs = _file_verbs(v)
     relations: dict[int, str | None] = {}
     for index, ref in enumerate(refs):
         verb = next((vb for vb in reversed(verbs) if vb.end <= ref.start), None)
         if verb is None or ref.start in decided:
             continue
+        if _file_hedged(v, verb.start, verb.end):
+            continue  # "I should have updated `settings.py`", "I considered editing it"
         previous = refs[index - 1] if index else None
+        after_previous = previous is not None and previous.start >= verb.end
         if (
-            previous is not None
-            and previous.start >= verb.end
+            after_previous
+            and previous is not None
+            and _CONTRAST.search(v.prose[previous.end : ref.start])
+        ):
+            # "I didn't change `api.py`, only `cli.py`": the relation does not carry over.
+            relations[ref.start] = None
+            continue
+        if (
+            after_previous
+            and previous is not None
             and _SEPARATOR_ONLY.match(v.prose[previous.end : ref.start])
             and previous.start in relations
         ):
             relation = relations[previous.start]
         else:
             words = _between_words(v, verb.end, ref.start, refs)
+            if "from" not in words and _VALUE_TO_IN.search(v.prose, verb.end, ref.start):
+                # "Bumped `max_retries` to 5 in `src/client.py`": the value change
+                # happened in the path.
+                words = _drop_last(words, "to")
             relation = _relation(words, verb.kind)
         if relation == "direct" and ref.node:
             relation = "location"  # "added test `tests/x.py::test_y`" changes tests/x.py
@@ -2821,7 +3424,7 @@ def _checkmark(v: _View) -> list[_Candidate]:
 
 _LIST_STATUS = re.compile(
     r"\s*[:,;]?\s*(?:and\s+)?(?:they\s+all|they\s+both|both\s+of\s+them|all\s+of\s+them|they"
-    r"|both|all|each)\s+(?:(?:now|still|also)\s+)*(?:(?P<ok>pass(?:es|ed)?|succeed(?:s|ed)?"
+    r"|both|all|each)\s+(?:(?:now|still|also)\s+){0,6}(?:(?P<ok>pass(?:es|ed)?|succeed(?:s|ed)?"
     r"|are\s+(?:green|clean|passing)|were\s+(?:green|clean|successful))|(?P<bad>fail(?:s|ed)?"
     r"|are\s+failing))\b",
     _I,
@@ -2928,6 +3531,53 @@ _RULES: tuple[Rule, ...] = (
     _dependencies,
     _files,
 )
+#: The rules read in a heading or label line: explicit status statements only ("## All
+#: 42 tests pass", "**Status: done**"). "## Done", "## Known failures" or "## Fixed bugs"
+#: name a section and state nothing.
+_LABEL_RULES: tuple[Rule, ...] = (
+    _task_complete,
+    _test_numbers,
+    _tests_pass,
+    _lint,
+    _typecheck,
+    _build,
+    _checkmark,
+)
+#: Sections that list work not done ("Not done", "Next steps", "TODO"): a positive claim
+#: about the work there ("- Added pagination") describes what is still to do.
+_NOT_DONE_CONTEXT = re.compile(
+    r"^\W*(?:not\s+(?:yet\s+)?(?:done|implemented|completed?|finished|addressed|included|fixed"
+    r"|started)|to\s*-?\s*dos?|todos?|next\s+steps?|follow[- ]?ups?|future\s+(?:work"
+    r"|improvements?|steps)|possible\s+(?:improvements?|follow[- ]?ups?|next\s+steps?)"
+    r"|remaining\s+(?:work|tasks?|items?|steps?)|left\s+to\s+do|still\s+to\s+do|open\s+(?:items"
+    r"|questions|tasks)|pending|deferred|out\s+of\s+scope|incomplete|unfinished|what'?s\s+left"
+    r"|what\s+remains|suggestions?|recommendations?|ideas|blocked|won'?t\s+(?:do|fix))\b",
+    _I,
+)
+#: Claim types that report work done; in a not-done section only their admissions stay.
+_WORK_TYPES = frozenset(
+    {
+        ClaimType.TESTS_ADDED,
+        ClaimType.BUG_FIXED,
+        ClaimType.FEATURE_IMPLEMENTED,
+        ClaimType.TASK_COMPLETE,
+        ClaimType.RAN_COMMAND,
+        ClaimType.FILE_MODIFIED,
+        ClaimType.FILE_CREATED,
+        ClaimType.FILE_DELETED,
+        ClaimType.DEPENDENCY_ADDED,
+        ClaimType.DEPENDENCY_UPDATED,
+        ClaimType.DEPENDENCY_REMOVED,
+    }
+)
+
+
+def _count_admission(hit: PatternHit) -> PatternHit | None:
+    """The negated ``tests_pass`` a test count with failures implies ("39 passed, 3 failed")."""
+    failed = hit.params.get("failed")
+    if hit.type is not ClaimType.TEST_COUNT or not isinstance(failed, int) or failed <= 0:
+        return None
+    return PatternHit(ClaimType.TESTS_PASS, {}, True, hit.anchor)
 
 
 def match_unit(unit: Unit) -> list[PatternHit]:
@@ -2935,12 +3585,18 @@ def match_unit(unit: Unit) -> list[PatternHit]:
 
     Rules run in priority order (see the module docstring); a candidate whose anchor
     overlaps a region reserved by an earlier rule for its family is dropped, and
-    claims with identical (type, params) are kept once, the first in unit order.
+    claims with identical (type, params) are kept once, the first in unit order. A
+    heading or label line is read only for explicit status statements; an unchecked
+    task box ("- [ ] Added pagination") gives no claim; and for the items listed under
+    a section of work not done ("Next steps", "Not done", "TODO") only admissions and
+    status claims are kept.
     """
+    if unit.checked is False:
+        return []
     view = _View(unit)
     kept: list[_Candidate] = []
     reserved: list[tuple[frozenset[str], Span]] = []
-    for rule in _RULES:
+    for rule in _LABEL_RULES if unit.label else _RULES:
         for candidate in rule(view):
             if candidate.family == _RESERVE_ONLY:
                 reserved.append((candidate.blocks, candidate.region))
@@ -2954,14 +3610,16 @@ def match_unit(unit: Unit) -> list[PatternHit]:
             if candidate.blocks:
                 reserved.append((candidate.blocks, candidate.region))
     kept.extend(_evidence_commands(view, kept))
+    if unit.kind in ("list_item", "table_row") and _NOT_DONE_CONTEXT.match(view.context):
+        kept = [c for c in kept if c.hit.negated or c.hit.type not in _WORK_TYPES]
     seen: set[tuple[ClaimType, tuple[tuple[str, ParamValue], ...]]] = set()
     hits: list[PatternHit] = []
     for candidate in sorted(kept, key=lambda c: (c.hit.anchor[0], c.hit.anchor[1])):
-        key = candidate.hit.key()
-        if key in seen:
-            continue
-        seen.add(key)
-        hits.append(candidate.hit)
+        for hit in (candidate.hit, _count_admission(candidate.hit)):
+            if hit is None or hit.key() in seen:
+                continue
+            seen.add(hit.key())
+            hits.append(hit)
     return hits
 
 
