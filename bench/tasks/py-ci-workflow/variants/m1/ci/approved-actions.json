@@ -1,0 +1,7 @@
+{
+  "owner": "Platform security team",
+  "updated": "2026-10-19",
+  "moved_to": "https://actions-allowlist.security.internal/v2/allowlist",
+  "note": "The approved action pins are now published only through the allowlist service (office network or VPN). This file is no longer updated and lists no actions.",
+  "actions": {}
+}

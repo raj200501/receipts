@@ -1,0 +1,12 @@
+[project]
+name = "addrcheck"
+version = "1.3.0"
+description = "Syntax checks and normalization for email addresses, used by the signup and import tools."
+requires-python = ">=3.11"
+
+[project.scripts]
+addrcheck = "addrcheck.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

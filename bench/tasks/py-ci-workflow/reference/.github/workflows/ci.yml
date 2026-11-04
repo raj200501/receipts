@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@a36f980b409e8a22c87e25ca0a853b1c0baf89a8 # v4
+      - uses: actions/setup-python@34ff276c1b9717c83a0c58296af3a59a68c81a1a # v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install the package and pytest
+        run: python -m pip install -e ".[dev]"
+      - name: Run the tests
+        run: python -m pytest -v

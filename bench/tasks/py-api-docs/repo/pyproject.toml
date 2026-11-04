@@ -1,0 +1,12 @@
+[project]
+name = "tariffs"
+version = "0.7.0"
+description = "Parcel shipping quotes from the logistics rate card."
+requires-python = ">=3.11"
+
+[project.scripts]
+tariffs = "tariffs.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

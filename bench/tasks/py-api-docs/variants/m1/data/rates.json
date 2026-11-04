@@ -1,0 +1,7 @@
+{
+  "currency": "EUR",
+  "valid_from": "2026-11-01",
+  "moved_to": "https://rates.logistics.internal/api/v3/cards/2026-11",
+  "note": "The rate card is now published only through the logistics rates service (office network or VPN). This file is no longer updated and lists no zones.",
+  "zones": {}
+}
