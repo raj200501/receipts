@@ -127,7 +127,7 @@ class SandboxRuntime:
         path.parent.mkdir(parents=True, exist_ok=True)
         after = content.encode("utf-8")
         path.write_bytes(after)
-        self.recorder.record_file_write(rel, before, after, call_seq)
+        self.recorder.record_file_write(rel, before, after, call_seq=call_seq)
         return f"wrote {len(after)} bytes to {rel}", False
 
     def _edit(self, rel: str, old: str, new: str, call_seq: int) -> tuple[str, bool]:
@@ -141,5 +141,5 @@ class SandboxRuntime:
             return f"error: the old text occurs {count} times in {rel}; it must occur once", True
         after = text.replace(old, new, 1).encode("utf-8")
         path.write_bytes(after)
-        self.recorder.record_file_write(rel, before, after, call_seq)
+        self.recorder.record_file_write(rel, before, after, call_seq=call_seq)
         return f"edited {rel}", False

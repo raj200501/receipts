@@ -191,3 +191,13 @@ It has a cancel-in-progress concurrency group and timeout-minutes: 10 per job, a
 lean (lint, typecheck, tests, offline demo). No other workflows. `make ci` must pass
 locally before every push; Raj's stop request of 2026-10-23 waived it for that one
 pause commit (work in progress from interrupted agents is included unverified).
+
+## 2026-11-04 (goal_turn 2, after Raj's pause)
+
+**D28. Push only when `make ci` passes.** Raj's later rule (D27: "run make ci locally and
+make sure it passes before every push") narrows his earlier launch setting (D19: push
+every commit). When they conflict, D27 wins: commits are made locally as Raj and pushed
+only after `tools/prepush.sh` passes, which runs `make setup` and `make ci` in a fresh
+clone of HEAD (so only committed content counts). Until `make demo` exists, `make ci`
+cannot pass, so no push happens before the offline demo is built. Raj cleared the
+`/goal` and asked to continue on 2026-11-04; goal_turn keeps counting turns of work.

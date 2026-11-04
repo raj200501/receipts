@@ -82,7 +82,9 @@ def test_snapshot_records_diff_rerun_and_hidden_checks(
     _write(
         repo,
         {
-            "src/calc.py": "def add(a, b):\n    return a + b\n\n\ndef div(a, b):\n    return a / b\n",
+            "src/calc.py": (
+                "def add(a, b):\n    return a + b\n\n\ndef div(a, b):\n    return a / b\n"
+            ),
             "src/new_mod.py": "VALUE = 1\n",
             "requirements.txt": "requests==2.32.3\nrich>=13\n",
             "web/package.json": json.dumps({"dependencies": {"zod": "^3.23.8"}}),
@@ -168,7 +170,7 @@ def test_snapshot_records_diff_rerun_and_hidden_checks(
 def test_snapshot_with_no_changes_and_no_hidden_checks(
     base_repo: tuple[Path, str], tmp_path: Path
 ) -> None:
-    repo, base = base_repo
+    repo, _base = base_repo
     jest_output = shlex.quote(str(FIXTURES / "jest" / "fail_npm.txt"))
     (repo / "run_tests.sh").write_text(f"#!/bin/sh\ncat {jest_output} >&2\nexit 1\n")
     recorder = _recorder(tmp_path)

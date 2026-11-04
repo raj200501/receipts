@@ -79,7 +79,9 @@ def handle_post(hook: HookInput, ledger: Path, state: HookState) -> list[int]:
     with locked(ledger) as writer:
         recorder = Recorder(writer, workspace=Path(hook.cwd))
         if pending is None:
-            call_seq = recorder.record_tool_call(hook.tool_name, dict(hook.tool_input), source="agent")
+            call_seq = recorder.record_tool_call(
+                hook.tool_name, dict(hook.tool_input), source="agent"
+            )
             written.append(call_seq)
         else:
             call_seq = pending.call_seq
@@ -97,7 +99,7 @@ def handle_post(hook: HookInput, ledger: Path, state: HookState) -> list[int]:
             if pending is not None and pending.existed_before and copy.is_file():
                 before = copy.read_bytes()
                 copy.unlink()
-            written.append(recorder.record_file_write(target, before, after, call_seq))
+            written.append(recorder.record_file_write(target, before, after, call_seq=call_seq))
     return written
 
 

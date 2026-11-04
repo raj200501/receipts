@@ -38,7 +38,7 @@ def test_junit_single_testsuite_root() -> None:
     run = parse_junit(fixture("junit/single_suite.xml"))
     assert _counts(run) == (3, 0, 0, 0, 3)
     assert run is not None
-    assert [c["name"] for c in run.get("cases", [])][0] == "slugify lowercases"
+    assert next(c["name"] for c in run.get("cases", [])) == "slugify lowercases"
 
 
 def test_junit_collection_failure() -> None:
@@ -146,7 +146,8 @@ def test_node_spec_ansi_and_npm_todo() -> None:
 
 def test_node_spec_failing_section_fallback() -> None:
     text = (
-        "ℹ tests 1\nℹ pass 0\nℹ fail 1\n\n"
+        "\N{INFORMATION SOURCE} tests 1\n\N{INFORMATION SOURCE} pass 0\n"
+        "\N{INFORMATION SOURCE} fail 1\n\n"
         "✖ failing tests:\n\ntest at t.js:1:1\n✖ boom (1.2ms)\n  Error: x\n"
     )
     run = parse_node_test(text)

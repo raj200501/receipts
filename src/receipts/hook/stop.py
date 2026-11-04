@@ -26,7 +26,9 @@ from receipts.verify import Label, Verdict, verify_run
 MAX_LISTED = 5
 
 
-def contradicted(claims: Sequence[Claim], verdicts: Sequence[Verdict]) -> list[tuple[Claim, Verdict]]:
+def contradicted(
+    claims: Sequence[Claim], verdicts: Sequence[Verdict]
+) -> list[tuple[Claim, Verdict]]:
     """Pairs of (claim, verdict) whose verdict is contradicted, in report order."""
     by_id = {v.claim_id: v for v in verdicts}
     return [

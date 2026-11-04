@@ -133,7 +133,10 @@ def test_tsc(name: str, errors: int) -> None:
 def test_tsc_variants_and_not_recognized() -> None:
     one = "src/a.ts:1:1 - error TS2304: Cannot find name 'x'.\n\nFound 1 error in src/a.ts:1\n"
     assert parse_tsc(one) == {"tool": "tsc", "errors": 1}
-    same = "a.ts(1,1): error TS1: x\na.ts(2,1): error TS1: y\nFound 2 errors in the same file, starting at: a.ts:1\n"
+    same = (
+        "a.ts(1,1): error TS1: x\na.ts(2,1): error TS1: y\n"
+        "Found 2 errors in the same file, starting at: a.ts:1\n"
+    )
     assert parse_tsc(same) == {"tool": "tsc", "errors": 2}
     assert parse_tsc("error TS18003: No inputs were found in config file.\n") == {
         "tool": "tsc",

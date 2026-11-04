@@ -19,18 +19,27 @@ from receipts.ledger.events import Ledger, read_ledger, verify_chain
 
 
 def hook(event: str, cwd: Path, **fields: Any) -> HookInput:
-    return HookInput.parse(json.dumps({"hook_event_name": event, "session_id": "s", "cwd": str(cwd), **fields}))
+    return HookInput.parse(
+        json.dumps({"hook_event_name": event, "session_id": "s", "cwd": str(cwd), **fields})
+    )
 
 
 def test_bash_pre_post_records_call_result_and_command(tmp_path: Path) -> None:
     ledger, st = tmp_path / "ledger.jsonl", HookState(tmp_path / "state")
     work = tmp_path / "w"
     work.mkdir()
-    pre = hook("PreToolUse", work, tool_name="Bash", tool_input={"command": "pytest -q"},
-               tool_use_id="t1")
+    pre = hook(
+        "PreToolUse", work, tool_name="Bash", tool_input={"command": "pytest -q"}, tool_use_id="t1"
+    )
     seq = record.handle_pre(pre, ledger, st)
-    post = hook("PostToolUseFailure", work, tool_name="Bash", tool_input={"command": "pytest -q"},
-                tool_use_id="t1", error="Exit code 1\n=== 1 failed, 2 passed in 0.1s ===")
+    post = hook(
+        "PostToolUseFailure",
+        work,
+        tool_name="Bash",
+        tool_input={"command": "pytest -q"},
+        tool_use_id="t1",
+        error="Exit code 1\n=== 1 failed, 2 passed in 0.1s ===",
+    )
     record.handle_post(post, ledger, st)
     events = read_ledger(ledger)
     assert verify_chain(events) == []
@@ -47,19 +56,42 @@ def test_file_edit_records_before_and_after(tmp_path: Path) -> None:
     work.mkdir()
     (work / "a.py").write_text("x = 1\n")
     tool_input = {"file_path": str(work / "a.py"), "old_string": "1", "new_string": "2"}
-    record.handle_pre(hook("PreToolUse", work, tool_name="Edit", tool_input=tool_input,
-                           tool_use_id="e1"), ledger, st)
+    record.handle_pre(
+        hook("PreToolUse", work, tool_name="Edit", tool_input=tool_input, tool_use_id="e1"),
+        ledger,
+        st,
+    )
     (work / "a.py").write_text("x = 2\n")
-    record.handle_post(hook("PostToolUse", work, tool_name="Edit", tool_input=tool_input,
-                            tool_use_id="e1", tool_response={"filePath": "a.py"}), ledger, st)
-    write = [e for e in read_ledger(ledger) if e.kind == "file_write"][0].data
+    record.handle_post(
+        hook(
+            "PostToolUse",
+            work,
+            tool_name="Edit",
+            tool_input=tool_input,
+            tool_use_id="e1",
+            tool_response={"filePath": "a.py"},
+        ),
+        ledger,
+        st,
+    )
+    write = next(e for e in read_ledger(ledger) if e.kind == "file_write").data
     assert write["path"] == "a.py" and write["op"] == "modify"
     assert write["sha256_before"] != write["sha256_after"]
     # A post without a pre (hook started mid-session) still records the call.
     new = {"file_path": "b.py", "content": "y"}
     (work / "b.py").write_text("y")
-    record.handle_post(hook("PostToolUse", work, tool_name="Write", tool_input=new,
-                            tool_use_id="w9", tool_response={"type": "create"}), ledger, st)
+    record.handle_post(
+        hook(
+            "PostToolUse",
+            work,
+            tool_name="Write",
+            tool_input=new,
+            tool_use_id="w9",
+            tool_response={"type": "create"},
+        ),
+        ledger,
+        st,
+    )
     events = read_ledger(ledger)
     assert events[-1].kind == "file_write" and events[-1].data["op"] == "create"
     assert verify_chain(events) == []
@@ -71,8 +103,17 @@ def test_concurrent_hooks_keep_the_chain_intact(tmp_path: Path) -> None:
     work.mkdir()
 
     def fire(i: int) -> None:
-        record.handle_pre(hook("PreToolUse", work, tool_name="Read",
-                               tool_input={"file_path": "x"}, tool_use_id=f"r{i}"), ledger, st)
+        record.handle_pre(
+            hook(
+                "PreToolUse",
+                work,
+                tool_name="Read",
+                tool_input={"file_path": "x"},
+                tool_use_id=f"r{i}",
+            ),
+            ledger,
+            st,
+        )
 
     threads = [threading.Thread(target=fire, args=(i,)) for i in range(12)]
     for t in threads:
@@ -87,35 +128,75 @@ def seed_failing_ledger(tmp_path: Path) -> Path:
     ledger, st = tmp_path / "ledger.jsonl", HookState(tmp_path / "state")
     work = tmp_path / "w"
     work.mkdir(exist_ok=True)
-    record.handle_pre(hook("PreToolUse", work, tool_name="Bash",
-                           tool_input={"command": "pytest -q"}, tool_use_id="t1"), ledger, st)
-    record.handle_post(hook("PostToolUseFailure", work, tool_name="Bash",
-                            tool_input={"command": "pytest -q"}, tool_use_id="t1",
-                            error="Exit code 1\n=== 1 failed, 2 passed in 0.1s ==="), ledger, st)
+    record.handle_pre(
+        hook(
+            "PreToolUse",
+            work,
+            tool_name="Bash",
+            tool_input={"command": "pytest -q"},
+            tool_use_id="t1",
+        ),
+        ledger,
+        st,
+    )
+    record.handle_post(
+        hook(
+            "PostToolUseFailure",
+            work,
+            tool_name="Bash",
+            tool_input={"command": "pytest -q"},
+            tool_use_id="t1",
+            error="Exit code 1\n=== 1 failed, 2 passed in 0.1s ===",
+        ),
+        ledger,
+        st,
+    )
     return ledger
 
 
 def test_stop_blocks_on_contradicted_claims(tmp_path: Path) -> None:
     ledger = seed_failing_ledger(tmp_path)
-    decision = stop.stop_decision(hook("Stop", tmp_path, last_assistant_message="Done. All tests pass."), ledger)
+    decision = stop.stop_decision(
+        hook("Stop", tmp_path, last_assistant_message="Done. All tests pass."), ledger
+    )
     assert decision is not None and decision["decision"] == "block"
     assert "All tests pass" in decision["reason"] and "corrected final report" in decision["reason"]
-    assert stop.stop_decision(hook("Stop", tmp_path, stop_hook_active=True,
-                                   last_assistant_message="All tests pass."), ledger) is None
+    assert (
+        stop.stop_decision(
+            hook("Stop", tmp_path, stop_hook_active=True, last_assistant_message="All tests pass."),
+            ledger,
+        )
+        is None
+    )
     assert stop.stop_decision(hook("Stop", tmp_path, last_assistant_message="  "), ledger) is None
-    assert stop.stop_decision(hook("Stop", tmp_path, last_assistant_message="All tests pass."),
-                              tmp_path / "missing.jsonl") is None
-    honest = stop.stop_decision(hook("Stop", tmp_path, last_assistant_message="One test still fails."), ledger)
+    assert (
+        stop.stop_decision(
+            hook("Stop", tmp_path, last_assistant_message="All tests pass."),
+            tmp_path / "missing.jsonl",
+        )
+        is None
+    )
+    honest = stop.stop_decision(
+        hook("Stop", tmp_path, last_assistant_message="One test still fails."), ledger
+    )
     assert honest is None
-    assert stop.stop_decision(hook("Stop", tmp_path, last_assistant_message="Hello there."), ledger) is None
+    assert (
+        stop.stop_decision(hook("Stop", tmp_path, last_assistant_message="Hello there."), ledger)
+        is None
+    )
 
 
 def test_format_reason_caps_the_list() -> None:
     from receipts.claims.types import Claim, ClaimType
     from receipts.verify import Label, Verdict
 
-    pairs = [(Claim(f"c{i}", ClaimType.TESTS_PASS, f"claim {i}", (0, 1)),
-              Verdict(f"c{i}", Label.CONTRADICTED, (1,), "evidence", "x")) for i in range(7)]
+    pairs = [
+        (
+            Claim(f"c{i}", ClaimType.TESTS_PASS, f"claim {i}", (0, 1)),
+            Verdict(f"c{i}", Label.CONTRADICTED, (1,), "evidence", "x"),
+        )
+        for i in range(7)
+    ]
     reason = stop.format_reason(pairs)
     assert "and 2 more" in reason and reason.count('"claim') == stop.MAX_LISTED
     assert stop.contradicted([p[0] for p in pairs[:2]], [pairs[0][1]]) == [pairs[0]]
@@ -129,8 +210,14 @@ def test_cli_never_fails(tmp_path: Path) -> None:
     assert out.getvalue() == ""
     ledger = seed_failing_ledger(tmp_path / "x")
     stop_args = ["stop", "--ledger", str(ledger), "--state", str(tmp_path / "s")]
-    payload = json.dumps({"hook_event_name": "Stop", "session_id": "s", "cwd": str(tmp_path),
-                          "last_assistant_message": "All tests pass."})
+    payload = json.dumps(
+        {
+            "hook_event_name": "Stop",
+            "session_id": "s",
+            "cwd": str(tmp_path),
+            "last_assistant_message": "All tests pass.",
+        }
+    )
     assert cli.run(stop_args, io.StringIO(payload), out) == 0
     assert json.loads(out.getvalue())["decision"] == "block"
     timings = (tmp_path / "s" / "timings.log").read_text().splitlines()
