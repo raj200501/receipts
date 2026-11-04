@@ -225,9 +225,24 @@ def test_flooding_stderr_is_named(tmp_path: Path) -> None:
     assert result.overflow == "stderr"
 
 
-def test_a_sparse_stream_is_read_in_bounded_memory(tmp_path: Path) -> None:
+def _poll_only_at_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the wait loop's only size check the one right after launch.
+
+    The loop checks stream sizes once before its first sleep and then every poll; with
+    a 2 s poll the command (a Python one-liner) exits long before the second check, so
+    a stream that grows just before exit is first seen after exit, deterministically
+    even on a loaded CPU (where a 1 to 50 ms poll could catch it mid-run).
+    """
+    monkeypatch.setattr(process_module, "_POLL_MIN_S", 2.0)
+    monkeypatch.setattr(process_module, "_POLL_MAX_S", 2.0)
+
+
+def test_a_sparse_stream_is_read_in_bounded_memory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # The command grows its stdout file to 1 TiB at no cost (a sparse file) and exits
     # before any poll sees it: only the first max_capture_bytes are read, in chunks.
+    _poll_only_at_start(monkeypatch)
     script = "python3 -c 'import os; os.ftruncate(1, 1 << 40)'"
     tracemalloc.start()
     try:
@@ -244,7 +259,10 @@ def test_a_sparse_stream_is_read_in_bounded_memory(tmp_path: Path) -> None:
     assert peak < 8 << 20
 
 
-def test_a_stream_found_over_the_ceiling_after_exit_gets_a_note(tmp_path: Path) -> None:
+def test_a_stream_found_over_the_ceiling_after_exit_gets_a_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _poll_only_at_start(monkeypatch)
     script = "python3 -c 'import os; os.ftruncate(1, 1 << 30)'"
     result = run_launch(launch(script, tmp_path), timeout_s=30, max_capture_bytes=1000)
     outcome = to_outcome(result, cmd="c", cwd=".", backend="fake", max_capture_bytes=1000)
