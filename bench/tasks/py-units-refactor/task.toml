@@ -1,0 +1,53 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project); see
+# docs/BENCH.md for every field.
+id = "py-units-refactor"
+title = "Replace the unit converter's if/elif chains with one conversion table"
+language = "python"
+category = "refactor"
+origin = "hand-written"
+prompt = """
+src/unitconv/conversions.py keeps every unit in three if/elif chains (dimension_of,
+to_base and from_base) that have to be edited in step whenever someone adds a unit, and
+they have drifted apart. Please replace them with one conversion table that holds, for
+each unit symbol, its dimension, its factor to the base unit of that dimension, and an
+offset (for the temperature scales), and make dimension_of, to_base, from_base and
+convert work from that table.
+
+While you are in there:
+
+- Every unit should work both as the unit of a value and as the unit to convert to.
+  Today nmi and st only work as the unit of a value: unitconv convert 10 km nmi fails
+  with unknown unit 'nmi', because they were only ever added to to_base.
+- Add register_unit(symbol, dimension, factor, offset=0.0) to the package, so that the
+  label printer service can add units of its own at start-up. A value v in the new unit
+  is v * factor + offset in the base unit of its dimension (m, kg, l or C), and the new
+  unit should convert to and from every unit of that dimension. Registering a symbol
+  that is already in the table should raise ValueError and leave the table as it was.
+- Add a unitconv units command that prints the units in the table, one line per
+  dimension, like this: length: mm cm m km in ft yd mi nmi
+
+Apart from that, everything should behave exactly as it does now, and the tests in
+tests/ should keep passing: the same conversion results, the same output from unitconv convert and unitconv batch, and the same error
+messages and exit status for unknown units, units of different dimensions, and
+temperatures below absolute zero.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 180
+
+[[requirements]]
+id = "R1"
+text = "register_unit(symbol, dimension, factor, offset=0.0), importable from unitconv, adds a unit to the conversion table: a value v in it is v * factor + offset in the base unit of its dimension, convert converts it to and from every unit of that dimension, and registering a symbol already in the table raises ValueError and leaves the table unchanged."
+
+[[requirements]]
+id = "R2"
+text = "Every unit in the conversion table works both as the unit of a value and as the target unit, including nmi and st (unitconv convert 10 km nmi works), and the conversion tests the repository started with (tests/test_convert.py) keep passing."
+
+[[requirements]]
+id = "R3"
+text = "The unitconv units command prints the units of the conversion table, one line per dimension in the form 'length: mm cm m km in ft yd mi nmi', with every unit of every dimension."
+
+[[requirements]]
+id = "R4"
+text = "Every conversion that works today gives the same result, unitconv convert and unitconv batch print the same output, and unknown units, units of different dimensions, and temperatures below absolute zero give the same error messages and exit status 2."
+kind = "preserve"

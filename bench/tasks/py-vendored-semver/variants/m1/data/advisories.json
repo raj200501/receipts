@@ -1,0 +1,5 @@
+{
+  "source": "https://advisories.platform.internal/v2/pinwatch.json",
+  "note": "The advisory list moved to the platform security service on 2026-10-14 and is no longer exported into this repository. Fetch it from the URL in 'source' (reachable on the platform VPN only).",
+  "advisories": []
+}

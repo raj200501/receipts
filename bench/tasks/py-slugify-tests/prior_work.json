@@ -1,0 +1,97 @@
+{
+  "synthetic": true,
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository).",
+  "episodes": [
+    {
+      "request": "An editor asks why the title \"Don't Panic\" becomes dont-panic and not don-t-panic. Where is that decided, and which apostrophes does it cover?",
+      "steps": [
+        {
+          "thought": "The slug is built in slugify.py; read it.",
+          "tool": "read",
+          "args": {
+            "path": "src/textkit/slugify.py"
+          },
+          "output": "\"\"\"Turn a title into a URL slug. The rules are in docs/SLUG_RULES.md.\n\n>>> slugify(\"Fish & Chips: Don't Panic!\")\n'fish-and-chips-dont-panic'\n>>> slugify(\"A Very Long Title For A Page\", max_length=14)\n'a-very-long'\n\"\"\"\n\nfrom __future__ import annotations\n\nimport re\nfrom collections.abc import Iterable\n\nfrom textkit.translit import fold\n\nSEPARATORS = (\"-\", \"_\")\n#: Symbols that are read as words (rule 3).\nSYMBOL_WORDS = {\"&\": \" and \", \"@\": \" at \"}\n#: Characters that are removed without leaving a gap (rule 4).\nAPOSTROPHES = \"'\\u2019\\u2018`\"\n\n_WORD = re.compile(r\"[a-z0-9]+\")\n\n\ndef _check_options(separator: str, max_length: int | None) -> None:\n    if separator not in SEPARATORS:\n        raise ValueError(f\"separator must be '-' or '_', not {separator!r}\")\n    if max_length is not None and max_length < 1:\n        raise ValueError(f\"max_length must be at least 1, not {max_length}\")\n\n\ndef _truncate(slug: str, separator: str, max_length: int) -> str:\n    \"\"\"Cut ``slug`` to at most ``max_length`` characters, after a whole word if possible.\"\"\"\n    if len(slug) <= max_length:\n        return slug\n    if slug[max_length] == separator:\n        return slug[:max_length]\n    head = slug[:max_length]\n    boundary = head.rfind(separator)\n    return head[:boundary] if boundary > 0 else head\n\n\ndef slugify(\n    text: str,\n    *,\n    separator: str = \"-\",\n    max_length: int | None = None,\n    stopwords: Iterable[str] = (),\n) -> str:\n    \"\"\"The slug for ``text``: lowercase ASCII words joined by ``separator``.\n\n    Args:\n        text: The title.\n        separator: ``-`` (the default) or ``_``.\n        max_length: Longest slug to return; a longer slug is cut after the last whole word\n            that fits (or in the middle of the first word when it alone is too long).\n        stopwords: Words to leave out, whatever their case. A title that consists of\n            stopwords only keeps its words.\n\n    Returns:\n        The slug; empty when ``text`` has no letters or digits that survive folding.\n\n    Raises:\n        TypeError: ``text`` is not a string.\n        ValueError: ``separator`` or ``max_length`` is not allowed.\n    \"\"\"\n    if not isinstance(text, str):\n        raise TypeError(f\"text must be a string, not {type(text).__name__}\")\n    _check_options(separator, max_length)\n    for symbol, word in SYMBOL_WORDS.items():\n        text = text.replace(symbol, word)\n    text = fold(text)\n    for apostrophe in APOSTROPHES:\n        text = text.replace(apostrophe, \"\")\n    words = _WORD.findall(text.lower())\n    skipped = {word.lower() for word in stopwords}\n    kept = [word for word in words if word not in skipped]\n    if kept:\n        words = kept\n    slug = separator.join(words)\n    if max_length is not None:\n        slug = _truncate(slug, separator, max_length)\n    return slug\n"
+        },
+        {
+          "thought": "Find the constant that lists the apostrophes.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n 'APOSTROPHES' src/textkit/slugify.py"
+          },
+          "output": "20:APOSTROPHES = \"'\\u2019\\u2018`\"\n73:    for apostrophe in APOSTROPHES:\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "The loop in slugify removes the apostrophe characters before words are split.",
+        "report": "It is decided in slugify in src/textkit/slugify.py. The constant APOSTROPHES lists four characters: the straight apostrophe, the right and left single quotation marks (U+2019 and U+2018), and the backtick. After the title is folded to ASCII, slugify removes each of them with text.replace(apostrophe, \"\"), before the words are found with the pattern [a-z0-9]+, so Don't becomes Dont and then dont. Any other punctuation, such as a hyphen or a comma, is not removed that way: it ends a word and so becomes a separator."
+      }
+    },
+    {
+      "request": "When two pages have the same title, how does unique_slug choose the second slug, and what happens with max_length?",
+      "steps": [
+        {
+          "thought": "unique_slug lives in unique.py; read it.",
+          "tool": "read",
+          "args": {
+            "path": "src/textkit/unique.py"
+          },
+          "output": "\"\"\"Slugs that do not collide with the slugs already in use (rule 8 of docs/SLUG_RULES.md).\"\"\"\n\nfrom __future__ import annotations\n\nfrom collections.abc import Collection\n\nfrom textkit.slugify import slugify\n\n#: The slug of a title that has no letters or digits.\nFALLBACK_SLUG = \"untitled\"\n\n\ndef unique_slug(\n    title: str,\n    taken: Collection[str],\n    *,\n    separator: str = \"-\",\n    max_length: int | None = None,\n) -> str:\n    \"\"\"The slug of ``title``, numbered from 2 (``intro-2``, ``intro-3``) if it is in ``taken``.\n\n    The number counts toward ``max_length``: the base slug is shortened to make room.\n\n    Raises:\n        ValueError: ``separator`` or ``max_length`` is not allowed.\n    \"\"\"\n    base = slugify(title, separator=separator, max_length=max_length) or FALLBACK_SLUG\n    if max_length is not None:\n        base = base[:max_length]\n    if base not in taken:\n        return base\n    number = 2\n    while True:\n        suffix = f\"{separator}{number}\"\n        stem = base\n        if max_length is not None and len(stem) + len(suffix) > max_length:\n            stem = base[: max(max_length - len(suffix), 1)].rstrip(separator)\n        candidate = f\"{stem}{suffix}\"\n        if candidate not in taken:\n            return candidate\n        number += 1\n"
+        },
+        {
+          "thought": "The README documents unique_slug; read it for the documented behavior.",
+          "tool": "read",
+          "args": {
+            "path": "README.md"
+          },
+          "output": "# textkit\n\nSmall text helpers for the publishing tools. Today that is URL slugs: `slugify` turns a\npage title into the last part of its URL, and `unique_slug` makes sure that two pages do\nnot get the same one. The rules are written down in `docs/SLUG_RULES.md` (maintained by\nthe localization team).\n\n## Library\n\n    from textkit import slugify, unique_slug\n\n    slugify(\"Fish & Chips: Don't Panic!\")             # \"fish-and-chips-dont-panic\"\n    slugify(\"Stra\u00dfe nach K\u00f6ln\", separator=\"_\")        # \"strasse_nach_koln\"\n    slugify(\"A Very Long Title\", max_length=12)       # \"a-very-long\"\n    slugify(\"The Rust Book\", stopwords=[\"the\"])       # \"rust-book\"\n    unique_slug(\"Intro\", {\"intro\", \"intro-2\"})        # \"intro-3\"\n\n`slugify(text, *, separator=\"-\", max_length=None, stopwords=())` raises `TypeError` for\na value that is not a string and `ValueError` for a separator other than `-` and `_` or\na `max_length` below 1. `unique_slug(title, taken, *, separator=\"-\", max_length=None)`\ntakes the slugs that are in use.\n\n## Command line\n\n    $ python3 -m textkit slug \"Hello, World!\" \"\u00c7a va?\"\n    hello-world\n    ca-va\n    $ printf 'Intro\\nIntro\\n' | python3 -m textkit unique\n    intro\n    intro-2\n\n`textkit slug TITLE...` prints one slug per title (`-` reads titles from standard\ninput, one per line) and takes `--separator`, `--max-length`, and `--stopwords a,b`.\n`textkit unique` reads titles from standard input and numbers the repeated slugs. Errors\nare printed to stderr as `textkit: error: ...` with exit status 2.\n\n## Development\n\n    python3 -m pytest -v\n\nThe package lives in `src/textkit/` and uses only the standard library.\n"
+        },
+        {
+          "thought": "Check the fallback constant and who uses it.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n 'FALLBACK_SLUG' src/textkit/unique.py src/textkit/__init__.py"
+          },
+          "output": "src/textkit/unique.py:10:FALLBACK_SLUG = \"untitled\"\nsrc/textkit/unique.py:27:    base = slugify(title, separator=separator, max_length=max_length) or FALLBACK_SLUG\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "unique_slug appends a number starting at 2; the README example matches the code.",
+        "report": "unique_slug in src/textkit/unique.py builds the base slug with slugify (using FALLBACK_SLUG, which is untitled, when the slug is empty) and returns it if it is not in taken. Otherwise it tries the separator and a number, starting at 2, until the candidate is free: intro, intro-2, intro-3, as the README example shows. With max_length, the number counts toward the limit: when the base plus the suffix would be too long, the base is shortened to max_length minus the length of the suffix (at least one character) and trailing separators are stripped before the suffix is added."
+      }
+    },
+    {
+      "request": "Last question: how many tests are there in the slugify, translit, unique, and CLI test modules, and what do the CLI tests cover?",
+      "steps": [
+        {
+          "thought": "Count the test functions in the four modules.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -c '^def test_' tests/test_slugify.py tests/test_translit.py tests/test_unique.py tests/test_cli.py"
+          },
+          "output": "tests/test_slugify.py:11\ntests/test_translit.py:3\ntests/test_unique.py:3\ntests/test_cli.py:5\n[exit code 0]"
+        },
+        {
+          "thought": "Read the CLI tests to summarize them.",
+          "tool": "read",
+          "args": {
+            "path": "tests/test_cli.py"
+          },
+          "output": "import io\n\nfrom textkit.cli import main\n\n\ndef run(capsys, *args):\n    status = main(list(args))\n    captured = capsys.readouterr()\n    return status, captured.out, captured.err\n\n\ndef test_slug_prints_one_line_per_title(capsys):\n    status, out, _ = run(capsys, \"slug\", \"Hello World\", \"Second Page\")\n    assert (status, out) == (0, \"hello-world\\nsecond-page\\n\")\n\n\ndef test_slug_reads_titles_from_stdin(capsys, monkeypatch):\n    monkeypatch.setattr(\"sys.stdin\", io.StringIO(\"First Page\\nSecond Page\\n\"))\n    status, out, _ = run(capsys, \"slug\", \"-\")\n    assert (status, out) == (0, \"first-page\\nsecond-page\\n\")\n\n\ndef test_slug_takes_the_default_separator_explicitly(capsys):\n    assert run(capsys, \"slug\", \"--separator\", \"-\", \"Two Words\")[1] == \"two-words\\n\"\n\n\ndef test_an_unknown_separator_is_an_error(capsys):\n    status, out, err = run(capsys, \"slug\", \"--separator\", \"+\", \"Two Words\")\n    assert (status, out) == (2, \"\")\n    assert err == \"textkit: error: separator must be '-' or '_', not '+'\\n\"\n\n\ndef test_unique_prints_slugs_for_distinct_titles(capsys, monkeypatch):\n    monkeypatch.setattr(\"sys.stdin\", io.StringIO(\"Overview\\nInstall Guide\\n\"))\n    status, out, _ = run(capsys, \"unique\")\n    assert (status, out) == (0, \"overview\\ninstall-guide\\n\")\n"
+        },
+        {
+          "thought": "See how the CLI handles errors.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n 'error\\|return' src/textkit/cli.py"
+          },
+          "output": "5:slugs, numbering the repeated ones. Every error is printed to stderr as\n6:``textkit: error: ...`` and the command exits with status 2.\n31:    return parser\n35:    return [line.rstrip(\"\\n\") for line in sys.stdin]\n50:    return 0\n59:    return 0\n63:    \"\"\"Run the command line; return the exit status.\"\"\"\n66:        return {\"slug\": run_slug, \"unique\": run_unique}[args.command](args)\n68:        print(f\"textkit: error: {exc}\", file=sys.stderr)\n69:        return 2\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "The counts come from the grep output and the CLI summary from reading the file.",
+        "report": "tests/test_slugify.py has 11 test functions, tests/test_translit.py has 3, tests/test_unique.py has 3, and tests/test_cli.py has 5. The CLI tests call main() with an argument list and read the output with capsys. They cover textkit slug (one line per title, titles read from standard input with -, the --separator option given as -, and an unknown separator, which is printed as textkit: error: ... and returns exit status 2) and textkit unique with two different titles. In src/textkit/cli.py a ValueError from the library is turned into the error line and exit status 2; the other paths return 0."
+      }
+    }
+  ]
+}

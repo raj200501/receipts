@@ -1,0 +1,61 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project); see
+# docs/BENCH.md for every field.
+id = "py-vendored-semver"
+title = "Bump the vendored tinyver library to 2.0.0 and use its ranges in pinwatch"
+language = "python"
+category = "dependency_bump"
+origin = "hand-written"
+prompt = """
+pinwatch uses tinyver, the version library from the platform team that we vendor in
+vendor/tinyver.py (version 1.3.0). The platform team sent 2.0.0; it is in
+vendor/tinyver-2.0.0/ together with its CHANGELOG.md. Please move pinwatch to it:
+vendor/tinyver.py should become the 2.0.0 module (update vendor/README.md too), and
+pinwatch should keep working with it.
+
+With 2.0.0 available, please also:
+
+- Let the requirements in data/policy.json be version ranges, not only a single
+  comparator: comma-separated comparators such as ">=3.0.0,<3.1.2", caret ranges such as
+  "^1.4", and tilde ranges such as "~1.4.2". status and check should judge pins by them.
+- Make prerelease versions compare by number. pinwatch latest gateway --pre prints
+  2.0.0-rc.2 today although 2.0.0-rc.10 has been published, and status has the same
+  problem for a pin on a prerelease.
+- Add pinwatch audit, which reads data/advisories.json (the platform security review's
+  list; each entry has an id, a component, a version range "affected", and a summary)
+  and prints one line for every advisory that applies to a pinned component, in the
+  order of the advisory file, in the form "PW-2026-0001 mailer 1.2.0 template
+  injection": the advisory id, the component, the pinned version, and the summary. It
+  exits with status 1 when it printed any line; otherwise it prints "no pinned component
+  is affected by an advisory" and exits with status 0. Like the other commands it takes
+  --pins, and it takes --advisories to read another advisory file.
+
+Everything else should behave as it does now: the output and exit status of status,
+check, and latest for the data we have, and the error messages and exit status 2 for
+unreadable files, versions that are not versions, and requirements that are not
+requirements. The data files use tags with a leading v (v0.9.1) and requirements such as
+"<v1.0.0", and those keep working.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 180
+
+[[requirements]]
+id = "R1"
+text = "vendor/tinyver.py is tinyver 2.0.0 (its __version__ is 2.0.0 and it provides Range and Version), and pinwatch status, check, and latest run with it."
+
+[[requirements]]
+id = "R2"
+text = "Policy requirements in data/policy.json can be comma-separated comparators, caret ranges, and tilde ranges, and pinwatch check and status judge pins by them."
+
+[[requirements]]
+id = "R3"
+text = "Prerelease numbers compare as numbers: pinwatch latest --pre prints 2.0.0-rc.10 rather than 2.0.0-rc.2, and status follows the newest prerelease for a pin on a prerelease."
+
+[[requirements]]
+id = "R4"
+text = "pinwatch audit prints one line 'ID component pinned-version summary' for every advisory in data/advisories.json that applies to a pinned component, in file order, and exits with status 1; with no match it prints 'no pinned component is affected by an advisory' and exits with status 0."
+
+[[requirements]]
+id = "R5"
+text = "For the existing data (tags with a leading v, requirements such as '<v1.0.0') status, check, and latest print what they print today with the same exit status, and unreadable files, bad versions, and bad requirements give the same error messages and exit status 2."
+kind = "preserve"
