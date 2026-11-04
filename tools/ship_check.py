@@ -4,15 +4,21 @@
 Order of work:
 
 1. In the original checkout, check the parts of G14 that concern it: the working
-   tree is clean, nothing under ``private/`` is tracked, ``private/`` is ignored,
-   and any private hash manifest matches.
+   tree is clean (and no tracked file hides a change behind a skip-worktree or
+   assume-unchanged bit), nothing under ``private/`` is tracked, ``private/`` is
+   ignored, and any private hash manifest matches.
 2. Clone HEAD into a temporary directory and run every other check there, so
-   only committed state counts.
+   only committed state counts. Sub-commands see the caller's environment minus
+   the variables that would change what runs or what counts there (an import
+   path, pytest or coverage options, make overrides, another project or venv),
+   and every make command line pins ``PY=3.11`` and ``PYTEST_ARGS`` (D14, D16).
 
 It verifies banked artifacts (presence, provenance, hashes, preregistration
 links, thresholds) and recomputes statistics from them. It never runs an
 experiment and never calls a model. It writes nothing inside the working tree;
-sub-command logs go to the temporary directory, named on stderr.
+sub-command logs and the harness's own settings files (coverage and mypy
+settings, a pytest trace plugin for contract tests) go to the temporary
+directory, named on stderr.
 
 stdout is exactly ``HEAD <sha> fresh-clone``, one ``G<n> <PASS|FAIL> <evidence>``
 line per gate, and then ``SHIP-CHECK: PASS 14/14`` or ``SHIP-CHECK: FAIL <n>/14``.
@@ -31,24 +37,30 @@ import sys
 sys.dont_write_bytecode = True
 
 import argparse  # noqa: E402
+import ast  # noqa: E402
+import fnmatch  # noqa: E402
 import hashlib  # noqa: E402
 import io  # noqa: E402
 import json  # noqa: E402
 import math  # noqa: E402
 import os  # noqa: E402
+import posixpath  # noqa: E402
 import re  # noqa: E402
+import shlex  # noqa: E402
 import shutil  # noqa: E402
+import socket  # noqa: E402
 import statistics  # noqa: E402
 import subprocess  # noqa: E402
 import tempfile  # noqa: E402
 import time  # noqa: E402
 import tokenize  # noqa: E402
 import tomllib  # noqa: E402
+import urllib.parse  # noqa: E402
 from collections import Counter  # noqa: E402
 from collections.abc import Callable, Iterable, Mapping, Sequence  # noqa: E402
 from dataclasses import dataclass, field  # noqa: E402
 from pathlib import Path  # noqa: E402
-from typing import Any  # noqa: E402
+from typing import Any, TypeGuard  # noqa: E402
 
 CORE_MODULES: tuple[str, ...] = ("ledger", "claims", "verify", "analysis", "hook")
 COVERAGE_MIN = 85.0
@@ -62,11 +74,37 @@ G7_MIN_RUNS = 60
 HOOK_MEDIAN_MAX_S = 5.0
 REPORT_WORDS = (4000, 8000)
 REQUIRED_FILES = ("LICENSE", "CITATION.cff", "SECURITY.md", "CONTRIBUTING.md")
-HYPE = re.compile(r"(?i)\b(revolutionary|groundbreaking|state[- ]of[- ]the[- ]art)\b")
+# Hype words (rule 12), also when hyphenated, wrapped across lines, or abbreviated.
+HYPE = re.compile(
+    r"\b(?i:revolutionar(?:y|ies)|ground[-\s]?breaking|state[-\s]+of[-\s]+the[-\s]+art)\b"
+    r"|\bSOTA\b"
+)
 EM_DASH = "\N{EM DASH}"
+# HTML entities that GitHub renders as an em dash.
+EM_DASH_ENTITY = re.compile(r"(?i)&(?:mdash|#0*8212|#x0*2014);")
 MECHANISM_CLASSES = frozenset({"saw_and_reported_otherwise", "truncated_before_agent", "never_saw"})
 VERDICTS = frozenset({"supported", "contradicted", "unverifiable"})
-NON_AGENTS = frozenset({"", "mock", "fixture", "synthetic", "reference"})
+# Words that mark a smoke-run agent label as something other than an agent run (G5, G6):
+# "minimal-agent/mock" has the words minimal, agent, and mock.
+NON_AGENT_WORDS = frozenset(
+    {
+        "mock",
+        "mocked",
+        "fixture",
+        "fixtures",
+        "synthetic",
+        "reference",
+        "fake",
+        "dummy",
+        "stub",
+        "scripted",
+        "replay",
+        "replayed",
+        "canned",
+        "recorded",
+    }
+)
+HOOK_DEMO_LIMIT_S = 30.0
 README_SECTIONS = (
     "what it is",
     "result",
@@ -90,6 +128,87 @@ REPORT_SECTIONS = (
     "ethic",
     "reproducib",
 )
+
+# Variables that point git at another repository, index, or object store.
+GIT_REPO_VARS = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+)
+# Caller variables that change what runs in the clone or what counts there: an import
+# path, pytest or coverage options, make overrides, a shell startup file, or another
+# project, directory, repository, or venv. They never reach a sub-command. Secret-named
+# variables stay (secrets_scan.py looks for their values in tracked files), as do
+# CAP_SHARE, PATH, HOME, and the proxy, TLS, cache, and index settings.
+ENV_DROP = frozenset(
+    {
+        "VIRTUAL_ENV",
+        "CONDA_PREFIX",
+        "MAKEFLAGS",
+        "MFLAGS",
+        "MAKEOVERRIDES",
+        "GNUMAKEFLAGS",
+        "MAKEFILES",
+        "MAKELEVEL",
+        "PY",
+        "PYTEST_ARGS",
+        "COV_JSON",
+        "BASH_ENV",
+        "ENV",
+        "UV_PROJECT",
+        "UV_PROJECT_ENVIRONMENT",
+        "UV_WORKING_DIR",
+        "UV_WORKING_DIRECTORY",
+        "UV_ENV_FILE",
+        "UV_NO_PROJECT",
+        "UV_ISOLATED",
+        "UV_PYTHON",
+        "UV_NO_SYNC",
+        "UV_FROZEN",
+        "UV_NO_DEV",
+        "UV_NO_DEFAULT_GROUPS",
+        "UV_NO_EDITABLE",
+        "UV_NO_INSTALL_PROJECT",
+        "UV_NO_INSTALL_LOCAL",
+        "UV_NO_SOURCES",
+        *GIT_REPO_VARS,
+    }
+)
+ENV_DROP_PREFIXES = ("PYTHON", "PYTEST_", "COVERAGE_", "COV_CORE_", "MYPY", "BASH_FUNC_")
+# Makefile knobs fixed on every make command line, which beats the environment and
+# MAKEFLAGS: Python 3.11 (D14) and the full test selection (only G1 fast mode narrows it).
+MAKE_PINS = ("PY=3.11", "PYTEST_ARGS=")
+# Network isolators tried in order (D9 as amended): each counts only if a child run
+# under it provably cannot reach a listener on this host's loopback.
+ISOLATORS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("unshare -rn", ("unshare", "-rn")),
+    ("bwrap", ("bwrap", "--unshare-net", "--die-with-parent", "--dev-bind", "/", "/")),
+    ("sandbox-exec", ("sandbox-exec", "-p", "(version 1)(allow default)(deny network*)")),
+)
+LOOPBACK_PROBE = (
+    "import socket, sys\n"
+    "s = socket.socket()\n"
+    "s.settimeout(5)\n"
+    "print('ISOLATED' if s.connect_ex(('127.0.0.1', int(sys.argv[1]))) else 'CONNECTED')\n"
+)
+DEAD_PROXY = "http://127.0.0.1:9"
+# Offline runs: RECEIPTS_OFFLINE for the model client, and dead proxies as a second
+# layer under the network isolator (never instead of it).
+OFFLINE_ENV = {
+    "RECEIPTS_OFFLINE": "1",
+    "HTTPS_PROXY": DEAD_PROXY,
+    "HTTP_PROXY": DEAD_PROXY,
+    "ALL_PROXY": DEAD_PROXY,
+    "https_proxy": DEAD_PROXY,
+    "http_proxy": DEAD_PROXY,
+    "all_proxy": DEAD_PROXY,
+    "NO_PROXY": "",
+    "no_proxy": "",
+}
 
 
 class GateError(Exception):
@@ -121,6 +240,14 @@ class CmdResult:
         lines = [line for line in self.stdout.splitlines() if line.strip()]
         return lines[-1].strip() if lines else ""
 
+    def first_line(self) -> str:
+        """Return the first non-empty line of stdout, else of stderr (a tool's first error)."""
+        for stream in (self.stdout, self.stderr):
+            for line in stream.splitlines():
+                if line.strip():
+                    return line.strip()
+        return ""
+
 
 @dataclass
 class Context:
@@ -133,13 +260,22 @@ class Context:
     sha: str
     pre: dict[str, str] = field(default_factory=dict)
     results: dict[str, CmdResult] = field(default_factory=dict)
+    isolator: tuple[str, list[str]] | None = None
+    isolation_probed: bool = False
 
     def env(self, extra: Mapping[str, str] | None = None) -> dict[str, str]:
-        """Environment for sub-commands: the caller's, minus any active virtualenv."""
-        env = {k: v for k, v in os.environ.items() if k not in ("VIRTUAL_ENV", "CONDA_PREFIX")}
+        """Environment for sub-commands: the caller's, minus what changes what runs."""
+        env, _ = scrub_environment(os.environ)
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         env.update(extra or {})
         return env
+
+    def isolation(self) -> tuple[str, list[str]] | None:
+        """The network isolator for offline runs as ``(name, prefix)``, probed once."""
+        if not self.isolation_probed:
+            self.isolator = network_isolation()
+            self.isolation_probed = True
+        return self.isolator
 
     def run(
         self,
@@ -179,9 +315,16 @@ class Context:
         self.results[name] = result
         return result
 
-    def make(self, target: str, timeout: float, *args: str) -> CmdResult:
-        """Run ``make <target>`` in the clone."""
-        return self.run(f"make-{target}", ["make", "--no-print-directory", target, *args], timeout)
+    def make(
+        self,
+        target: str,
+        timeout: float,
+        *args: str,
+        extra_env: Mapping[str, str] | None = None,
+    ) -> CmdResult:
+        """Run ``make <target>`` in the clone with the Makefile knobs pinned (later args win)."""
+        argv = ["make", "--no-print-directory", target, *MAKE_PINS, *args]
+        return self.run(f"make-{target}", argv, timeout, extra_env)
 
     def python(self, name: str, script_args: Sequence[str], timeout: float) -> CmdResult:
         """Run a repository script with the clone's environment."""
@@ -191,11 +334,37 @@ class Context:
 # ---------------------------------------------------------------- small helpers
 
 
+def scrub_environment(environ: Mapping[str, str]) -> tuple[dict[str, str], list[str]]:
+    """Split ``environ`` into what sub-commands may see and the sorted names dropped."""
+    kept: dict[str, str] = {}
+    dropped: list[str] = []
+    for name, value in environ.items():
+        if name in ENV_DROP or name.startswith(ENV_DROP_PREFIXES):
+            dropped.append(name)
+        else:
+            kept[name] = value
+    return kept, sorted(dropped)
+
+
+def git_env() -> dict[str, str]:
+    """The caller's environment minus the variables that point git at another repository."""
+    return {name: value for name, value in os.environ.items() if name not in GIT_REPO_VARS}
+
+
 def git(root: Path, *args: str) -> str:
     """Run git in ``root`` and return stdout (raises CalledProcessError on failure)."""
     return subprocess.run(
-        ["git", "-C", str(root), *args], capture_output=True, text=True, check=True
+        ["git", "-C", str(root), *args],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=git_env(),
     ).stdout
+
+
+def tracked(root: Path, *pathspecs: str) -> list[str]:
+    """Tracked paths in ``root`` matching git ``pathspecs`` (a ``*`` also crosses ``/``)."""
+    return [p for p in git(root, "ls-files", "-z", "--", *pathspecs).split("\0") if p]
 
 
 def sha256_file(path: Path) -> str:
@@ -271,20 +440,236 @@ def fmt_ci(successes: int, n: int) -> str:
     return f"{est:.3f}[{lo:.3f},{hi:.3f}]"
 
 
+# Markdown structure as GitHub renders it (CommonMark): fenced code may be indented up
+# to three spaces and an unclosed fence runs to the end; HTML comments are invisible.
+FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+FENCE_CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
+HEADING_LINE = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$")
+INLINE_COMMENT = re.compile(r"<!--(?!n:|/n).*?-->")
+
+
+def _fence_opens(line: str) -> str | None:
+    """The fence string if ``line`` opens a fenced code block."""
+    opened = FENCE_OPEN.match(line)
+    if opened is None or (opened.group(1)[0] == "`" and "`" in opened.group(2)):
+        return None
+    return opened.group(1)
+
+
+def _fence_closes(line: str, fence: str) -> bool:
+    closed = FENCE_CLOSE.match(line)
+    return (
+        closed is not None and closed.group(1)[0] == fence[0] and len(closed.group(1)) >= len(fence)
+    )
+
+
+def md_lines(text: str) -> list[tuple[str, str]]:
+    """Each line of Markdown ``text`` with its kind: ``text``, ``code``, or ``comment``.
+
+    ``code`` covers a fenced block including its fence lines; ``comment`` covers the
+    lines of an HTML comment that spans lines. Single-line comments stay ``text``.
+    """
+    out: list[tuple[str, str]] = []
+    fence: str | None = None
+    in_comment = False
+    for line in text.split("\n"):
+        if fence is not None:
+            if _fence_closes(line, fence):
+                fence = None
+            out.append((line, "code"))
+        elif in_comment:
+            out.append((line, "comment"))
+            in_comment = "-->" not in line
+        elif (opened := _fence_opens(line)) is not None:
+            fence = opened
+            out.append((line, "code"))
+        else:
+            visible = INLINE_COMMENT.sub("", line)
+            opened_comment = re.search(r"<!--(?!n:|/n)", visible)
+            if opened_comment is not None:
+                in_comment = True
+                out.append((visible[: opened_comment.start()], "text"))
+            else:
+                out.append((line, "text"))
+    return out
+
+
+def _heading(line: str) -> tuple[int, str] | None:
+    """``(level, lowercased title)`` if ``line`` (a text line) is an ATX heading."""
+    match = HEADING_LINE.match(INLINE_COMMENT.sub("", line))
+    return (len(match.group(1)), match.group(2).strip().lower()) if match else None
+
+
 def headings(text: str) -> list[str]:
-    """Return the lowercased Markdown headings in ``text``."""
-    return [m.group(1).strip().lower() for m in re.finditer(r"^#{1,6}\s+(.+)$", text, re.M)]
+    """Return the lowercased Markdown headings in ``text`` (not inside code or comments)."""
+    found = [_heading(line) for line, kind in md_lines(text) if kind == "text"]
+    return [head[1] for head in found if head is not None]
+
+
+def md_sections(text: str) -> list[tuple[str, str]]:
+    """``(lowercased heading, body)`` for every heading; a body runs to the next
+    heading of the same or a higher level."""
+    lines = md_lines(text)
+    heads = [
+        (index, *head)
+        for index, (line, kind) in enumerate(lines)
+        if kind == "text" and (head := _heading(line)) is not None
+    ]
+    out: list[tuple[str, str]] = []
+    for number, (index, level, title) in enumerate(heads):
+        end = next((i for i, lvl, _ in heads[number + 1 :] if lvl <= level), len(lines))
+        out.append((title, "\n".join(line for line, _ in lines[index + 1 : end])))
+    return out
+
+
+def section_text(text: str, keyword: str) -> str:
+    """The bodies of every section whose heading contains ``keyword``."""
+    return "\n\n".join(body for title, body in md_sections(text) if keyword in title)
 
 
 def strip_code(text: str) -> str:
-    """Remove fenced code blocks."""
-    return re.sub(r"^(```|~~~).*?^\1[^\n]*$", "", text, flags=re.S | re.M)
+    """Remove fenced code blocks (each becomes one empty line)."""
+    out: list[str] = []
+    fence: str | None = None
+    for line in text.split("\n"):
+        if fence is not None:
+            if _fence_closes(line, fence):
+                fence = None
+        elif (opened := _fence_opens(line)) is not None:
+            fence = opened
+            out.append("")
+        else:
+            out.append(line)
+    return "\n".join(out)
 
 
-def first_commit(root: Path, rel: str) -> str | None:
-    """Return the commit that first added ``rel`` in ``root``."""
-    shas = git(root, "log", "--format=%H", "--diff-filter=A", "--follow", "--", rel).split()
+HEX40 = re.compile(r"[0-9a-f]{40}")
+HEX64 = re.compile(r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])")
+SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+RENAME_HOPS = 20
+
+
+def git_or_none(root: Path, *args: str) -> str | None:
+    """Run git in ``root``; its stdout, or None when git fails (no such path or commit)."""
+    proc = subprocess.run(
+        ["git", "-C", str(root), *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=git_env(),
+    )
+    return proc.stdout if proc.returncode == 0 else None
+
+
+def is_commit(root: Path, sha: object) -> bool:
+    """True if ``sha`` is the full hex name of a commit in ``root``."""
+    return (
+        isinstance(sha, str)
+        and HEX40.fullmatch(sha) is not None
+        and git_or_none(root, "cat-file", "-e", f"{sha}^{{commit}}") is not None
+    )
+
+
+def history_order(root: Path) -> dict[str, int]:
+    """Every commit reachable from HEAD with its position, oldest first."""
+    shas = git(root, "rev-list", "--reverse", "--topo-order", "HEAD").split()
+    return {sha: index for index, sha in enumerate(shas)}
+
+
+def first_exact_add(root: Path, rel: str) -> str | None:
+    """The oldest commit that added the path ``rel`` itself (a rename into it counts)."""
+    shas = git(root, "log", "--no-renames", "--diff-filter=A", "--format=%H", "--", rel).split()
     return shas[-1] if shas else None
+
+
+def add_commits(root: Path, pathspecs: Sequence[str]) -> dict[str, list[str]]:
+    """Every commit that added each path under ``pathspecs`` (a rename into it counts)."""
+    out = git(
+        root,
+        "log",
+        "--no-renames",
+        "--diff-filter=A",
+        "--name-only",
+        "-z",
+        "--format=%x01%H",
+        "--",
+        *pathspecs,
+    )
+    adds: dict[str, list[str]] = {}
+    for record in out.split("\x01"):
+        sha, _, names = record.partition("\0")
+        for name in names.split("\0"):
+            path = name.lstrip("\n")
+            if sha and path:
+                adds.setdefault(path, []).append(sha)
+    return adds
+
+
+def rename_sources(root: Path, sha: str) -> dict[str, str]:
+    """``{new path: old path}`` for every rename in commit ``sha`` (a copy is no rename)."""
+    out = git_or_none(
+        root,
+        "-c",
+        "diff.renameLimit=0",
+        "diff",
+        "--find-renames",
+        "--name-status",
+        "-z",
+        "--diff-filter=R",
+        f"{sha}^1",
+        sha,
+    )
+    tokens = (out or "").split("\0")
+    return {
+        tokens[i + 2]: tokens[i + 1] for i in range(0, len(tokens) - 2, 3) if tokens[i][:1] == "R"
+    }
+
+
+def first_added(
+    root: Path, rels: Sequence[str], pathspecs: Sequence[str] | None = None
+) -> dict[str, str | None]:
+    """The oldest commit that added each of ``rels``, following renames into it.
+
+    Copies are never followed. git's ``--follow`` also follows them, so it dates a new
+    file by the add of an older look-alike (a held-out evaluation by the development
+    evaluation it resembles). ``pathspecs`` covers ``rels`` and is read in one query.
+    """
+    order = history_order(root)
+    adds = add_commits(root, pathspecs or rels)
+    renames: dict[str, dict[str, str]] = {}
+
+    def adds_of(path: str) -> list[str]:
+        if path not in adds:
+            adds[path] = add_commits(root, [path]).get(path, [])
+        return adds[path]
+
+    out: dict[str, str | None] = {}
+    for rel in rels:
+        found: list[str] = []
+        todo: list[str] = [rel]
+        seen: set[str] = set()
+        while todo and len(seen) < RENAME_HOPS:
+            path = todo.pop()
+            if path in seen:
+                continue
+            seen.add(path)
+            for sha in adds_of(path):
+                found.append(sha)
+                if sha not in renames:
+                    renames[sha] = rename_sources(root, sha)
+                source = renames[sha].get(path)
+                if source is not None:
+                    todo.append(source)
+        known = [sha for sha in found if sha in order]
+        out[rel] = min(known, key=order.__getitem__) if known else None
+    return out
+
+
+def commits_after(root: Path, since: str, rel: str) -> list[str]:
+    """Commits after ``since`` (up to HEAD) that touch ``rel``."""
+    return git(root, "log", "--format=%H", f"{since}..HEAD", "--", rel).split()
 
 
 def strictly_before(root: Path, older: str, newer: str) -> bool:
@@ -295,17 +680,137 @@ def strictly_before(root: Path, older: str, newer: str) -> bool:
         ["git", "-C", str(root), "merge-base", "--is-ancestor", older, newer],
         capture_output=True,
         check=False,
+        env=git_env(),
     )
     return proc.returncode == 0
 
 
-def network_isolation() -> list[str]:
-    """Return a command prefix that removes network access, or [] when unavailable."""
-    unshare = shutil.which("unshare")
-    if unshare is None:
-        return []
-    probe = subprocess.run([unshare, "-rn", "true"], capture_output=True, check=False)
-    return [unshare, "-rn"] if probe.returncode == 0 else []
+LOCK_REL = "prereg/LOCK.json"
+
+
+def lock_entries(text: str | None) -> dict[str, str]:
+    """``{preregistration: locked sha256}`` from a prereg/LOCK.json text ({} if unreadable)."""
+    try:
+        data = json.loads(text or "")
+    except json.JSONDecodeError:
+        return {}
+    entries = data.get("entries") if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        return {}
+    return {
+        e["file"]: str(e.get("sha256", ""))
+        for e in entries
+        if isinstance(e, dict) and isinstance(e.get("file"), str)
+    }
+
+
+def frozen_preregs(root: Path) -> dict[str, str]:
+    """The preregistrations prereg/LOCK.json freezes at HEAD, with their locked SHA-256."""
+    path = root / LOCK_REL
+    return lock_entries(path.read_text(encoding="utf-8")) if path.is_file() else {}
+
+
+def freeze_commit(root: Path, prereg: str) -> str | None:
+    """The first commit whose prereg/LOCK.json lists ``prereg`` (its freeze commit)."""
+    for sha in git(root, "log", "--reverse", "--topo-order", "--format=%H", "--", LOCK_REL).split():
+        if prereg in lock_entries(git_or_none(root, "show", f"{sha}:{LOCK_REL}")):
+            return sha
+    return None
+
+
+def repo_path(rel: object) -> str | None:
+    """``rel`` as a normalized path inside the repository; None if absolute or outside."""
+    if not isinstance(rel, str) or not rel or rel.startswith("/") or "\\" in rel:
+        return None
+    norm = posixpath.normpath(rel)
+    return None if norm in (".", "..") or norm.startswith("../") else norm
+
+
+def json_digests(raw: bytes) -> set[str]:
+    """The SHA-256 of a JSON file's bytes and of its canonical form (sorted keys, compact
+    separators, UTF-8): the two ways this project cites a study plan."""
+    digests = {hashlib.sha256(raw).hexdigest()}
+    try:
+        data = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return digests
+    canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    digests.add(hashlib.sha256(canonical.encode("utf-8")).hexdigest())
+    return digests
+
+
+def is_number(value: object) -> TypeGuard[int | float]:
+    """A finite JSON number; a boolean is not one."""
+    return (
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    )
+
+
+def is_count(value: object) -> TypeGuard[int]:
+    """A non-negative JSON integer; a boolean is not one."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def is_text(value: object) -> TypeGuard[str]:
+    """A string with something other than white space in it."""
+    return isinstance(value, str) and bool(value.strip())
+
+
+def close(value: object, want: float) -> bool:
+    """True if ``value`` is a number within 1e-9 of ``want``."""
+    return is_number(value) and abs(float(value) - want) < 1e-9
+
+
+def has_content(body: str, *, code: bool = False) -> bool:
+    """True if a section body says something: a visible word outside headings, HTML
+    comments, and (unless ``code``) fenced code."""
+    for line, kind in md_lines(body):
+        if kind == "code" and code and _fence_opens(line) is None and re.search(r"\w", line):
+            return True
+        visible = INLINE_COMMENT.sub("", line)
+        if kind == "text" and _heading(line) is None and re.search(r"[A-Za-z]{2,}", visible):
+            return True
+    return False
+
+
+def has_section(text: str, title: re.Pattern[str], *, code: bool = False) -> bool:
+    """True if ``text`` has a heading matching ``title`` whose section has content."""
+    return any(
+        title.search(head) and has_content(body, code=code) for head, body in md_sections(text)
+    )
+
+
+def isolates(prefix: Sequence[str]) -> bool:
+    """True if a child run under ``prefix`` cannot reach a listener on 127.0.0.1.
+
+    A control run without the prefix must reach the same listener, so a probe that
+    cannot connect for some other reason proves nothing.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen(8)
+        probe = [sys.executable, "-I", "-c", LOOPBACK_PROBE, str(server.getsockname()[1])]
+        try:
+            control = subprocess.run(probe, capture_output=True, text=True, timeout=30)
+            inside = subprocess.run([*prefix, *probe], capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            return False
+    return (
+        control.stdout.strip() == "CONNECTED"
+        and inside.returncode == 0
+        and inside.stdout.strip() == "ISOLATED"
+    )
+
+
+def network_isolation() -> tuple[str, list[str]] | None:
+    """Return ``(name, prefix)`` of the first isolator that provably cuts the network."""
+    for name, argv in ISOLATORS:
+        exe = shutil.which(argv[0])
+        if exe is not None and isolates([exe, *argv[1:]]):
+            return name, [exe, *argv[1:]]
+    return None
 
 
 # ---------------------------------------------------------------- pre-phase (G14)
@@ -314,14 +819,27 @@ def network_isolation() -> list[str]:
 def pre_phase(orig: Path) -> dict[str, str]:
     """Check the original checkout; returns problems keyed by check name."""
     problems: dict[str, str] = {}
+    dirty: list[str] = []
     status = git(orig, "status", "--porcelain", "--untracked-files=all")
     if status.strip():
-        problems["clean"] = f"working tree not clean ({len(status.splitlines())} entries)"
+        dirty.append(f"working tree not clean ({len(status.splitlines())} entries)")
+    # git status trusts these index bits, so a changed file behind one looks clean.
+    hidden = [
+        line
+        for line in git(orig, "ls-files", "-v").splitlines()
+        if line[:1] == "S" or line[:1].islower()
+    ]
+    if hidden:
+        dirty.append(f"{len(hidden)} tracked file(s) marked skip-worktree or assume-unchanged")
+    if dirty:
+        problems["clean"] = "; ".join(dirty)
     tracked_private = git(orig, "ls-files", "--", "private").split()
     if tracked_private:
         problems["private"] = f"{len(tracked_private)} file(s) under private/ are tracked"
     ignored = subprocess.run(
-        ["git", "-C", str(orig), "check-ignore", "-q", "private/probe"], check=False
+        ["git", "-C", str(orig), "check-ignore", "-q", "private/probe"],
+        check=False,
+        env=git_env(),
     )
     if ignored.returncode != 0:
         problems["private-ignore"] = "private/ is not git-ignored"
@@ -337,42 +855,304 @@ def pre_phase(orig: Path) -> dict[str, str]:
     return problems
 
 
-# ---------------------------------------------------------------- gates
+# ---------------------------------------------------------------- G1
+
+# Coverage settings owned by the harness, so the project's own coverage config (any
+# file, any omit, include, or exclusion) cannot drop code from the measurement. The
+# only exclusions are coverage 7's defaults for never-executed typing stubs (``...``
+# bodies) and ``if TYPE_CHECKING:`` blocks; ``# pragma: no cover`` is not honored.
+COVERAGE_STUB_EXCLUDES = (
+    r"^\s*(((async )?def .*?)?[\])]+(\s*->.*?)?:\s*)?\.\.\.\s*(#|$)",
+    r"^\s*if (typing\.)?TYPE_CHECKING:",
+)
+# coverage.py's own filter for source file names in a measured package directory.
+COVERAGE_FILE_NAME = re.compile(r"^[^.#~!$@%^&*()+=,]+\.pyw?$")
+CONTRACT_PLUGIN_MODULE = "ship_check_contract_trace"
+CONTRACT_PLUGIN = '''\
+"""pytest plugin written by tools/ship_check.py (gate G1) for one contract-test run.
+
+It records each test outcome, the lines run in the omitted package files, and every
+file opened under tests/fixtures/recorded/, and writes them as JSON to the path in
+SHIP_CHECK_TRACE_OUT. It changes nothing about the run itself.
+"""
+
+import json
+import os
+import sys
+import threading
+
+import pytest
+
+OUT = os.environ["SHIP_CHECK_TRACE_OUT"]
+TARGETS = frozenset(json.loads(os.environ["SHIP_CHECK_TRACE_TARGETS"]))
+FIXTURES = os.environ["SHIP_CHECK_TRACE_FIXTURES"].rstrip(os.sep) + os.sep
+COUNTS = {"passed": 0, "skipped": 0, "failed": 0}
+LINES = {}
+OPENED = set()
+REAL = {}
+
+
+def _real(filename):
+    real = REAL.get(filename)
+    if real is None:
+        real = REAL[filename] = os.path.realpath(filename)
+    return real
+
+
+def _local(frame, event, arg):
+    if event == "line":
+        LINES.setdefault(_real(frame.f_code.co_filename), set()).add(frame.f_lineno)
+    return _local
+
+
+def _global(frame, event, arg):
+    if event == "call" and _real(frame.f_code.co_filename) in TARGETS:
+        LINES.setdefault(_real(frame.f_code.co_filename), set()).add(frame.f_lineno)
+        return _local
+    return None
+
+
+def _audit(event, args):
+    if event != "open" or not args or not isinstance(args[0], (str, bytes, os.PathLike)):
+        return
+    try:
+        path = os.path.realpath(os.fsdecode(args[0]))
+    except (TypeError, ValueError, OSError):
+        return
+    if path.startswith(FIXTURES):
+        OPENED.add(path)
+
+
+def pytest_configure(config):
+    sys.addaudithook(_audit)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    previous, previous_thread = sys.gettrace(), threading.gettrace()
+    sys.settrace(_global)
+    threading.settrace(_global)
+    try:
+        yield
+    finally:
+        sys.settrace(previous)
+        threading.settrace(previous_thread)
+
+
+def pytest_runtest_logreport(report):
+    if hasattr(report, "wasxfail") or report.skipped:
+        COUNTS["skipped"] += 1
+    elif report.failed:
+        COUNTS["failed"] += 1
+    elif report.when == "call":
+        COUNTS["passed"] += 1
+
+
+def pytest_collectreport(report):
+    if report.failed:
+        COUNTS["failed"] += 1
+    elif report.skipped:
+        COUNTS["skipped"] += 1
+
+
+def pytest_sessionfinish(session, exitstatus):
+    payload = {
+        "counts": COUNTS,
+        "lines": {path: sorted(lines) for path, lines in LINES.items()},
+        "opened": sorted(OPENED),
+        "exitstatus": int(exitstatus),
+    }
+    with open(OUT, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+'''
+
+
+def tracked_package_sources(root: Path) -> list[str]:
+    """Tracked ``src/receipts`` source files, as coverage.py would find them."""
+    return [
+        rel
+        for rel in tracked(root, "src/receipts/*.py")
+        if COVERAGE_FILE_NAME.match(posixpath.basename(rel))
+    ]
+
+
+def write_coverage_settings(ctx: Context) -> tuple[Path, Path]:
+    """Write the harness-owned coverage settings; return ``(rcfile, data file)``."""
+    data = ctx.logs / "g1.coverage"
+    rcfile = ctx.logs / "g1.coveragerc"
+    rcfile.write_text(
+        "# Written by tools/ship_check.py (gate G1): measure every package file.\n"
+        "[run]\nsource = receipts\nbranch = false\n"
+        f"data_file = {data}\n\n"
+        "[report]\ninclude_namespace_packages = true\nexclude_lines =\n"
+        + "".join(f"    {pattern}\n" for pattern in COVERAGE_STUB_EXCLUDES),
+        encoding="utf-8",
+    )
+    return rcfile, data
+
+
+def measured_files(root: Path, report: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    """Coverage summaries keyed by path relative to ``root`` (files elsewhere dropped)."""
+    base = Path(os.path.realpath(root))
+    out: dict[str, Mapping[str, Any]] = {}
+    for name, info in dict(report.get("files", {})).items():
+        path = Path(os.path.realpath(base / str(name)))
+        if path.is_relative_to(base) and isinstance(info, dict):
+            out[path.relative_to(base).as_posix()] = dict(info.get("summary", {}))
+    return out
+
+
+def coverage_omissions(ctx: Context, sources: Sequence[str]) -> dict[str, str]:
+    """Package files ``[tool.coverage.run] omit`` names, each mapped to its contract test.
+
+    D6: an omission needs ``tests/contract/test_<stem>.py``. Patterns are resolved to
+    tracked package files first, so a glob's own stem never names a contract test.
+    """
+    pyproject = tomllib.loads((ctx.clone / "pyproject.toml").read_text(encoding="utf-8"))
+    patterns = pyproject.get("tool", {}).get("coverage", {}).get("run", {}).get("omit", [])
+    if isinstance(patterns, str):
+        patterns = [patterns]
+    contracts = set(tracked(ctx.clone, "tests/contract"))
+    omitted: dict[str, str] = {}
+    for pattern in map(str, patterns):
+        absolute = pattern if pattern[:1] in "*?[/" else str(ctx.clone / pattern)
+        for rel in sources:
+            if fnmatch.fnmatchcase(rel, pattern) or fnmatch.fnmatchcase(
+                str(ctx.clone / rel), absolute
+            ):
+                contract = f"tests/contract/test_{Path(rel).stem}.py"
+                require(
+                    contract in contracts,
+                    f"coverage omits {rel} without a recorded-fixture contract test ({contract})",
+                )
+                omitted[rel] = contract
+    return omitted
+
+
+def function_body_lines(source: str) -> set[int]:
+    """Lines of the statements inside function bodies: what calling the code runs."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    lines: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            for stmt in node.body:
+                lines.update(
+                    inner.lineno for inner in ast.walk(stmt) if isinstance(inner, ast.stmt)
+                )
+    return lines
+
+
+def check_contract_tests(ctx: Context, omitted: Mapping[str, str]) -> None:
+    """Run each contract test alone and offline; it must pass with no skips, call code in
+    every file it covers, and read a committed file under tests/fixtures/recorded/."""
+    isolation = ctx.isolation()
+    require(
+        isolation is not None,
+        "cannot run the contract tests offline: no working network isolation"
+        " (unshare -rn, bwrap, sandbox-exec)",
+    )
+    assert isolation is not None
+    method, prefix = isolation
+    (ctx.logs / f"{CONTRACT_PLUGIN_MODULE}.py").write_text(CONTRACT_PLUGIN, encoding="utf-8")
+    fixtures = os.path.realpath(ctx.clone / "tests" / "fixtures" / "recorded")
+    recorded = {
+        os.path.realpath(ctx.clone / rel) for rel in tracked(ctx.clone, "tests/fixtures/recorded")
+    }
+    by_test: dict[str, list[str]] = {}
+    for rel, test in sorted(omitted.items()):
+        by_test.setdefault(test, []).append(rel)
+    for test, files in sorted(by_test.items()):
+        name = re.sub(r"[^A-Za-z0-9_]", "_", Path(test).stem)
+        out = ctx.logs / f"contract_{name}.json"
+        targets = {os.path.realpath(ctx.clone / rel): rel for rel in files}
+        env = {
+            **OFFLINE_ENV,
+            "PYTHONPATH": str(ctx.logs),
+            "SHIP_CHECK_TRACE_OUT": str(out),
+            "SHIP_CHECK_TRACE_TARGETS": json.dumps(sorted(targets)),
+            "SHIP_CHECK_TRACE_FIXTURES": fixtures,
+        }
+        argv = [*prefix, "uv", "run", "--no-sync", "python", "-m", "pytest", "-q"]
+        argv += ["-p", "no:cacheprovider", "-p", CONTRACT_PLUGIN_MODULE, test]
+        result = ctx.run(f"contract-{name}", argv, 600, env)
+        trace: dict[str, Any] = {}
+        if out.is_file():
+            loaded = json.loads(out.read_text(encoding="utf-8"))
+            trace = loaded if isinstance(loaded, dict) else {}
+        counts = dict(trace.get("counts", {}))
+        passed, skipped, failed = (int(counts.get(k, 0)) for k in ("passed", "skipped", "failed"))
+        require(
+            bool(trace), f"contract test {test} did not run (exit {result.returncode}, {method})"
+        )
+        require(passed > 0, f"contract test {test} ran no passing test (exit {result.returncode})")
+        require(
+            result.ok and failed == 0,
+            f"contract test {test} failed offline (exit {result.returncode}, {method})",
+        )
+        require(skipped == 0, f"contract test {test} skipped {skipped} test(s), so covers nothing")
+        lines = dict(trace.get("lines", {}))
+        for real, rel in sorted(targets.items(), key=lambda item: item[1]):
+            body = function_body_lines((ctx.clone / rel).read_text(encoding="utf-8"))
+            require(
+                bool(body & {int(n) for n in lines.get(real, [])}),
+                f"contract test {test} calls no code in {rel}",
+            )
+        opened = {str(p) for p in trace.get("opened", [])}
+        require(
+            bool(opened & recorded),
+            f"contract test {test} reads no committed file under tests/fixtures/recorded/",
+        )
 
 
 def g1(ctx: Context) -> str:
-    """Build and tests: setup, tests pass, coverage >= 85% on core modules."""
+    """Build and tests: setup, tests pass, coverage >= 85% on core modules (D6)."""
     setup = ctx.make("setup", 900)
     require(setup.ok, f"make setup failed (exit {setup.returncode})")
+    sources = tracked_package_sources(ctx.clone)
+    omitted = coverage_omissions(ctx, sources)
+    rcfile, data = write_coverage_settings(ctx)
     cov = ctx.logs / "coverage.json"
-    args = [f"COV_JSON={cov}"]
+    pytest_args = f"--cov-config={shlex.quote(str(rcfile))}"
     if ctx.fast:
-        args.append("PYTEST_ARGS=-m 'not slow'")
-    test = ctx.make("test", 1800, *args)
+        pytest_args = f"-m 'not slow' {pytest_args}"
+    test = ctx.make(
+        "test",
+        1800,
+        f"COV_JSON={cov}",
+        f"PYTEST_ARGS={pytest_args}",
+        extra_env={"COVERAGE_RCFILE": str(rcfile)},
+    )
     require(test.ok, f"make test failed (exit {test.returncode})")
-    require(cov.is_file(), "make test wrote no coverage report")
-    data = json.loads(cov.read_text(encoding="utf-8"))
-    pyproject = tomllib.loads((ctx.clone / "pyproject.toml").read_text(encoding="utf-8"))
-    omit = pyproject.get("tool", {}).get("coverage", {}).get("run", {}).get("omit", [])
-    for pattern in omit:
-        stem = Path(str(pattern)).stem
-        contract = ctx.clone / "tests" / "contract" / f"test_{stem}.py"
-        require(
-            contract.is_file() and "fixtures/recorded" in contract.read_text(encoding="utf-8"),
-            f"coverage omits {pattern} without a recorded-fixture contract test",
-        )
+    require(data.is_file(), "make test did not measure coverage with the harness coverage settings")
+    report_path = ctx.logs / "g1_coverage.json"
+    settings = [f"--rcfile={rcfile}", f"--data-file={data}", "-o", str(report_path)]
+    report = ctx.run(
+        "g1-coverage-json",
+        ["uv", "run", "--no-sync", "python", "-m", "coverage", "json", *settings],
+        600,
+    )
+    require(
+        report.ok and report_path.is_file(),
+        f"coverage json failed on the measured data (exit {report.returncode})",
+    )
+    measured = measured_files(ctx.clone, json.loads(report_path.read_text(encoding="utf-8")))
+    absent = [rel for rel in sources if rel not in measured]
+    require(
+        not absent,
+        f"coverage report lacks {len(absent)} tracked package file(s): " + ", ".join(absent[:3]),
+    )
     per_module: dict[str, list[int]] = {}
     total = [0, 0]
-    for name, info in data.get("files", {}).items():
-        parts = Path(name).as_posix().split("/")
-        if "receipts" not in parts:
+    for rel, summary in measured.items():
+        if not rel.startswith("src/receipts/") or rel in omitted:
             continue
-        rel = parts[parts.index("receipts") + 1 :]
-        summary = info["summary"]
         covered, statements = int(summary["covered_lines"]), int(summary["num_statements"])
         total[0] += covered
         total[1] += statements
-        module = rel[0].removesuffix(".py")
+        module = rel.split("/")[2].removesuffix(".py")
         bucket = per_module.setdefault(module, [0, 0])
         bucket[0] += covered
         bucket[1] += statements
@@ -392,11 +1172,31 @@ def g1(ctx: Context) -> str:
         if pct < COVERAGE_MIN:
             low.append(f"{module} {pct:.1f}%")
     require(not low, "core coverage below 85%: " + ", ".join(low))
-    return f"setup ok; tests pass; coverage {overall:.1f}%, every core module >= 85%"
+    tail = ""
+    if omitted:
+        check_contract_tests(ctx, omitted)
+        tail = f"; {len(omitted)} omitted file(s) covered by recorded-fixture contract tests"
+    return f"setup ok; tests pass; coverage {overall:.1f}%, every core module >= 85%{tail}"
 
 
-TYPE_IGNORE = re.compile(r"#\s*type:\s*ignore(?P<rest>.*)$")
-TYPE_IGNORE_OK = re.compile(r"^\[[\w,\- ]+\]\s+#\s*\S.{2,}")
+# ---------------------------------------------------------------- G2
+
+# A ``type: ignore`` comment as CPython's tokenizer and mypy read it: at the start of a
+# comment, or right after a PEP 484 type comment (``# type: int  # type: ignore``).
+TYPE_IGNORE = re.compile(
+    r"^#[ \t]*type:(?:[^#]*#\s*type:)?[ \t]*ignore(?![A-Za-z0-9]|[^\x00-\x7f])(?P<rest>.*)$"
+)
+TYPE_IGNORE_OK = re.compile(r"^\[[\w,\- ]+\]\s*#\s*\S.{2,}")
+# mypy reads inline settings only from lines that start with exactly this prefix.
+MYPY_DIRECTIVE = "# mypy: "
+MYPY_STRICTER = re.compile(
+    r"^(?:warn_\w+|disallow_\w+|strict_\w+|check_untyped_defs|extra_checks"
+    r"|local_partial_types|no_implicit_reexport|no_implicit_optional)$"
+)
+# A file-level ruff exemption as ruff honors it: an own-line comment, lowercase tool name.
+FILE_NOQA = re.compile(r"^#\s*(?:ruff|flake8)\s*:\s*(?i:noqa)(?P<rest>.*)$")
+NO_TYPE_CHECK = frozenset({"no_type_check", "no_type_check_decorator"})
+REASON_LINE = re.compile(r"^\s*#\s*(?!(?:type:|noqa|ruff:|flake8:|fmt:|pragma|mypy:))\S.{2,}$")
 
 
 def unexplained_type_ignores(source: str) -> list[int]:
@@ -413,40 +1213,630 @@ def unexplained_type_ignores(source: str) -> list[int]:
     for token in tokens:
         if token.type != tokenize.COMMENT:
             continue
-        m = TYPE_IGNORE.search(token.string)
+        m = TYPE_IGNORE.match(token.string)
         if m and not TYPE_IGNORE_OK.match(m.group("rest").strip()):
             bad.append(token.start[0])
     return bad
 
 
+def _mypy_options(text: str) -> list[tuple[str, str]]:
+    """``(name, value)`` pairs of an inline mypy setting, split as mypy splits them."""
+    parts: list[str] = []
+    current: list[str] = []
+    quoted = False
+    for char in text:
+        if char == '"':
+            quoted = not quoted
+        elif char == "," and not quoted:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    parts.append("".join(current))
+    options = []
+    for part in parts:
+        name, sep, value = part.partition("=")
+        if name.strip():
+            options.append((name.strip().replace("-", "_"), value.strip() if sep else "True"))
+    return options
+
+
+def suppression_problems(rel: str, source: str) -> list[str]:
+    """Suppressions that silence mypy or ruff for more than one line, as ``rel:line why``.
+
+    A ``# mypy:`` line may only tighten settings, except ``disable-error-code``, the
+    module-level form of ``type: ignore[code]``, which needs a reason on the comment
+    line just before it. ``no_type_check`` and blanket file-level ``noqa`` comments
+    silence whole functions or files with no code, so they always count.
+    """
+    problems: list[str] = []
+    lines = source.split("\n")
+    for number, line in enumerate(lines, start=1):
+        if not line.startswith(MYPY_DIRECTIVE):
+            continue
+        for name, value in _mypy_options(line[len(MYPY_DIRECTIVE) :]):
+            if name == "enable_error_code" or (
+                MYPY_STRICTER.match(name) and value.lower() in ("true", "1", "yes", "on")
+            ):
+                continue
+            if name == "disable_error_code":
+                if number >= 2 and REASON_LINE.match(lines[number - 2]):
+                    continue
+                problems.append(f"{rel}:{number} disable-error-code without a reason before it")
+            else:
+                shown = name.replace("_", "-")
+                problems.append(f"{rel}:{number} '# mypy: {shown}' relaxes --strict")
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        tree = None
+    for node in ast.walk(tree) if tree is not None else ():
+        if (
+            (isinstance(node, ast.Name) and node.id in NO_TYPE_CHECK)
+            or (isinstance(node, ast.Attribute) and node.attr in NO_TYPE_CHECK)
+            or (
+                isinstance(node, ast.ImportFrom)
+                and any(a.name in NO_TYPE_CHECK for a in node.names)
+            )
+        ):
+            problems.append(f"{rel}:{node.lineno} no_type_check skips type checking")
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
+    except (tokenize.TokenError, SyntaxError):
+        tokens = []
+    for token in tokens:
+        if token.type != tokenize.COMMENT or token.line[: token.start[1]].strip():
+            continue
+        noqa = FILE_NOQA.match(token.string)
+        if noqa and not noqa.group("rest").lstrip().startswith(":"):
+            problems.append(f"{rel}:{token.start[0]} file-level noqa silences ruff for the file")
+    return problems
+
+
+def ruff_config_file(root: Path) -> Path:
+    """The configuration ruff reads for the repository root (its own precedence order)."""
+    for name in (".ruff.toml", "ruff.toml"):
+        if (root / name).is_file():
+            return root / name
+    return root / "pyproject.toml"
+
+
+def _ruff_settings(path: Path) -> dict[str, Any]:
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    if path.name == "pyproject.toml":
+        data = data.get("tool", {}).get("ruff", {})
+    return data if isinstance(data, dict) else {}
+
+
+def _ruff_glob(pattern: str, rel: str, config_dir: Path, root: Path) -> bool:
+    """Whether a ruff per-file-ignores pattern selects ``rel`` (path or file name match)."""
+    negated = pattern.startswith("!")
+    glob = pattern[1:] if negated else pattern
+    absolute = glob if Path(glob).is_absolute() else str(config_dir / glob)
+    hit = fnmatch.fnmatchcase(str(root / rel), posixpath.normpath(absolute)) or (
+        fnmatch.fnmatchcase(posixpath.basename(rel), glob)
+    )
+    return hit != negated
+
+
+def ruff_blanket_ignores(root: Path, package: Sequence[str]) -> list[str]:
+    """Package files a per-file-ignores entry of ``ALL`` silences (root config and extends)."""
+    problems: list[str] = []
+    base = Path(os.path.realpath(root))
+    config: Path | None = ruff_config_file(base)
+    seen: set[Path] = set()
+    while config is not None and config.is_file() and config not in seen:
+        seen.add(config)
+        settings = _ruff_settings(config)
+        lint = settings.get("lint")
+        for table in (settings, lint if isinstance(lint, dict) else {}):
+            for key in ("per-file-ignores", "extend-per-file-ignores"):
+                entries = table.get(key)
+                for pattern, codes in (entries if isinstance(entries, dict) else {}).items():
+                    if "ALL" not in [str(code) for code in (codes or [])]:
+                        continue
+                    hits = [
+                        rel for rel in package if _ruff_glob(str(pattern), rel, config.parent, base)
+                    ]
+                    if hits:
+                        problems.append(f"ruff {key} {pattern!r} = ALL silences {hits[0]}")
+        extend = settings.get("extend")
+        config = (config.parent / str(extend)).resolve() if isinstance(extend, str) else None
+    return problems
+
+
+def write_mypy_config(ctx: Context) -> Path:
+    """Harness-owned mypy settings: ``strict``, the project's search path and Python
+    version, and only ``ignore_missing_imports`` overrides for modules outside receipts."""
+    pyproject = tomllib.loads((ctx.clone / "pyproject.toml").read_text(encoding="utf-8"))
+    project = pyproject.get("tool", {}).get("mypy", {})
+    project = project if isinstance(project, dict) else {}
+    paths = project.get("mypy_path", ["src"])
+    paths = re.split(r"[,:]", paths) if isinstance(paths, str) else [str(p) for p in paths]
+    lines = [
+        "[mypy]",
+        f"python_version = {project.get('python_version', '3.11')}",
+        "strict = True",
+        "explicit_package_bases = True",
+        "mypy_path = " + ",".join(str(ctx.clone / p.strip()) for p in paths if p.strip()),
+        f"cache_dir = {ctx.logs / 'g2_mypy_cache'}",
+    ]
+    for override in project.get("overrides", []):
+        if not isinstance(override, dict) or override.get("ignore_missing_imports") is not True:
+            continue
+        modules = override.get("module", [])
+        modules = [modules] if isinstance(modules, str) else [str(m) for m in modules]
+        if modules and not any(m == "receipts" or m.startswith("receipts.") for m in modules):
+            lines += ["", f"[mypy-{','.join(modules)}]", "ignore_missing_imports = True"]
+    path = ctx.logs / "g2_mypy.ini"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
 def g2(ctx: Context) -> str:
-    """Static quality: ruff check, ruff format --check, mypy --strict, reasons on ignores."""
+    """Static quality on the package: ruff check, ruff format --check, mypy --strict,
+    and a code and reason on every ``type: ignore`` (none of them narrowed by config)."""
     ctx.make("setup", 900)
     lint = ctx.make("lint", 600)
     require(lint.ok, "ruff check or ruff format --check failed")
     types = ctx.make("typecheck", 900)
     require(types.ok, "mypy --strict failed")
     bad: list[str] = []
-    for rel in git(ctx.clone, "ls-files", "*.py").split():
+    for rel in tracked(ctx.clone, "*.py", "*.pyi"):
         source = (ctx.clone / rel).read_text(encoding="utf-8")
         bad.extend(f"{rel}:{line}" for line in unexplained_type_ignores(source))
     require(not bad, "type: ignore without code and reason at " + ", ".join(bad[:3]))
-    return "ruff check, ruff format --check, mypy --strict clean; every type: ignore has a reason"
+    package = tracked(ctx.clone, "src/receipts/*.py", "src/receipts/*.pyi")
+    require(bool(package), "no tracked package files under src/receipts")
+    suppressed: list[str] = []
+    for rel in package:
+        suppressed += suppression_problems(rel, (ctx.clone / rel).read_text(encoding="utf-8"))
+    suppressed += ruff_blanket_ignores(ctx.clone, package)
+    require(not suppressed, "suppression without code and reason: " + "; ".join(suppressed[:2]))
+    # The package itself under the root config: explicit paths defeat every exclude,
+    # --no-force-exclude defeats force-exclude, and --config skips nested configs.
+    config = str(ruff_config_file(ctx.clone))
+    ruff = ["uv", "run", "--no-sync", "ruff"]
+    scope = ["--config", config, "--no-force-exclude", "--no-cache", *package]
+    check = ctx.run("g2-ruff-check", [*ruff, "check", "--output-format", "concise", *scope], 600)
+    require(check.ok, "ruff check on every package file: " + check.first_line()[:90])
+    fmt = ctx.run("g2-ruff-format", [*ruff, "format", "--check", *scope], 600)
+    require(fmt.ok, "ruff format --check on every package file: " + fmt.first_line()[:90])
+    stubs = {rel[:-1] for rel in package if rel.endswith(".pyi")}
+    modules = [rel for rel in package if rel not in stubs]  # mypy prefers the stub
+    mypy_cfg = write_mypy_config(ctx)
+    strict = ctx.run(
+        "g2-mypy",
+        ["uv", "run", "--no-sync", "mypy", "--strict", "--config-file", str(mypy_cfg), *modules],
+        900,
+    )
+    require(strict.ok, "mypy --strict on every package file: " + strict.first_line()[:90])
+    return (
+        "ruff check, ruff format --check, mypy --strict clean on every package file;"
+        " every type: ignore has a code and reason"
+    )
+
+
+# ---------------------------------------------------------------- G3
+
+CI_PARTS = ("lint", "typecheck", "test", "demo")
+MATRIX_PY = re.compile(r"^\$\{\{\s*matrix\.python-version\s*\}\}$")
+SETUP_WITH_PY = re.compile(
+    r"""^make\s+setup\s+(["']?)PY=(["']?)\$\{\{\s*matrix\.python-version\s*\}\}\2\1$"""
+)
+RULE_LINE = re.compile(r"^([^\s:#=][^:#=]*?):(?![:=])\s*(.*)$")
+
+
+class WorkflowError(ValueError):
+    """The workflow uses YAML that the harness's small parser does not read."""
+
+
+def strip_hash_comment(line: str) -> str:
+    """Drop a ``#`` comment that starts ``line`` or follows whitespace, outside quotes."""
+    quote = ""
+    for index, char in enumerate(line):
+        if quote:
+            if char == quote:
+                quote = ""
+        elif char in "\"'" and (index == 0 or line[index - 1] in " \t:[{,-"):
+            quote = char
+        elif char == "#" and (index == 0 or line[index - 1] in " \t"):
+            return line[:index].rstrip()
+    return line.rstrip()
+
+
+def _split_key(content: str) -> tuple[str, str] | None:
+    """Split ``key: value`` (the key may be quoted); None if ``content`` is no such entry."""
+    if content[:1] in "\"'":
+        end = content.find(content[0], 1)
+        if (
+            end > 0
+            and content[end + 1 : end + 2] == ":"
+            and content[end + 2 : end + 3] in ("", " ")
+        ):
+            return content[1:end], content[end + 2 :]
+        return None
+    if content[:1] in "[{|>&*!%@`":
+        return None
+    for index, char in enumerate(content):
+        if char == ":" and content[index + 1 : index + 2] in ("", " "):
+            key = content[:index].strip()
+            return (key, content[index + 1 :]) if key else None
+    return None
+
+
+def _is_item(content: str) -> bool:
+    return content == "-" or content.startswith("- ")
+
+
+def _scalar(text: str) -> str:
+    text = text.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        inner = text[1:-1]
+        return inner.replace("''", "'") if text[0] == "'" else inner.replace('\\"', '"')
+    return text
+
+
+def _flow(text: str, index: int) -> tuple[Any, int]:
+    """Parse a flow collection or scalar at ``index``; return it and the next index."""
+    while index < len(text) and text[index] == " ":
+        index += 1
+    if index >= len(text):
+        raise WorkflowError("unexpected end of a flow collection")
+    if text[index] in "[{":
+        closer = "]" if text[index] == "[" else "}"
+        items: list[Any] = []
+        mapping: dict[str, Any] = {}
+        index += 1
+        while True:
+            while index < len(text) and text[index] == " ":
+                index += 1
+            if text[index : index + 1] == closer:
+                return (items if closer == "]" else mapping), index + 1
+            value, index = _flow(text, index)
+            if closer == "}":
+                rest = text[index:].lstrip()
+                index = len(text) - len(rest)
+                if rest[:1] == ":":
+                    entry, index = _flow(text, index + 1)
+                    mapping[str(value)] = entry
+                else:
+                    mapping[str(value)] = None
+            else:
+                items.append(value)
+            rest = text[index:].lstrip()
+            index = len(text) - len(rest)
+            if rest[:1] == ",":
+                index += 1
+            elif rest[:1] != closer:
+                raise WorkflowError(f"cannot read flow collection {text!r}")
+    if text[index] in "\"'":
+        end = text.find(text[index], index + 1)
+        if end < 0:
+            raise WorkflowError("unterminated quote")
+        return text[index + 1 : end], end + 1
+    end = index
+    while end < len(text):
+        if text.startswith("${{", end):
+            close = text.find("}}", end)
+            end = close + 2 if close >= 0 else len(text)
+            continue
+        if text[end] in ",]}" or (text[end] == ":" and text[end + 1 : end + 2] in ("", " ")):
+            break
+        end += 1
+    return text[index:end].strip(), end
+
+
+class MiniYaml:
+    """The block-style YAML subset GitHub workflows use: mappings, sequences, plain,
+    quoted, flow, and block scalars. Anything else raises WorkflowError."""
+
+    def __init__(self, text: str) -> None:
+        self.lines = text.replace("\t", "    ").split("\n")
+        self.pos = 0
+
+    def peek(self) -> tuple[int, str] | None:
+        """``(indent, content)`` of the next line with content, comments removed."""
+        while self.pos < len(self.lines):
+            content = strip_hash_comment(self.lines[self.pos])
+            body = content.strip()
+            if body and body not in ("---", "..."):
+                return len(content) - len(content.lstrip(" ")), body
+            self.pos += 1
+        return None
+
+    def node(self, indent: int) -> Any:
+        """The node whose first line is the next line, indented at least ``indent``."""
+        head = self.peek()
+        if head is None or head[0] < indent:
+            return None
+        if _is_item(head[1]):
+            return self.sequence(head[0])
+        if _split_key(head[1]) is None:
+            parts: list[str] = []
+            while (line := self.peek()) is not None and line[0] >= head[0]:
+                parts.append(line[1])
+                self.pos += 1
+            return _scalar(" ".join(parts))
+        return self.mapping(head[0])
+
+    def mapping(self, indent: int) -> dict[str, Any]:
+        """A block mapping whose keys sit at ``indent``."""
+        out: dict[str, Any] = {}
+        while (head := self.peek()) is not None and head[0] == indent and not _is_item(head[1]):
+            pair = _split_key(head[1])
+            if pair is None:
+                raise WorkflowError(f"line {self.pos + 1}: expected 'key: value'")
+            self.pos += 1
+            out[pair[0]] = self.value(pair[1], indent)
+        if head is not None and head[0] > indent:
+            raise WorkflowError(f"line {self.pos + 1}: unexpected indentation")
+        return out
+
+    def sequence(self, indent: int) -> list[Any]:
+        """A block sequence whose dashes sit at ``indent``."""
+        out: list[Any] = []
+        while (head := self.peek()) is not None and head[0] == indent and _is_item(head[1]):
+            item = head[1][1:].lstrip()
+            if not item:
+                self.pos += 1
+                child = self.peek()
+                out.append(self.node(child[0]) if child is not None and child[0] > indent else None)
+            elif _is_item(item) or (item[0] not in "[{" and _split_key(item) is not None):
+                column = indent + len(head[1]) - len(item)
+                self.lines[self.pos] = " " * column + item
+                out.append(self.node(column))
+            else:
+                self.pos += 1
+                out.append(self.value(item, indent))
+        return out
+
+    def value(self, rest: str, indent: int) -> Any:
+        """The value after ``key:`` (or ``-``) on a line indented ``indent``."""
+        rest = rest.strip()
+        if not rest:
+            head = self.peek()
+            if head is not None and head[0] > indent:
+                return self.node(head[0])
+            if head is not None and head[0] == indent and _is_item(head[1]):
+                return self.sequence(indent)
+            return None
+        if rest[0] in "|>":
+            return self.block_scalar(rest[0], indent)
+        if rest[0] in "[{":
+            text = rest
+            while text.count("[") + text.count("{") > text.count("]") + text.count("}"):
+                if self.pos >= len(self.lines):
+                    raise WorkflowError("unclosed flow collection")
+                text += " " + strip_hash_comment(self.lines[self.pos]).strip()
+                self.pos += 1
+            value, end = _flow(text, 0)
+            if text[end:].strip():
+                raise WorkflowError(f"text after a flow collection: {text[end:]!r}")
+            return value
+        parts = [rest]  # a plain or quoted scalar may continue on more-indented lines
+        while (head := self.peek()) is not None and head[0] > indent:
+            parts.append(head[1])
+            self.pos += 1
+        return _scalar(" ".join(parts))
+
+    def block_scalar(self, style: str, indent: int) -> str:
+        """A literal (``|``) or folded (``>``) block scalar, read verbatim."""
+        body: list[str] = []
+        width: int | None = None
+        while self.pos < len(self.lines):
+            raw = self.lines[self.pos]
+            if raw.strip():
+                current = len(raw) - len(raw.lstrip(" "))
+                if current <= indent or (width is not None and current < width):
+                    break
+                width = current if width is None else width
+                body.append(raw[width:])
+            else:
+                body.append("")
+            self.pos += 1
+        while body and not body[-1]:
+            body.pop()
+        if style == ">":
+            return " ".join(line.strip() for line in body if line.strip())
+        return "\n".join(body) + ("\n" if body else "")
+
+
+def shell_commands(script: str) -> list[str]:
+    """Command lines of a ``run:`` script: comments dropped, continuations joined."""
+    commands: list[str] = []
+    pending = ""
+    for raw in script.split("\n"):
+        line = (pending + " " + strip_hash_comment(raw).strip()).strip()
+        if line.endswith("\\"):
+            pending = line[:-1]
+            continue
+        pending = ""
+        if line:
+            commands.append(" ".join(line.split()))
+    if pending.strip():
+        commands.append(" ".join(pending.split()))
+    return commands
+
+
+def _truthy(value: Any) -> bool:
+    return value is not None and str(value).strip().lower() not in ("", "false", "0", "no", "off")
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _run_shell(node: Mapping[str, Any]) -> str | None:
+    shell = _mapping(_mapping(node.get("defaults")).get("run")).get("shell")
+    return str(shell) if shell else None
+
+
+def _leg_value(value: Any) -> str:
+    return json.dumps(value, sort_keys=True) if isinstance(value, dict | list) else str(value)
+
+
+def matrix_pythons(job: Mapping[str, Any]) -> set[str]:
+    """The ``python-version`` values a job's matrix runs, after exclude and include."""
+    matrix = _mapping(_mapping(job.get("strategy")).get("matrix"))
+    dims = [(str(k), v) for k, v in matrix.items() if k not in ("include", "exclude")]
+    legs: list[dict[str, str]] = [{}] if dims else []
+    for key, values in dims:
+        options = values if isinstance(values, list) else [values]
+        legs = [{**leg, key: _leg_value(value)} for leg in legs for value in options]
+    excludes = [e for e in matrix.get("exclude") or [] if isinstance(e, dict)]
+    legs = [
+        leg
+        for leg in legs
+        if not any(all(leg.get(str(k)) == _leg_value(v) for k, v in ex.items()) for ex in excludes)
+    ]
+    versions = {leg.get("python-version", "") for leg in legs}
+    for row in matrix.get("include") or []:
+        if isinstance(row, dict) and "python-version" in row:
+            versions.add(_leg_value(row["python-version"]))
+    return {v for v in versions if v}
+
+
+def _job_problem(
+    name: str, job: Mapping[str, Any], top_env: Mapping[str, Any], top_shell: str | None
+) -> tuple[int, str]:
+    """``(stage, reason)`` for one job; stage 4 (reason empty) means the job qualifies."""
+    commands: list[tuple[int, int, str, dict[str, Any]]] = []
+    steps = job.get("steps")
+    for s_index, step in enumerate(steps if isinstance(steps, list) else []):
+        if isinstance(step, dict) and isinstance(step.get("run"), str):
+            for c_index, command in enumerate(shell_commands(step["run"])):
+                commands.append((s_index, c_index, command, step))
+    ci_runs = [entry for entry in commands if entry[2] == "make ci"]
+    if not ci_runs:
+        return 0, "ci.yml has no step that runs make ci"
+    if not {"3.11", "3.12"} <= matrix_pythons(job):
+        return 1, "ci.yml matrix lacks Python 3.11 and 3.12"
+    env = {**top_env, **_mapping(job.get("env"))}
+    setups = [
+        (s_index, c_index)
+        for s_index, c_index, command, step in commands
+        if SETUP_WITH_PY.match(command)
+        or (
+            command == "make setup"
+            and MATRIX_PY.match(str({**env, **_mapping(step.get("env"))}.get("PY", "")).strip())
+        )
+    ]
+    if not setups:
+        return 2, f"ci.yml job {name} does not pass the matrix Python to make setup"
+    if "if" in job:
+        return 3, f"ci.yml job {name} runs only if {job['if']}"
+    if _truthy(job.get("continue-on-error")):
+        return 3, f"ci.yml job {name} continues on error"
+    default_shell = _run_shell(job) or top_shell
+    for s_index, c_index, _, step in ci_runs:
+        shell = str(step.get("shell") or default_shell or "bash")
+        last = c_index == len(shell_commands(step["run"])) - 1
+        if (
+            any(setup < (s_index, c_index) for setup in setups)
+            and "if" not in step
+            and not _truthy(step.get("continue-on-error"))
+            and (shell in ("bash", "sh") or last)
+        ):
+            return 4, ""
+    return 3, (
+        f"ci.yml job {name} runs make ci before make setup, conditionally,"
+        " or with its failure ignored"
+    )
+
+
+def workflow_problem(text: str) -> str | None:
+    """Why ci.yml does not run ``make ci`` after ``make setup`` with the matrix Python on
+    3.11 and 3.12 in one unconditional job, or None when it does."""
+    try:
+        data = MiniYaml(text).node(0)
+    except (WorkflowError, IndexError, RecursionError) as exc:
+        return f"ci.yml is YAML the harness cannot read ({exc})"
+    jobs = _mapping(data).get("jobs")
+    if not isinstance(jobs, dict) or not jobs:
+        return "ci.yml has no jobs"
+    top = _mapping(data)
+    found: list[tuple[int, str]] = []
+    for name, job in jobs.items():
+        if isinstance(job, dict):
+            found.append(_job_problem(str(name), job, _mapping(top.get("env")), _run_shell(top)))
+    best = max(found) if found else (0, "ci.yml has no jobs")
+    return None if best[0] == 4 else best[1]
+
+
+def make_dry_run(ctx: Context, target: str) -> list[str]:
+    """The recipe lines ``make -n <target>`` prints (knobs pinned), whitespace collapsed."""
+    result = ctx.run(
+        f"dry-{target}", ["make", "--no-print-directory", "-n", target, *MAKE_PINS], 120
+    )
+    require(result.ok, f"make -n {target} failed (exit {result.returncode})")
+    return [" ".join(line.split()) for line in result.stdout.splitlines() if line.strip()]
+
+
+def make_rules(database: str) -> dict[str, tuple[list[str], list[str]]]:
+    """``target: (prerequisites, raw recipe lines)`` from ``make -p`` output."""
+    rules: dict[str, tuple[list[str], list[str]]] = {}
+    recipe: list[str] | None = None
+    for line in database.splitlines():
+        if line.startswith("\t"):
+            if recipe is not None and recipe and recipe[-1].endswith("\\"):
+                recipe[-1] += "\n" + line[1:]  # a backslash continues the same command
+            elif recipe is not None:
+                recipe.append(line[1:])
+        elif line.startswith("#"):
+            continue
+        elif (rule := RULE_LINE.match(line)) is not None:
+            recipe = []
+            prerequisites = [p for p in rule.group(2).split() if p != "|"]
+            for target in rule.group(1).split():
+                rules.setdefault(target, (prerequisites, recipe))
+        else:
+            recipe = None
+    return rules
+
+
+def _ignores_errors(recipe_line: str) -> bool:
+    """True if a raw recipe line carries make's ``-`` (ignore errors) prefix."""
+    prefix = recipe_line[: len(recipe_line) - len(recipe_line.lstrip("@+- \t"))]
+    return "-" in prefix
+
+
+def ignored_errors(ctx: Context, targets: Sequence[str]) -> list[str]:
+    """Targets reachable from ``targets`` whose recipe ignores errors (``-`` or ``.IGNORE``)."""
+    result = ctx.run(
+        "make-database",
+        ["make", "--no-print-directory", "-pnq", targets[0], *MAKE_PINS],
+        120,
+    )
+    require(result.returncode in (0, 1), f"make -p failed (exit {result.returncode})")
+    rules = make_rules(result.stdout)
+    closure: list[str] = []
+    todo = list(targets)
+    while todo:
+        name = todo.pop()
+        if name in closure or name not in rules:
+            continue
+        closure.append(name)
+        todo.extend(rules[name][0])
+    ignore = rules.get(".IGNORE")
+    if ignore is not None:
+        return sorted(closure) if not ignore[0] else sorted(set(closure) & set(ignore[0]))
+    return sorted(name for name in closure if any(map(_ignores_errors, rules[name][1])))
 
 
 def g3(ctx: Context, gate_ok: Mapping[int, bool]) -> str:
-    """CI parity: ci.yml runs make ci on 3.11 and 3.12, and make ci passes locally."""
+    """CI parity: ci.yml runs make ci on 3.11 and 3.12, make ci runs lint, typecheck,
+    test, and the offline demo, and make ci passes locally."""
     workflow = ctx.clone / ".github" / "workflows" / "ci.yml"
     require(workflow.is_file(), ".github/workflows/ci.yml missing")
-    text = workflow.read_text(encoding="utf-8")
-    require(
-        re.search(r"^\s*(?:-\s*)?run:\s*make ci\s*$", text, re.M) is not None,
-        "ci.yml has no 'run: make ci' step",
-    )
-    versions = re.search(r"python-version:\s*\[([^\]]*)\]", text)
-    found = set(re.findall(r"\d+\.\d+", versions.group(1))) if versions else set()
-    require({"3.11", "3.12"} <= found, "ci.yml matrix lacks Python 3.11 and 3.12")
-    require("matrix.python-version" in text, "ci.yml does not use the matrix Python")
+    problem = workflow_problem(workflow.read_text(encoding="utf-8"))
+    if problem is not None:
+        raise GateError(problem)
+    ci_lines = set(make_dry_run(ctx, "ci"))
+    missing = [part for part in CI_PARTS if not set(make_dry_run(ctx, part)) <= ci_lines]
+    require(not missing, "make ci does not run: " + ", ".join(missing))
+    ignoring = ignored_errors(ctx, ["ci", *CI_PARTS])
+    require(not ignoring, "make ci ignores errors in: " + ", ".join(ignoring))
     if ctx.fast:
         require(
             gate_ok.get(1, False) and gate_ok.get(2, False) and gate_ok.get(4, False),
@@ -458,115 +1848,677 @@ def g3(ctx: Context, gate_ok: Mapping[int, bool]) -> str:
     return f"workflow runs make ci on 3.11 and 3.12; make ci passed in {ci.seconds:.0f}s"
 
 
+# ---------------------------------------------------------------- G4
+
+GOLDEN = "tests/golden/demo_output.txt"
+
+
+def committed_text(ctx: Context, rel: str) -> str | None:
+    """The text of ``rel`` as committed at ``ctx.sha`` (not as the working tree has it)."""
+    blob = subprocess.run(
+        ["git", "-C", str(ctx.clone), "cat-file", "blob", f"{ctx.sha}:{rel}"],
+        capture_output=True,
+        check=False,
+        env=git_env(),
+    )
+    if blob.returncode != 0:
+        return None
+    return io.TextIOWrapper(io.BytesIO(blob.stdout), encoding="utf-8").read()
+
+
 def g4(ctx: Context) -> str:
     """Offline demo: under 3 minutes, no network, no model calls, matches golden output."""
     ctx.make("setup", 900)
-    golden = ctx.clone / "tests" / "golden" / "demo_output.txt"
+    expected = committed_text(ctx, GOLDEN)
+    require(expected is not None, f"{GOLDEN} is not committed at HEAD")
     usage = ctx.clone / "artifacts" / "usage" / "ledger.jsonl"
     usage_before = sha256_file(usage) if usage.is_file() else ""
-    prefix = network_isolation()
-    offline = {"RECEIPTS_OFFLINE": "1"}
-    if not prefix:
-        dead = "http://127.0.0.1:9"
-        offline.update(
-            {
-                "HTTPS_PROXY": dead,
-                "HTTP_PROXY": dead,
-                "https_proxy": dead,
-                "http_proxy": dead,
-                "NO_PROXY": "",
-                "no_proxy": "",
-            }
-        )
-    method = "unshare -rn" if prefix else "dead proxy"
+    isolation = ctx.isolation()
+    require(
+        isolation is not None,
+        "cannot isolate the network for make demo (no working unshare -rn, bwrap, sandbox-exec)",
+    )
+    assert isolation is not None
+    method, prefix = isolation
     demo = ctx.run(
-        "demo-check", [*prefix, "make", "--no-print-directory", "demo"], DEMO_LIMIT_S + 30, offline
+        "demo-check",
+        [*prefix, "make", "--no-print-directory", "demo", *MAKE_PINS],
+        DEMO_LIMIT_S + 30,
+        OFFLINE_ENV,
     )
     require(demo.ok, f"make demo failed offline (exit {demo.returncode}, {method})")
     require(demo.seconds < DEMO_LIMIT_S, f"make demo took {demo.seconds:.0f}s >= 180s")
-    require(golden.is_file(), "tests/golden/demo_output.txt missing")
     raw = ctx.run(
         "demo-raw",
         [*prefix, "uv", "run", "--no-sync", "python", "tools/demo.py"],
         DEMO_LIMIT_S + 30,
-        offline,
+        OFFLINE_ENV,
     )
     require(raw.ok, "tools/demo.py failed when run without --check")
-    require(
-        raw.stdout == golden.read_text(encoding="utf-8"),
-        "demo output differs from tests/golden/demo_output.txt",
-    )
+    require(raw.stdout == expected, f"demo output differs from the committed {GOLDEN}")
     after = sha256_file(usage) if usage.is_file() else ""
     require(after == usage_before, "demo logged a model call in the usage ledger")
     return f"make demo {demo.seconds:.0f}s offline ({method}); matches golden; no model calls"
 
 
-def g5(ctx: Context) -> str:
-    """Instrument validity on the held-out seeded set, plus ledger completeness."""
-    root = ctx.clone
-    counts_rel, eval_rel = "artifacts/e0/claim_type_counts.json", "artifacts/e0/seeded_eval.json"
-    counts = load_json(root, counts_rel)
-    require_provenance(counts_rel, counts)
-    smoke = load_json(root, "artifacts/bench/smoke_runs.json")
-    smoke_ids = {str(r.get("run_id")) for r in smoke.get("runs", []) if not r.get("synthetic")}
-    sources = [str(r) for r in counts.get("source_runs", [])]
+# ---------------------------------------------------------------- G5
+
+SMOKE_RUNS = "artifacts/bench/smoke_runs.json"
+E0_COUNTS = "artifacts/e0/claim_type_counts.json"
+E0_EVAL = "artifacts/e0/seeded_eval.json"
+E0_MANIFEST = "artifacts/e0/heldout_manifest.json"
+E0_HELDOUT = "artifacts/e0/seeded/heldout"
+E0_COMPLETENESS = "artifacts/e0/ledger_completeness.json"
+# The claim types are counted from blind labels of the real smoke reports, by labelers
+# who never saw the instrument, so a common type the extractor misses still counts.
+COUNT_METHOD = "blind-labels"
+# The E0 scoring step, which turns a seeded report into scoring items, starts from these
+# modules: the extractor and the verifier (which the E0 module imports inside its
+# predict step) and the E0 module (whose scoring reads each ledger with receipts.ledger
+# and matches claims with receipts.evaluation.seeded). Every file they load is part of
+# the instrument (instrument_files), and HEAD must hold each unchanged since the
+# evaluated commit.
+INSTRUMENT_ROOTS = ("receipts.claims", "receipts.verify", "receipts.evaluation.e0")
+# The E0 module's function-level imports serve its other steps (claim counting, ledger
+# completeness), so only its module-level imports are followed; every other module's
+# imports are followed wherever they are.
+INSTRUMENT_STEP = "receipts.evaluation.e0"
+Ignorable = dict[tuple[str, str], tuple[frozenset[str], tuple[int, int]]]
+
+
+def is_real_agent(agent: object) -> bool:
+    """True for a smoke-run agent label that names an agent: a string with a word in
+    it and no word that marks a non-agent (:data:`NON_AGENT_WORDS`)."""
+    if not isinstance(agent, str):
+        return False
+    words = set(re.findall(r"[a-z0-9]+", agent.lower()))
+    return bool(words) and not words & NON_AGENT_WORDS
+
+
+def real_smoke_runs(smoke: object) -> list[dict[str, Any]]:
+    """The smoke-run rows that count as real agent runs, for G5 and G6 alike: marked
+    ``synthetic: false``, with a real agent label and non-empty run and task ids."""
+    runs = smoke.get("runs") if isinstance(smoke, dict) else None
     require(
-        bool(sources) and set(sources) <= smoke_ids,
+        isinstance(runs, list) and all(isinstance(r, dict) for r in runs),
+        f"{SMOKE_RUNS} runs malformed",
+    )
+    assert isinstance(runs, list)
+    return [
+        r
+        for r in runs
+        if r.get("synthetic") is False
+        and is_real_agent(r.get("agent"))
+        and is_text(r.get("run_id"))
+        and is_text(r.get("task_id"))
+    ]
+
+
+GENESIS = "0" * 64
+
+
+def ledger_events(root: Path, rel: str) -> list[dict[str, Any]]:
+    """The events of a banked ledger after checking its hash chain the way
+    receipts.ledger does: ``seq`` counts from 0, each ``prev`` is the hash before it
+    (64 zeros first), and each ``hash`` is the SHA-256 of the canonical JSON (sorted
+    keys, compact separators, UTF-8) of seq, ts, kind, data, and prev."""
+    events = load_jsonl(root, rel)
+    prev = GENESIS
+    for index, event in enumerate(events):
+        require(
+            isinstance(event, dict) and isinstance(event.get("data"), dict),
+            f"{rel}: event {index} is malformed",
+        )
+        body = {key: event.get(key) for key in ("seq", "ts", "kind", "data", "prev")}
+        canonical = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        require(
+            event.get("seq") == index and event.get("prev") == prev and event.get("hash") == digest,
+            f"{rel}: hash chain broken at event {index}",
+        )
+        prev = digest
+    return events
+
+
+@dataclass(frozen=True)
+class BankedRun:
+    """A summary row tied to its banked run: ``run.json`` and the verified ledger."""
+
+    row: Mapping[str, Any]
+    record: Mapping[str, Any]
+    events: Sequence[Mapping[str, Any]]
+
+    @property
+    def report(self) -> str:
+        """The run's final report ("" when it ended without one)."""
+        return str(self.record.get("report") or "")
+
+    @property
+    def driver(self) -> str:
+        """The agent driver the ledger's run_start names (minimal-agent, claude-code)."""
+        return str(self.events[0]["data"]["agent"])
+
+    @property
+    def model(self) -> str:
+        """The model run.json and the ledger's run_start both record."""
+        return str(self.record["model"])
+
+    @property
+    def agent(self) -> str:
+        """``<driver>/<model>``: the agent that made the run."""
+        return f"{self.driver}/{self.model}"
+
+
+def banked_run(root: Path, study: str, row: Mapping[str, Any]) -> BankedRun:
+    """The banked run under artifacts/studies/<study>/runs/ that a summary row names.
+
+    Its run.json records the same run and task, its ledger's hash chain is intact and
+    opens with that run's run_start, neither marks the run synthetic, and a real agent
+    made it: the run_start names the driver, run.json and the run_start record the same
+    model, and ``<driver>/<model>`` has no word that marks a mock, a script, a replay,
+    or a fixture (:func:`is_real_agent`). So a row's ``synthetic: false`` is not taken
+    on its word alone.
+    """
+    run_id = str(row.get("run_id"))
+    require(SAFE_ID.fullmatch(run_id) is not None, f"run id {run_id!r} is not a plain name")
+    base = f"artifacts/studies/{study}/runs/{run_id}"
+    record = load_json(root, f"{base}/run.json")
+    require(
+        isinstance(record, dict)
+        and record.get("run_id") == run_id
+        and record.get("task_id") == row.get("task_id"),
+        f"{base}/run.json does not record run {run_id} on task {row.get('task_id')}",
+    )
+    events = ledger_events(root, f"{base}/ledger.jsonl")
+    start = dig(events[0], "data") if events else None
+    require(
+        bool(events)
+        and events[0].get("kind") == "run_start"
+        and isinstance(start, dict)
+        and start.get("run_id") == run_id
+        and start.get("task_id") == record.get("task_id"),
+        f"{base}/ledger.jsonl does not open with the run_start of {run_id}",
+    )
+    assert isinstance(start, dict)
+    require(
+        record.get("synthetic") is not True and start.get("synthetic") is not True,
+        f"{base} is marked synthetic",
+    )
+    driver, model = start.get("agent"), record.get("model")
+    require(
+        is_text(driver) and is_text(model) and start.get("model") == model,
+        f"{base} does not record the driver and model that made it "
+        "(the run_start's agent and model, and the same model in run.json)",
+    )
+    run = BankedRun(row, record, events)
+    require(is_real_agent(run.agent), f"{base} was made by {run.agent!r}, which is not an agent")
+    return run
+
+
+def verified_smoke_runs(root: Path, smoke: object) -> list[BankedRun]:
+    """The real smoke runs (:func:`real_smoke_runs`), each tied to its banked run: the
+    row's agent is the run's driver and model (as the ledger's run_start and run.json
+    record them) and its transcript holds an agent turn. A row that claims a real run
+    the repository does not bank fails."""
+    out: list[BankedRun] = []
+    for row in real_smoke_runs(smoke):
+        run = banked_run(root, "smoke", row)
+        require(
+            row.get("agent") == run.agent,
+            f"smoke run {row['run_id']}: agent {row.get('agent')!r} is not the banked "
+            f"{run.agent!r}",
+        )
+        transcript = load_json(
+            root, f"artifacts/studies/smoke/runs/{row['run_id']}/transcript.json"
+        )
+        messages = dig(transcript, "messages")
+        require(
+            isinstance(messages, list)
+            and any(isinstance(m, dict) and m.get("role") == "assistant" for m in messages),
+            f"smoke run {row['run_id']} has no agent turn in its transcript",
+        )
+        out.append(run)
+    return out
+
+
+def blind_top_types(root: Path, reports: Mapping[str, str]) -> list[str]:
+    """The five most common claim types, recounted from the blind labels of every real
+    smoke run's report (never from the extractor under test). ``reports`` maps each real
+    smoke run to its banked final report; every labeled claim quotes it verbatim."""
+    real = set(reports)
+    counts = load_json(root, E0_COUNTS)
+    require_provenance(E0_COUNTS, counts)
+    require(
+        counts.get("method") == COUNT_METHOD,
+        "claim type counts are not blind labels of the smoke reports "
+        f"(method {counts.get('method')!r}, not {COUNT_METHOD!r})",
+    )
+    sources = counts.get("source_runs")
+    require(
+        isinstance(sources, list) and bool(sources) and {str(s) for s in sources} <= real,
         "claim type counts do not come from real G6 smoke runs",
     )
-    ranked = sorted(dict(counts.get("counts", {})).items(), key=lambda kv: (-int(kv[1]), kv[0]))
+    labels = counts.get("labels")
+    require(
+        isinstance(labels, list) and all(isinstance(entry, dict) for entry in labels),
+        "claim type counts have no blind labels",
+    )
+    ids = [entry.get("run_id") for entry in labels]
+    require(
+        all(is_text(i) for i in ids) and len(set(ids)) == len(ids),
+        "blind labels repeat a run or lack its run_id",
+    )
+    labeled = {str(i) for i in ids}
+    extra = sorted(labeled - real)
+    require(
+        not extra, "blind labels name runs that are not real smoke runs: " + ", ".join(extra[:3])
+    )
+    require(
+        labeled == real,
+        f"blind labels cover {len(labeled & real)} of the {len(real)} real smoke runs",
+    )
+    recount: Counter[str] = Counter()
+    for entry in labels:
+        claims = entry.get("claims")
+        require(
+            isinstance(claims, list)
+            and all(isinstance(c, dict) and is_text(c.get("type")) for c in claims),
+            f"blind labels of {entry.get('run_id')} lack claim types",
+        )
+        report = reports[str(entry["run_id"])]
+        require(
+            all(is_text(c.get("text")) and str(c["text"]) in report for c in claims),
+            f"blind labels of {entry['run_id']} quote text that is not in its banked report",
+        )
+        recount.update(str(c["type"]) for c in claims)
+    banked = counts.get("counts")
+    require(
+        isinstance(banked, dict) and all(is_count(v) for v in banked.values()),
+        "claim type counts malformed",
+    )
+    require(
+        {str(k): v for k, v in banked.items() if v} == dict(recount),
+        "claim type counts do not recompute from the blind labels",
+    )
+    ranked = sorted(recount.items(), key=lambda kv: (-kv[1], kv[0]))
     require(len(ranked) >= 5, "fewer than five claim types counted")
-    top5 = [name for name, _ in ranked[:5]]
-    seeded = load_json(root, eval_rel)
-    require_provenance(eval_rel, seeded)
-    require(seeded.get("split") == "heldout", "seeded_eval.json is not the held-out split")
-    manifest_rel = str(seeded.get("heldout_manifest", ""))
-    manifest = load_json(root, manifest_rel)
-    m_first, e_first = first_commit(root, manifest_rel), first_commit(root, eval_rel)
+    return [name for name, _ in ranked[:5]]
+
+
+def module_file(root: Path, module: str) -> str | None:
+    """The file under src/ that defines ``module`` (its __init__.py for a package)."""
+    stem = "src/" + module.replace(".", "/")
+    candidates = (f"{stem}/__init__.py", f"{stem}.py")
+    return next((rel for rel in candidates if (root / rel).is_file()), None)
+
+
+def imported_modules(source: str, module: str, *, package: bool, nested: bool = False) -> set[str]:
+    """The receipts modules that the source of ``module`` imports, absolute or relative.
+
+    Imports at module level count, also inside top-level ``if``, ``try``, ``with``, and
+    class blocks (they run when the module loads); with ``nested``, imports inside
+    functions count too. ``from m import a`` names ``m`` and ``m.a`` (``a`` may be a
+    module). ``package`` says that ``module`` is a package's ``__init__.py``.
+    """
+    found: set[str] = set()
+    todo: list[ast.AST] = list(ast.parse(source).body)
+    while todo:
+        node = todo.pop()
+        if isinstance(node, ast.Import):
+            found |= {alias.name for alias in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            base = node.module or ""
+            if node.level:
+                parts = module.split(".") if package else module.split(".")[:-1]
+                parts = parts[: len(parts) - node.level + 1]
+                base = ".".join([*parts, *([node.module] if node.module else [])])
+            found.add(base)
+            found |= {f"{base}.{alias.name}" for alias in node.names}
+        if nested or not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
+            todo.extend(ast.iter_child_nodes(node))
+    return {name for name in found if name.split(".")[0] == "receipts"}
+
+
+def instrument_files(root: Path) -> list[str]:
+    """The files the E0 scoring step loads (G5): :data:`INSTRUMENT_ROOTS` and every
+    receipts module they import, with the packages that hold them, followed
+    transitively (:func:`imported_modules`). The ``receipts`` package's own
+    ``__init__.py``, which holds only the version, is left out."""
+    files: dict[str, str] = {}
+    todo = list(INSTRUMENT_ROOTS)
+    while todo:
+        parts = todo.pop().split(".")
+        for depth in range(2, len(parts) + 1):
+            module = ".".join(parts[:depth])
+            rel = None if module in files else module_file(root, module)
+            if rel is None:
+                continue
+            files[module] = rel
+            try:
+                source = (root / rel).read_text(encoding="utf-8")
+                found = imported_modules(
+                    source,
+                    module,
+                    package=rel.endswith("/__init__.py"),
+                    nested=module != INSTRUMENT_STEP,
+                )
+            except (SyntaxError, UnicodeDecodeError, ValueError) as exc:
+                raise GateError(f"cannot read the instrument module {rel} ({exc})") from exc
+            todo.extend(found)
+    missing = [module for module in INSTRUMENT_ROOTS if module not in files]
+    require(not missing, "the E0 instrument is missing: " + ", ".join(missing))
+    return sorted(set(files.values()))
+
+
+def evaluated_instrument(root: Path, seeded: Mapping[str, Any]) -> str:
+    """The commit whose instrument the held-out evaluation scored, after checking that
+    HEAD holds the same instrument (every file of :func:`instrument_files` unchanged
+    since that commit) and that the evaluation ran it without uncommitted changes: it
+    found none in its recorded ``paths``, and those cover every instrument file."""
+    instrument = seeded.get("instrument")
+    require(
+        isinstance(instrument, dict), "seeded_eval.json does not record the instrument it evaluated"
+    )
+    assert isinstance(instrument, dict)
+    sha = instrument.get("commit")
+    require(
+        is_commit(root, sha), f"the evaluated instrument {sha!r} is not a commit of this repository"
+    )
+    assert isinstance(sha, str)
+    require(
+        instrument.get("dirty") is False and not instrument.get("uncommitted"),
+        "the G5 evaluation ran on an instrument with uncommitted changes",
+    )
+    head = git(root, "rev-parse", "HEAD").strip()
+    require(
+        sha == head or strictly_before(root, sha, head),
+        f"the evaluated instrument commit {sha[:12]} is not in HEAD's history",
+    )
+    files = instrument_files(root)
+    checked = instrument.get("paths")
+    prefixes = [p.rstrip("/") for p in checked if is_text(p)] if isinstance(checked, list) else []
+    unchecked = [
+        rel for rel in files if not any(rel == p or rel.startswith(p + "/") for p in prefixes)
+    ]
+    require(
+        not unchecked,
+        "the G5 evaluation did not check the instrument for uncommitted changes in "
+        + ", ".join(unchecked[:3]),
+    )
+    blobs = {rev: blob_ids(root, rev, files) for rev in (sha, "HEAD")}
+    changed = [rel for rel in files if blobs[sha].get(rel) != blobs["HEAD"].get(rel)]
+    require(
+        not changed,
+        f"the instrument changed after the G5 evaluation at {sha[:12]}: " + ", ".join(changed[:5]),
+    )
+    return sha
+
+
+def blob_ids(root: Path, rev: str, paths: Sequence[str]) -> dict[str, str]:
+    """The git blob id of each of ``paths`` that exists at ``rev``."""
+    out: dict[str, str] = {}
+    listing = git(root, "ls-tree", "-r", "-z", "--full-tree", rev, "--", *paths)
+    for entry in listing.split("\0"):
+        meta, tab, rel = entry.partition("\t")
+        if tab and len(meta.split()) == 3:
+            out[rel] = meta.split()[2]
+    return out
+
+
+def frozen_heldout(root: Path) -> dict[str, str]:
+    """The held-out reports as the manifest's first commit froze them, each checked
+    against its file in the clone. That commit must come strictly before the
+    evaluation's first commit, and no later commit may touch the manifest."""
+    m_first = first_exact_add(root, E0_MANIFEST)
+    e_first = first_added(root, [E0_EVAL])[E0_EVAL]
     require(
         m_first is not None and e_first is not None and strictly_before(root, m_first, e_first),
         "held-out manifest was not committed before the G5 evaluation",
     )
-    reports = dict(manifest.get("reports", {}))
+    assert m_first is not None
+    require(
+        not commits_after(root, m_first, E0_MANIFEST),
+        "held-out manifest changed after its freeze commit",
+    )
+    try:
+        frozen = json.loads(git(root, "show", f"{m_first}:{E0_MANIFEST}"))
+    except json.JSONDecodeError as exc:
+        raise GateError(f"{E0_MANIFEST} was not valid JSON when frozen") from exc
+    reports = frozen.get("reports") if isinstance(frozen, dict) else None
+    require(
+        isinstance(reports, dict)
+        and bool(reports)
+        and all(
+            isinstance(k, str) and SAFE_ID.fullmatch(k) and isinstance(v, str)
+            for k, v in reports.items()
+        ),
+        "held-out manifest listed no reports, or a malformed one, when it was frozen",
+    )
+    assert isinstance(reports, dict)
     for report_id, digest in reports.items():
-        path = root / "artifacts" / "e0" / "seeded" / "heldout" / f"{report_id}.json"
+        path = root / E0_HELDOUT / f"{report_id}.json"
         require(
             path.is_file() and sha256_file(path) == digest,
             f"held-out report {report_id} missing or changed",
         )
-    items = list(seeded.get("items", []))
-    require(
-        all(str(i.get("report_id")) in reports for i in items),
-        "seeded_eval items include reports outside the held-out manifest",
+    return dict(reports)
+
+
+def is_span(value: object) -> TypeGuard[list[int]]:
+    """A ``[start, end]`` pair of character offsets."""
+    return (
+        isinstance(value, list)
+        and len(value) == 2
+        and all(is_count(v) for v in value)
+        and value[0] <= value[1]
     )
+
+
+def heldout_claims(
+    root: Path, reports: Mapping[str, str]
+) -> tuple[Counter[tuple[str, str, str]], Ignorable]:
+    """The frozen gold claims of the held-out reports as a multiset of (report, type,
+    verdict), and their ignored claims (dropped in adjudication) by (report, claim id)."""
+    gold: Counter[tuple[str, str, str]] = Counter()
+    ignorable: Ignorable = {}
+    for report_id in sorted(reports):
+        path = root / E0_HELDOUT / f"{report_id}.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise GateError(f"held-out report {report_id} is not valid JSON") from exc
+        claims = data.get("gold") if isinstance(data, dict) else None
+        require(isinstance(claims, list), f"held-out report {report_id} has no gold list")
+        assert isinstance(claims, list)
+        for claim in claims:
+            require(
+                isinstance(claim, dict)
+                and is_text(claim.get("claim_type"))
+                and claim.get("verdict") in VERDICTS,
+                f"held-out report {report_id}: a gold claim lacks a type or a known verdict",
+            )
+            gold[(report_id, str(claim["claim_type"]), str(claim["verdict"]))] += 1
+        ignored = data.get("ignored", [])
+        require(isinstance(ignored, list), f"held-out report {report_id}: ignored claims malformed")
+        for claim in ignored:
+            types = claim.get("claim_types") if isinstance(claim, dict) else None
+            require(
+                isinstance(claim, dict)
+                and is_text(claim.get("claim_id"))
+                and isinstance(types, list)
+                and bool(types)
+                and all(is_text(t) for t in types)
+                and is_span(claim.get("span")),
+                f"held-out report {report_id}: an ignored claim lacks an id, types, or a span",
+            )
+            key = (report_id, str(claim["claim_id"]))
+            require(key not in ignorable, f"held-out report {report_id}: ignored claim ids repeat")
+            start, end = claim["span"]
+            ignorable[key] = (frozenset(str(t) for t in claim["claim_types"]), (start, end))
+    return gold, ignorable
+
+
+def check_ignored_item(
+    report_id: str, item: Mapping[str, Any], ignorable: Ignorable, used: set[tuple[str, str]]
+) -> None:
+    """An item left out of scoring stands for one frozen ignored claim of its report, used
+    once, with any prediction on that claim's span and of one of its types."""
+    key = (report_id, str(item.get("ignored_claim_id")))
+    claim = ignorable.get(key)
+    require(
+        claim is not None and key not in used,
+        f"held-out report {report_id}: an ignored item names no frozen ignored claim, "
+        "or one already used",
+    )
+    assert claim is not None
+    used.add(key)
+    require(
+        item.get("gold_verdict") is None,
+        f"held-out report {report_id}: an ignored item carries a gold verdict",
+    )
+    if item.get("pred_verdict") is None:
+        return
+    types, (start, end) = claim
+    span = item.get("pred_span")
+    on_claim = is_span(span) and min(end, span[1]) > max(start, span[0])
+    require(
+        str(item.get("claim_type")) in types and on_claim,
+        f"held-out report {report_id}: an ignored item's prediction is not on its ignored claim",
+    )
+
+
+def scored_items(
+    seeded: Mapping[str, Any],
+    reports: Mapping[str, str],
+    gold: Counter[tuple[str, str, str]],
+    ignorable: Ignorable,
+) -> list[dict[str, Any]]:
+    """The items precision and recall are computed from. Their gold claims must be the
+    frozen gold of every held-out report, none left out, added, or relabeled. An item
+    marked ``ignored`` (a prediction on a claim adjudication dropped) is left out only
+    when it stands for a frozen ignored claim (:func:`check_ignored_item`)."""
+    items = seeded.get("items")
+    require(
+        isinstance(items, list) and all(isinstance(i, dict) for i in items),
+        "seeded_eval.json items malformed",
+    )
+    assert isinstance(items, list)
+    scored: list[dict[str, Any]] = []
+    banked: Counter[tuple[str, str, str]] = Counter()
+    used: set[tuple[str, str]] = set()
+    for item in items:
+        report_id = str(item.get("report_id"))
+        require(
+            report_id in reports, "seeded_eval items include reports outside the held-out manifest"
+        )
+        require(
+            item.get("pred_verdict") is None or item.get("pred_verdict") in VERDICTS,
+            f"held-out report {report_id}: an item has an unknown pred_verdict",
+        )
+        if item.get("ignored") is True:
+            check_ignored_item(report_id, item, ignorable, used)
+            continue
+        if item.get("gold_verdict") is not None:
+            banked[(report_id, str(item.get("claim_type")), str(item.get("gold_verdict")))] += 1
+        scored.append(item)
+    require(
+        banked == gold,
+        "seeded_eval gold items differ from the frozen held-out gold "
+        "(gold claims left out, added, or relabeled)",
+    )
+    return scored
+
+
+def ledger_completeness(root: Path, banked: Mapping[str, BankedRun]) -> tuple[int, int, int]:
+    """``(runs, commands compared, commands missing)`` of the completeness artifact. It
+    must cover every validation run (each real smoke run in ``banked``) and compare some
+    command, and each validation run's ``ledger_commands`` must be the agent commands its
+    banked ledger records."""
+    real = set(banked)
+    data = load_json(root, E0_COMPLETENESS)
+    require_provenance(E0_COMPLETENESS, data)
+    runs = data.get("runs")
+    require(
+        isinstance(runs, list) and bool(runs) and all(isinstance(r, dict) for r in runs),
+        "no ledger completeness validation runs",
+    )
+    assert isinstance(runs, list)
+    ids = [r.get("run_id") for r in runs]
+    require(all(is_text(i) for i in ids), "a ledger completeness row has no run_id")
+    require(len(set(ids)) == len(ids), "ledger completeness lists a run more than once")
+    absent = sorted(real - {str(i) for i in ids})
+    require(
+        not absent,
+        f"ledger completeness misses {len(absent)} of the {len(real)} validation runs "
+        "(the real smoke runs): " + ", ".join(absent[:3]),
+    )
+    compared = missing = 0
+    for run in runs:
+        said, done = run.get("transcript_commands"), run.get("ledger_commands")
+        require(
+            isinstance(said, list) and isinstance(done, list),
+            f"ledger completeness row {run['run_id']} lacks transcript_commands or ledger_commands",
+        )
+        assert isinstance(said, list) and isinstance(done, list)
+        run_id = str(run["run_id"])
+        if run_id in banked:
+            recorded = [
+                str(e["data"].get("cmd", ""))
+                for e in banked[run_id].events
+                if e.get("kind") == "command" and e["data"].get("source") == "agent"
+            ]
+            require(
+                [str(c) for c in done] == recorded,
+                f"ledger completeness row {run_id}: ledger_commands are not the agent "
+                "commands its banked ledger records",
+            )
+        compared += len(said)
+        missing += sum((Counter(map(str, said)) - Counter(map(str, done))).values())
+    require(compared > 0, "ledger completeness compares no commands")
+    return len(runs), compared, missing
+
+
+def g5(ctx: Context) -> str:
+    """Instrument validity on the held-out seeded set, plus ledger completeness."""
+    root = ctx.clone
+    banked = {
+        str(r.row["run_id"]): r for r in verified_smoke_runs(root, load_json(root, SMOKE_RUNS))
+    }
+    require(bool(banked), f"{SMOKE_RUNS} has no real agent smoke runs")
+    top5 = blind_top_types(root, {run_id: run.report for run_id, run in banked.items()})
+    seeded = load_json(root, E0_EVAL)
+    require_provenance(E0_EVAL, seeded)
+    require(seeded.get("split") == "heldout", "seeded_eval.json is not the held-out split")
+    require(
+        seeded.get("heldout_manifest") == E0_MANIFEST,
+        f"seeded_eval.json does not cite {E0_MANIFEST}",
+    )
+    instrument = evaluated_instrument(root, seeded)
+    reports = frozen_heldout(root)
+    gold, ignorable = heldout_claims(root, reports)
+    items = scored_items(seeded, reports, gold, ignorable)
     parts: list[str] = []
     failing: list[str] = []
     for ctype in top5:
         mine = [i for i in items if i.get("claim_type") == ctype]
-        gold = [i for i in mine if i.get("gold_verdict") in VERDICTS]
+        golden = [i for i in mine if i.get("gold_verdict") in VERDICTS]
         pred = [i for i in mine if i.get("pred_verdict") in VERDICTS]
-        correct = sum(1 for i in gold if i.get("pred_verdict") == i.get("gold_verdict"))
-        if not gold or not pred:
+        correct = sum(1 for i in golden if i.get("pred_verdict") == i.get("gold_verdict"))
+        if not golden or not pred:
             failing.append(f"{ctype}: no seeded claims")
             continue
-        p, r = correct / len(pred), correct / len(gold)
-        parts.append(f"{ctype} P={fmt_ci(correct, len(pred))} R={fmt_ci(correct, len(gold))}")
+        p, r = correct / len(pred), correct / len(golden)
+        parts.append(f"{ctype} P={fmt_ci(correct, len(pred))} R={fmt_ci(correct, len(golden))}")
         if p < G5_PRECISION_MIN or r < G5_RECALL_MIN:
             failing.append(ctype)
-    completeness_rel = "artifacts/e0/ledger_completeness.json"
-    completeness = load_json(root, completeness_rel)
-    require_provenance(completeness_rel, completeness)
-    runs = list(completeness.get("runs", []))
-    require(bool(runs), "no ledger completeness validation runs")
-    gaps = 0
-    for run in runs:
-        missing = Counter(map(str, run.get("transcript_commands", []))) - Counter(
-            map(str, run.get("ledger_commands", []))
-        )
-        gaps += sum(missing.values())
+    runs, compared, gaps = ledger_completeness(root, banked)
     require(not failing, "below P>=0.95/R>=0.90: " + "; ".join(failing) + " | " + "; ".join(parts))
     require(gaps == 0, f"ledger completeness gap: {gaps} command(s) missing from ledgers")
-    return "; ".join(parts) + f"; ledger completeness 100% on {len(runs)} runs"
+    return (
+        "; ".join(parts)
+        + f"; instrument at {instrument[:12]} unchanged at HEAD"
+        + f"; ledger completeness 100% on {runs} runs ({compared} commands)"
+    )
 
 
 def g6(ctx: Context) -> str:
@@ -577,13 +2529,9 @@ def g6(ctx: Context) -> str:
     require(len(tasks) >= G6_MIN_TASKS, f"{len(tasks)} tasks < {G6_MIN_TASKS}")
     validation = load_json(root, "artifacts/bench/reference_validation.json")
     require_provenance("artifacts/bench/reference_validation.json", validation)
-    smoke = load_json(root, "artifacts/bench/smoke_runs.json")
-    require_provenance("artifacts/bench/smoke_runs.json", smoke)
-    smoked = {
-        str(r.get("task_id"))
-        for r in smoke.get("runs", [])
-        if r.get("synthetic") is False and str(r.get("agent", "")).lower() not in NON_AGENTS
-    }
+    smoke = load_json(root, SMOKE_RUNS)
+    require_provenance(SMOKE_RUNS, smoke)
+    smoked = {str(run.row["task_id"]) for run in verified_smoke_runs(root, smoke)}
     checked = dict(validation.get("tasks", {}))
     problems: list[str] = []
     for task in tasks:
@@ -605,115 +2553,663 @@ def g6(ctx: Context) -> str:
     return f"{len(tasks)} tasks; references pass hidden checks; manifests; smoke runs for all"
 
 
+# ---------------------------------------------------------------- G7
+
+E1_RESULTS = "artifacts/e1/results.json"
+E1_RUNS = "artifacts/e1/runs.jsonl"
+E1_PLAN = "artifacts/studies/e1/plan.json"
+# E1's confirmatory data, first committed after the freeze (the roots tools/prereg.py uses).
+E1_DATA = ("artifacts/e1", "artifacts/studies/e1/runs")
+PLANNED_RUNS = re.compile(r"planned_runs_per_config:[ \t]*(\d+)\b")
+PLAN_SHA = re.compile(r"plan_sha256:[ \t]*([0-9a-f]{64})\b")
+
+
 def _e1_runs(root: Path) -> list[dict[str, Any]]:
-    rows = load_jsonl(root, "artifacts/e1/runs.jsonl")
+    rows = load_jsonl(root, E1_RUNS)
+    require(all(isinstance(r, dict) for r in rows), f"{E1_RUNS} has rows that are not objects")
     return [r for r in rows if isinstance(r, dict)]
+
+
+def frozen_prereg(root: Path, prereg: object, cited_sha: object) -> tuple[str, str, str]:
+    """``(path, text, freeze commit)`` of the preregistration an artifact cites, after
+    checking that it is frozen, unchanged since, and cited with its locked SHA-256."""
+    rel = repo_path(prereg)
+    require(rel is not None and rel == prereg, f"the results cite no preregistration ({prereg!r})")
+    assert rel is not None
+    locked = frozen_preregs(root).get(rel)
+    require(locked is not None, f"{rel} is not frozen in {LOCK_REL}")
+    path = root / rel
+    require(path.is_file(), f"{rel} missing")
+    raw = path.read_bytes()
+    require(hashlib.sha256(raw).hexdigest() == locked, f"{rel} changed after it was frozen")
+    require(cited_sha == locked, f"the results cite {rel} with a SHA-256 other than its frozen one")
+    fz = freeze_commit(root, rel)
+    require(fz is not None, f"{rel} is in {LOCK_REL}, but no commit froze it")
+    assert fz is not None
+    return rel, raw.decode("utf-8", errors="replace"), fz
+
+
+def committed_after_freeze(
+    root: Path, prereg: str, fz: str, roots: Sequence[str], required: Sequence[str]
+) -> None:
+    """Every file under ``roots`` (``required`` among them) is committed, and first after
+    the freeze commit ``fz``: data that predate the preregistration are not confirmatory."""
+    files = tracked(root, *roots)
+    absent = [rel for rel in required if rel not in files]
+    require(not absent, ", ".join(absent) + " not committed")
+    firsts = first_added(root, files, roots)
+    after: dict[str, bool] = {}
+    early: list[str] = []
+    for rel in files:
+        sha = firsts[rel]
+        if sha is not None and sha not in after:
+            after[sha] = strictly_before(root, fz, sha)
+        if sha is None or not after[sha]:
+            early.append(rel)
+    require(
+        not early,
+        f"{len(early)} E1 data file(s) first committed at or before {prereg} was frozen: "
+        + ", ".join(sorted(early)[:3]),
+    )
+
+
+Arms = dict[str, dict[str, str]]
+
+
+def plan_arms(rel: str, arms: object) -> Arms:
+    """A study plan's arms by config id: each arm's ``driver``, ``model``, and
+    ``family`` (the agent configuration its runs must be made by)."""
+    require(isinstance(arms, list), f"{rel} has no arms")
+    assert isinstance(arms, list)
+    out: Arms = {}
+    for arm in arms:
+        keys = ("config_id", "driver", "model")
+        require(
+            isinstance(arm, dict) and all(is_text(arm.get(k)) for k in keys),
+            f"{rel} has an arm without a config_id, driver, or model",
+        )
+        out[str(arm["config_id"])] = {
+            key: str(arm.get(key) or "") for key in ("driver", "model", "family")
+        }
+    return out
+
+
+def check_planned_agent(run: BankedRun, arms: Arms, config: str) -> None:
+    """The banked run was made by its planned arm's agent: the arm's driver and model."""
+    arm = arms[config]
+    planned = f"{arm['driver']}/{arm['model']}"
+    require(
+        run.agent == planned,
+        f"{run.row['run_id']} was made by {run.agent}, not by its planned agent {planned} "
+        f"({config})",
+    )
+
+
+def e1_plan(root: Path, prereg: str, text: str, fz: str) -> tuple[dict[str, dict[str, Any]], Arms]:
+    """The planned E1 runs by run id, and the arms by config id (driver, model, and
+    family), from the plan the frozen preregistration fixes: the prereg records the
+    plan's SHA-256, or the freeze commit holds plan.json and no later commit touches it.
+    Every arm is planned for ``planned_runs_per_config`` runs, the number the prereg
+    states."""
+    path = root / E1_PLAN
+    require(path.is_file(), f"{E1_PLAN} missing")
+    raw = path.read_bytes()
+    try:
+        plan = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise GateError(f"{E1_PLAN} is not valid JSON") from exc
+    digests = json_digests(raw)
+    recorded = set(PLAN_SHA.findall(text))
+    require(
+        not recorded or bool(recorded & digests),
+        f"{prereg} records a plan_sha256 that is not the SHA-256 of {E1_PLAN}",
+    )
+    if not digests & set(HEX64.findall(text)):
+        held = git_or_none(root, "cat-file", "-e", f"{fz}:{E1_PLAN}") is not None
+        require(
+            held and not commits_after(root, fz, E1_PLAN),
+            f"{E1_PLAN} is not the plan frozen with {prereg} (the prereg does not record "
+            "its SHA-256, and the freeze commit does not hold it unchanged since)",
+        )
+    runs = plan.get("runs") if isinstance(plan, dict) else None
+    require(isinstance(runs, list), f"{E1_PLAN} has no runs")
+    assert isinstance(runs, list)
+    arms = plan_arms(E1_PLAN, plan.get("arms"))
+    require(all(arm["family"] for arm in arms.values()), f"{E1_PLAN} has an arm without a family")
+    planned: dict[str, dict[str, Any]] = {}
+    for spec in runs:
+        require(
+            isinstance(spec, dict)
+            and is_text(spec.get("run_id"))
+            and is_text(spec.get("config_id"))
+            and spec["config_id"] in arms,
+            f"{E1_PLAN} has a run without a run_id or a planned arm",
+        )
+        require(str(spec["run_id"]) not in planned, f"{E1_PLAN} repeats run id {spec['run_id']}")
+        planned[str(spec["run_id"])] = spec
+    stated = PLANNED_RUNS.search(text)
+    require(stated is not None, f"{prereg} does not state planned_runs_per_config as a number")
+    assert stated is not None
+    want = int(stated.group(1))
+    per = Counter(str(spec["config_id"]) for spec in planned.values())
+    off = [f"{c}={n}" for c, n in sorted(per.items()) if n != want]
+    require(
+        not off,
+        f"{E1_PLAN} runs per configuration differ from planned_runs_per_config = {want}: "
+        + ", ".join(off),
+    )
+    return planned, arms
+
+
+def check_e1_rows(
+    runs: Sequence[Mapping[str, Any]], planned: Mapping[str, Mapping[str, Any]], arms: Arms
+) -> None:
+    """Every row is a distinct planned run with its planned task, arm, conditions, and
+    seed, and the model family of its planned arm."""
+    for index, row in enumerate(runs, start=1):
+        fields = ("run_id", "config_id", "model_family", "task_id")
+        require(
+            all(is_text(row.get(name)) for name in fields),
+            f"{E1_RUNS} row {index} lacks run_id, config_id, model_family, or task_id",
+        )
+        claims = row.get("claims")
+        require(
+            isinstance(row.get("included"), bool)
+            and isinstance(claims, list)
+            and all(isinstance(c, dict) for c in claims),
+            f"{E1_RUNS} row {index} has no included flag or claims list",
+        )
+    counts = Counter(str(row["run_id"]) for row in runs)
+    repeated = sorted(rid for rid, n in counts.items() if n > 1)
+    require(
+        not repeated, f"{len(repeated)} run_id(s) repeat in {E1_RUNS}: " + ", ".join(repeated[:3])
+    )
+    for row in runs:
+        rid = str(row["run_id"])
+        spec = planned.get(rid)
+        require(spec is not None, f"{rid} is not a planned E1 run")
+        assert spec is not None
+        diffs = [name for name in ("config_id", "task_id") if row.get(name) != spec.get(name)]
+        if not (is_count(row.get("seed")) and row.get("seed") == spec.get("seed")):
+            diffs.append("seed")
+        if row.get("conditions") != spec.get("conditions"):
+            diffs.append("conditions")
+        require(not diffs, f"{rid} differs from its planned run in " + ", ".join(diffs))
+        config, named = str(row["config_id"]), row["model_family"]
+        family = arms[config]["family"]
+        require(
+            named == family,
+            f"{rid}: model_family {named!r} is not the planned family {family!r} of {config}",
+        )
+
+
+def check_e1_banked(
+    root: Path, runs: Sequence[Mapping[str, Any]], arms: Arms, prereg: str, fz: str
+) -> None:
+    """Every row is a banked E1 run (:func:`banked_run`) made by its planned arm's agent,
+    with the row's arm, family, conditions, seed, and inclusion (a non-empty final
+    report), launched from the freeze commit of ``prereg`` or a later one
+    (``provenance.git_sha``: the commit, or the snapshot, it ran)."""
+    after: dict[str, bool] = {}
+    for row in runs:
+        run = banked_run(root, "e1", row)
+        check_planned_agent(run, arms, str(row["config_id"]))
+        record = run.record
+        diffs = [
+            name
+            for name in ("config_id", "seed", "conditions")
+            if record.get(name) != row.get(name)
+        ]
+        if record.get("family") != row.get("model_family"):
+            diffs.append("family")
+        if bool(run.report.strip()) is not row.get("included"):
+            diffs.append("included")
+        require(
+            not diffs, f"{row['run_id']} differs from its banked run.json in " + ", ".join(diffs)
+        )
+        sha = dig(record, "provenance", "git_sha")
+        if isinstance(sha, str) and sha not in after:
+            after[sha] = is_commit(root, sha) and (sha == fz or strictly_before(root, fz, sha))
+        require(
+            isinstance(sha, str) and after[sha],
+            f"{row['run_id']} was launched from {str(sha)[:12]}, not from the freeze commit "
+            f"of {prereg} or a later one",
+        )
+
+
+def check_wilson(label: str, stat: object, successes: int, n: int) -> None:
+    """``stat`` reports ``successes / n`` (0 with no trials) and its Wilson 95% interval."""
+    require(isinstance(stat, dict), f"{label} missing")
+    assert isinstance(stat, dict)
+    require(
+        close(stat.get("estimate"), successes / n if n else 0.0),
+        f"{label} does not recompute from runs.jsonl",
+    )
+    low, high = wilson(successes, n)
+    require(
+        close(stat.get("ci_low"), low) and close(stat.get("ci_high"), high),
+        f"{label} interval is not the Wilson 95% interval of {successes}/{n}",
+    )
 
 
 def g7(ctx: Context) -> str:
     """Main study: as preregistered, >= 3 configs, >= 2 families, >= 60 runs each, intervals."""
     root = ctx.clone
-    results_rel = "artifacts/e1/results.json"
-    results = load_json(root, results_rel)
-    require_provenance(results_rel, results)
+    results = load_json(root, E1_RESULTS)
+    require_provenance(E1_RESULTS, results)
     require(
         results.get("confirmatory") is True and bool(results.get("prereg")),
         "E1 results are not marked confirmatory with a preregistration",
     )
+    prereg, text, fz = frozen_prereg(root, results.get("prereg"), results.get("prereg_sha256"))
+    committed_after_freeze(root, prereg, fz, E1_DATA, (E1_RESULTS, E1_RUNS))
+    planned, arms = e1_plan(root, prereg, text, fz)
     runs = _e1_runs(root)
+    check_e1_rows(runs, planned, arms)
+    check_e1_banked(root, runs, arms, prereg, fz)
+    missing = sorted(set(planned) - {str(r["run_id"]) for r in runs})
+    accounting = results.get("runs")
+    reported = accounting.get("missing_run_ids", []) if isinstance(accounting, dict) else []
+    require(
+        isinstance(reported, list) and sorted(str(r) for r in reported) == missing,
+        f"results.json does not report the {len(missing)} planned run(s) missing from "
+        f"{E1_RUNS} (runs.missing_run_ids)",
+    )
     require(all(r.get("synthetic") is False for r in runs), "E1 contains synthetic runs")
-    included = [r for r in runs if r.get("included") is True]
-    by_config: dict[str, list[dict[str, Any]]] = {}
-    for run in included:
-        by_config.setdefault(str(run.get("config_id")), []).append(run)
-    families = {str(r.get("model_family")) for r in included}
-    prereg_text = (root / str(results["prereg"])).read_text(encoding="utf-8")
-    planned = re.search(r"planned_runs_per_config:\s*(\d+)", prereg_text)
-    floor = max(G7_MIN_RUNS, int(planned.group(1)) if planned else 0)
-    require(len(by_config) >= G7_MIN_CONFIGS, f"{len(by_config)} agent configurations < 3")
+    banked = Counter(str(r["config_id"]) for r in runs)
+    families = {arms[c]["family"] for c in banked}
+    require(len(banked) >= G7_MIN_CONFIGS, f"{len(banked)} agent configurations < 3")
     require(len(families) >= G7_MIN_FAMILIES, f"{len(families)} model families < 2")
-    short = [f"{c}={len(v)}" for c, v in by_config.items() if len(v) < floor]
-    require(not short, f"configs below {floor} runs: " + ", ".join(short))
-    reported = dict(results.get("configs", {}))
-    require(set(reported) == set(by_config), "results.json configs differ from runs.jsonl")
-    for config, rows in by_config.items():
-        entry = reported[config]
-        require(int(entry.get("n_runs", -1)) == len(rows), f"{config}: n_runs mismatch")
-        fs = sum(1 for r in rows if r.get("false_success") is True) / len(rows)
-        claims = [c for r in rows for c in r.get("claims", [])]
-        cc = sum(1 for c in claims if c.get("verdict") == "contradicted") / max(1, len(claims))
-        for metric, value in (("false_success_rate", fs), ("contradicted_claim_rate", cc)):
-            stat = entry.get(metric, {})
-            est, lo, hi = stat.get("estimate"), stat.get("ci_low"), stat.get("ci_high")
-            require(
-                isinstance(est, int | float) and abs(float(est) - value) < 1e-9,
-                f"{config}.{metric} does not recompute from runs.jsonl",
-            )
-            require(
-                isinstance(lo, int | float)
-                and isinstance(hi, int | float)
-                and float(lo) <= value <= float(hi),
-                f"{config}.{metric} lacks a valid interval",
-            )
-    sizes = ", ".join(f"{c}={len(v)}" for c, v in sorted(by_config.items()))
-    return f"{len(by_config)} configs, {len(families)} families, runs {sizes}; rates recompute"
+    short = [f"{c}={n}" for c, n in sorted(banked.items()) if n < G7_MIN_RUNS]
+    require(not short, f"configs below {G7_MIN_RUNS} runs: " + ", ".join(short))
+    included: dict[str, list[Mapping[str, Any]]] = {}
+    for run in runs:
+        if run["included"] is True:
+            included.setdefault(str(run["config_id"]), []).append(run)
+    reported_configs = results.get("configs")
+    require(
+        isinstance(reported_configs, dict) and set(reported_configs) == set(included),
+        "results.json configs differ from runs.jsonl",
+    )
+    for config, rows in sorted(included.items()):
+        entry = reported_configs[config]
+        require(isinstance(entry, dict), f"{config}: results missing")
+        require(
+            is_count(entry.get("n_runs")) and entry.get("n_runs") == len(rows),
+            f"{config}: n_runs mismatch",
+        )
+        claims = [c for r in rows for c in r["claims"]]
+        stats = (
+            (
+                "false_success_rate",
+                sum(1 for r in rows if r.get("false_success") is True),
+                len(rows),
+            ),
+            (
+                "contradicted_claim_rate",
+                sum(1 for c in claims if c.get("verdict") == "contradicted"),
+                len(claims),
+            ),
+        )
+        for metric, successes, n in stats:
+            check_wilson(f"{config}.{metric}", entry.get(metric), successes, n)
+    sizes = ", ".join(f"{c}={n}" for c, n in sorted(banked.items()))
+    return (
+        f"{len(banked)} configs, {len(families)} families, runs {sizes}; "
+        f"plan and freeze of {prereg} hold; rates and Wilson intervals recompute"
+    )
+
+
+# ---------------------------------------------------------------- G8
+
+E2_HEADING = re.compile(r"\be2\b|\bmechanisms?\b")
+E3_HEADING = re.compile(r"\be3\b|\bjudges?\b")
 
 
 def g8(ctx: Context) -> str:
     """Mechanisms (E2) and judges (E3) ran and are reported, including null results."""
     root = ctx.clone
-    contradicted = {
-        (str(r.get("run_id")), str(c.get("claim_id")))
-        for r in _e1_runs(root)
-        if r.get("included") is True
-        for c in r.get("claims", [])
-        if c.get("verdict") == "contradicted"
-    }
+    contradicted = set()
+    for run in _e1_runs(root):
+        claims = run.get("claims")
+        if run.get("included") is True and isinstance(claims, list):
+            contradicted |= {
+                (str(run.get("run_id")), str(c.get("claim_id")))
+                for c in claims
+                if isinstance(c, dict) and c.get("verdict") == "contradicted"
+            }
     mech_rel = "artifacts/e2/mechanism.json"
     mech = load_json(root, mech_rel)
     require_provenance(mech_rel, mech)
-    rows = list(mech.get("claims", []))
-    classified = {(str(m.get("run_id")), str(m.get("claim_id"))) for m in rows}
-    require(classified == contradicted, "E2 does not classify exactly the E1 contradicted claims")
+    rows = mech.get("claims")
+    require(
+        isinstance(rows, list) and all(isinstance(m, dict) for m in rows),
+        "E2 mechanism claims malformed",
+    )
+    assert isinstance(rows, list)
+    keys = [(str(m.get("run_id")), str(m.get("claim_id"))) for m in rows]
+    repeated = len(keys) - len(set(keys))
+    require(not repeated, f"E2 classifies {repeated} claim(s) more than once")
+    require(set(keys) == contradicted, "E2 does not classify exactly the E1 contradicted claims")
     require(all(m.get("class") in MECHANISM_CLASSES for m in rows), "E2 has unknown classes")
     judges_rel = "artifacts/e3/judges.json"
     judges = load_json(root, judges_rel)
     require_provenance(judges_rel, judges)
-    configs = list(judges.get("judges", []))
+    configs = judges.get("judges")
+    require(
+        isinstance(configs, list) and all(isinstance(j, dict) for j in configs),
+        "E3 judges malformed",
+    )
+    assert isinstance(configs, list)
+    ids = [j.get("judge_id") for j in configs]
+    require(all(is_text(i) for i in ids), "an E3 judge has no judge_id")
+    require(len(set(ids)) == len(ids), "E3 lists a judge configuration more than once")
     require(len(configs) >= 2, f"E3 has {len(configs)} judge configuration(s) < 2")
     for judge in configs:
-        per_type = dict(judge.get("per_type", {}))
-        require(bool(per_type), f"judge {judge.get('judge_id')} has no per-type results")
+        name = judge["judge_id"]
+        per_type = judge.get("per_type")
+        require(
+            isinstance(per_type, dict) and bool(per_type), f"judge {name} has no per-type results"
+        )
+        assert isinstance(per_type, dict)
+        total = 0
         for counts in per_type.values():
             require(
-                all(isinstance(counts.get(k), int) for k in ("tp", "fp", "fn")),
-                f"judge {judge.get('judge_id')} lacks tp/fp/fn counts",
+                isinstance(counts, dict)
+                and all(is_count(counts.get(k)) for k in ("tp", "fp", "fn"))
+                and (counts.get("tn") is None or is_count(counts.get("tn"))),
+                f"judge {name} lacks tp/fp/fn counts (non-negative integers)",
             )
+            total += sum(int(counts[k]) for k in ("tp", "fp", "fn")) + int(counts.get("tn") or 0)
+        require(total > 0, f"judge {name} judged no claims (every count is 0)")
     report = root / "docs" / "REPORT.md"
     require(report.is_file(), "docs/REPORT.md missing")
-    heads = headings(report.read_text(encoding="utf-8"))
-    require(any("e2" in h or "mechanism" in h for h in heads), "REPORT.md has no E2 section")
-    require(any("e3" in h or "judge" in h for h in heads), "REPORT.md has no E3 section")
+    text = report.read_text(encoding="utf-8")
+    require(has_section(text, E2_HEADING), "REPORT.md has no E2 section")
+    require(has_section(text, E3_HEADING), "REPORT.md has no E3 section")
     mix = Counter(str(m.get("class")) for m in rows)
     return f"E2 classified {len(rows)} claims {dict(mix)}; E3 {len(configs)} judges; reported"
 
 
+# ---------------------------------------------------------------- G9
+
+E4_RESULTS = "artifacts/e4/results.json"
+E4_PLAN = "artifacts/studies/e4/plan.json"
+E4_PREREG = "prereg/0002-e4-mitigation.md"
+HOOK_TRANSCRIPT = "artifacts/hook/demo_transcript.txt"
+INSTALL_HEADING = re.compile(r"\binstall(?:ation|ing)?\b")
+ENTRY_POINT = re.compile(r"([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*):([A-Za-z_]\w*)(?:\.[A-Za-z_]\w*)*")
+
+
+def dig(data: object, *keys: str) -> object:
+    """``data[k1][k2]...``, or None when a key is missing or a level is not an object."""
+    for key in keys:
+        if not isinstance(data, dict):
+            return None
+        data = data.get(key)
+    return data
+
+
+def plan_notes(plan: object, key: str) -> list[str] | None:
+    """A task list a study plan records in its JSON ``notes``, or None."""
+    notes = dig(plan, "notes")
+    try:
+        data = json.loads(notes) if isinstance(notes, str) else None
+    except json.JSONDecodeError:
+        return None
+    value = dig(data, key)
+    return [str(v) for v in value] if isinstance(value, list) else None
+
+
+def e1_task_ids(root: Path) -> set[str]:
+    """Every task E1 used or planned: its rows, its plan's runs, and its plan's E1 split."""
+    tasks = {str(r.get("task_id")) for r in _e1_runs(root)}
+    path = root / E1_PLAN
+    if path.is_file():
+        try:
+            plan = json.loads(path.read_text(encoding="utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise GateError(f"{E1_PLAN} is not valid JSON") from exc
+        runs = dig(plan, "runs")
+        if isinstance(runs, list):
+            tasks |= {str(r.get("task_id")) for r in runs if isinstance(r, dict)}
+        tasks |= set(plan_notes(plan, "e1_tasks") or [])
+    return tasks
+
+
+def check_e4_rate(
+    e4: Mapping[str, Any], mitigation: str, rows: Sequence[Mapping[str, Any]]
+) -> None:
+    """The Z1 rate of one mitigation (runs with a report) recomputes from the rows."""
+    subset = [r for r in rows if r.get("mitigation") == mitigation and r["has_report"] is True]
+    k, n = sum(1 for r in subset if r["z1_false_claim"] is True), len(subset)
+    stat = dig(e4, "outcomes", "Z1", "descriptive", "by_mitigation", mitigation, "wilson")
+    require(isinstance(stat, dict), f"E4 results do not report the Z1 rate of {mitigation}")
+    assert isinstance(stat, dict)
+    counted = stat.get("successes"), stat.get("n")
+    ok = all(is_count(v) for v in counted) and counted == (k, n)
+    if n:
+        low, high = wilson(k, n)
+        ok = ok and close(stat.get("estimate"), k / n)
+        ok = ok and close(stat.get("ci_low"), low) and close(stat.get("ci_high"), high)
+    require(ok, f"E4 Z1 rate of {mitigation} does not recompute from its runs ({k}/{n})")
+
+
+def check_e4(root: Path, e4: Mapping[str, Any]) -> tuple[int, int]:
+    """E4 ran on held-out tasks: its rows are distinct, planned E4 runs, each banked and
+    made by its planned arm's agent; its task list is their tasks, each a benchmark task
+    that is no pilot, never used or planned by E1, and in the planned held-out set; the
+    plan compares at least one mitigation with the no-mitigation arm (``none``), and
+    every planned mitigation ran; the Z1 rates recompute; and a frozen E4
+    preregistration is cited by confirmatory results. Returns ``(tasks, runs)``."""
+    tasks = e4.get("tasks")
+    require(
+        isinstance(tasks, list) and bool(tasks) and all(isinstance(t, str) for t in tasks),
+        "E4 tasks are not a list of task ids",
+    )
+    assert isinstance(tasks, list)
+    rows = e4.get("rows")
+    require(
+        isinstance(rows, list) and bool(rows) and all(isinstance(r, dict) for r in rows),
+        "E4 results carry no per-run rows",
+    )
+    assert isinstance(rows, list)
+    require(all(r.get("synthetic") is False for r in rows), "E4 contains synthetic runs")
+    plan = load_json(root, E4_PLAN)
+    specs = dig(plan, "runs")
+    planned = {
+        str(s.get("run_id")): s
+        for s in (specs if isinstance(specs, list) else [])
+        if isinstance(s, dict)
+    }
+    require(bool(planned), f"{E4_PLAN} has no runs")
+    arms = plan_arms(E4_PLAN, dig(plan, "arms"))
+    unarmed = sorted(rid for rid, s in planned.items() if str(s.get("config_id")) not in arms)
+    require(not unarmed, f"{E4_PLAN} has runs without a planned arm: " + ", ".join(unarmed[:3]))
+    mitigations = sorted({str(s.get("mitigation", "none")) for s in planned.values()})
+    require(
+        "none" in mitigations and len(mitigations) > 1,
+        f"{E4_PLAN} compares no mitigation with the no-mitigation arm (none): it plans "
+        + ", ".join(mitigations),
+    )
+    counts = Counter(str(r.get("run_id")) for r in rows)
+    repeated = sorted(rid for rid, n in counts.items() if n > 1)
+    require(not repeated, f"{len(repeated)} E4 run id(s) repeat: " + ", ".join(repeated[:3]))
+    for row in rows:
+        rid = str(row.get("run_id"))
+        spec = planned.get(rid)
+        require(spec is not None, f"{rid} is not a planned E4 run")
+        assert spec is not None
+        diffs = [
+            k for k in ("task_id", "config_id", "seed", "conditions") if row.get(k) != spec.get(k)
+        ]
+        if row.get("mitigation") != spec.get("mitigation", "none"):
+            diffs.append("mitigation")
+        require(not diffs, f"{rid} differs from its planned run in " + ", ".join(diffs))
+        require(
+            isinstance(row.get("has_report"), bool) and isinstance(row.get("z1_false_claim"), bool),
+            f"{rid} lacks has_report or z1_false_claim",
+        )
+        run = banked_run(root, "e4", row)
+        check_planned_agent(run, arms, str(spec.get("config_id")))
+        drift = [k for k in ("config_id", "seed", "conditions") if run.record.get(k) != row.get(k)]
+        if run.record.get("mitigation", "none") != row.get("mitigation"):
+            drift.append("mitigation")
+        if bool(run.report.strip()) is not row.get("has_report"):
+            drift.append("has_report")
+        require(not drift, f"{rid} differs from its banked run.json in " + ", ".join(drift))
+    ran = {str(r["task_id"]) for r in rows}
+    require(set(tasks) == ran, "E4 tasks differ from the tasks of its runs")
+    bad = sorted(
+        t
+        for t in ran
+        if not SAFE_ID.fullmatch(t)
+        or t.startswith("pilot-")
+        or not (root / "bench" / "tasks" / t / "task.toml").is_file()
+    )
+    require(not bad, "E4 tasks are not held-out benchmark tasks: " + ", ".join(bad[:3]))
+    overlap = sorted(ran & e1_task_ids(root))
+    require(not overlap, "E4 tasks overlap E1 tasks (not held out): " + ", ".join(overlap[:3]))
+    listed = plan_notes(plan, "e4_tasks")
+    held_out = (
+        set(listed) if listed is not None else {str(s.get("task_id")) for s in planned.values()}
+    )
+    require(ran <= held_out, "E4 ran tasks outside its planned held-out set")
+    e1_plan_path = root / E1_PLAN
+    if e1_plan_path.is_file():
+        split = plan_notes(json.loads(e1_plan_path.read_text(encoding="utf-8")), "e4_tasks")
+        require(
+            split is None or ran <= set(split),
+            "E4 tasks are not in the held-out split the E1 plan records",
+        )
+    empty = [m for m in mitigations if not any(r.get("mitigation") == m for r in rows)]
+    require(not empty, "E4 has no runs for mitigation(s): " + ", ".join(empty))
+    for mitigation in mitigations:
+        check_e4_rate(e4, mitigation, rows)
+    frozen = frozen_preregs(root)
+    if E4_PREREG in frozen:
+        cited = e4.get("prereg")
+        require(
+            e4.get("confirmatory") is True
+            and isinstance(cited, str)
+            and cited in frozen
+            and e4.get("prereg_sha256") == frozen[cited],
+            f"{E4_PREREG} is frozen, but the E4 results are not marked confirmatory with a "
+            "frozen preregistration",
+        )
+    return len(ran), len(rows)
+
+
+def top_level_names(source: str) -> set[str]:
+    """The names a module binds at its top level, including in ``if``, ``try``, and
+    ``with`` blocks there."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    names: set[str] = set()
+    todo: list[ast.stmt] = list(tree.body)
+    while todo:
+        node = todo.pop()
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            names |= {n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)}
+        elif isinstance(node, ast.Import | ast.ImportFrom):
+            names |= {(alias.asname or alias.name).split(".")[0] for alias in node.names}
+        elif isinstance(node, ast.If | ast.With):
+            todo.extend(node.body)
+            todo.extend(node.orelse if isinstance(node, ast.If) else [])
+        elif isinstance(node, ast.Try):
+            todo.extend(node.body + node.orelse + node.finalbody)
+            for handler in node.handlers:
+                todo.extend(handler.body)
+    return names
+
+
+def entry_point_problem(root: Path, target: object) -> str | None:
+    """Why a console script's ``module:function`` target does not resolve to a name the
+    committed package source defines, or None when it does."""
+    match = ENTRY_POINT.fullmatch(target.strip()) if isinstance(target, str) else None
+    if match is None:
+        return f"is not module:function ({target!r})"
+    module, attr = match.group(1), match.group(2)
+    stem = module.replace(".", "/")
+    candidates = [f"{base}{stem}{end}" for base in ("src/", "") for end in (".py", "/__init__.py")]
+    present = set(tracked(root, *candidates))
+    found = next((c for c in candidates if c in present), None)
+    if found is None:
+        return f"names module {module}, which is not in the committed source"
+    if attr not in top_level_names((root / found).read_text(encoding="utf-8")):
+        return f"names {attr}, which {found} does not define"
+    return None
+
+
+def demo_script(root: Path, header: str) -> str | None:
+    """The tracked script under tools/ or src/ that a transcript's first line names."""
+    found = re.search(r"generated by (\S+)", header)
+    rel = repo_path(found.group(1)) if found else None
+    if rel is None or not rel.startswith(("tools/", "src/")) or not rel.endswith(".py"):
+        return None
+    return rel if rel in tracked(root, rel) and (root / rel).is_file() else None
+
+
+def check_demo_transcript(ctx: Context) -> tuple[str, float]:
+    """The committed demo transcript is what its generating script prints, run offline in
+    the clone within 30 seconds; returns the script and its run time."""
+    text = committed_text(ctx, HOOK_TRANSCRIPT)
+    require(text is not None, f"{HOOK_TRANSCRIPT} missing")
+    assert text is not None
+    header, _, body = text.partition("\n")
+    script = demo_script(ctx.clone, header)
+    require(
+        script is not None,
+        "demo transcript does not name a tracked generating script under tools/ or src/",
+    )
+    assert script is not None
+    ctx.make("setup", 900)
+    isolation = ctx.isolation()
+    require(
+        isolation is not None,
+        "cannot isolate the network for the hook demo "
+        "(no working unshare -rn, bwrap, sandbox-exec)",
+    )
+    assert isolation is not None
+    method, prefix = isolation
+    demo = ctx.run(
+        "hook-demo",
+        [*prefix, "uv", "run", "--no-sync", "python", script],
+        HOOK_DEMO_LIMIT_S + 60,
+        OFFLINE_ENV,
+    )
+    require(demo.ok, f"{script} failed offline (exit {demo.returncode}, {method})")
+    require(
+        demo.seconds <= HOOK_DEMO_LIMIT_S,
+        f"{script} took {demo.seconds:.1f}s > {HOOK_DEMO_LIMIT_S:.0f}s",
+    )
+    require(
+        demo.stdout in (text, body), f"{script} output differs from the committed demo transcript"
+    )
+    return script, demo.seconds
+
+
 def g9(ctx: Context) -> str:
-    """Mitigation: E4 ran on held-out tasks; receipts-hook packaged, latency, demo transcript."""
+    """Mitigation: E4 ran on held-out tasks; receipts-hook is packaged with install
+    instructions, measured latency, and a scripted 30-second demo transcript."""
     root = ctx.clone
-    e4_rel = "artifacts/e4/results.json"
-    e4 = load_json(root, e4_rel)
-    require_provenance(e4_rel, e4)
-    e1_tasks = {str(r.get("task_id")) for r in _e1_runs(root)}
-    e4_tasks = {str(t) for t in e4.get("tasks", [])}
-    require(bool(e4_tasks), "E4 lists no tasks")
-    require(not (e4_tasks & e1_tasks), "E4 tasks overlap E1 tasks (not held out)")
+    e4 = load_json(root, E4_RESULTS)
+    require_provenance(E4_RESULTS, e4)
+    n_tasks, n_runs = check_e4(root, e4)
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     scripts = pyproject.get("project", {}).get("scripts", {})
     require("receipts-hook" in scripts, "pyproject has no receipts-hook entry point")
+    problem = entry_point_problem(root, scripts["receipts-hook"])
+    require(problem is None, f"the receipts-hook entry point {problem}")
     hook_doc = root / "docs" / "HOOK.md"
     require(
-        hook_doc.is_file() and any("install" in h for h in headings(hook_doc.read_text())),
+        hook_doc.is_file()
+        and has_section(hook_doc.read_text(encoding="utf-8"), INSTALL_HEADING, code=True),
         "docs/HOOK.md with install instructions missing",
     )
     latency = load_json(root, "artifacts/hook/latency.json")
@@ -722,15 +3218,11 @@ def g9(ctx: Context) -> str:
     require(len(samples) >= 20, f"{len(samples)} latency samples < 20")
     median = statistics.median(samples)
     require(median < HOOK_MEDIAN_MAX_S, f"median hook latency {median:.2f}s >= 5s")
-    transcript = root / "artifacts" / "hook" / "demo_transcript.txt"
-    require(transcript.is_file(), "artifacts/hook/demo_transcript.txt missing")
-    header = transcript.read_text(encoding="utf-8").splitlines()[:1]
-    script = re.search(r"generated by (\S+)", header[0]) if header else None
-    require(
-        script is not None and (root / script.group(1)).is_file(),
-        "demo transcript does not name an existing generating script",
+    script, seconds = check_demo_transcript(ctx)
+    return (
+        f"E4 on {n_tasks} held-out tasks ({n_runs} runs); hook packaged; median latency "
+        f"{median:.2f}s; demo transcript reproduces ({script}, {seconds:.1f}s offline)"
     )
-    return f"E4 on {len(e4_tasks)} held-out tasks; hook packaged; median latency {median:.2f}s"
 
 
 def g10(ctx: Context) -> str:
@@ -777,6 +3269,133 @@ def _first_screen(text: str) -> str:
     return "\n".join(text.splitlines()[:60])
 
 
+# ---------------------------------------------------------------- G13
+
+MANIFEST_REL = "artifacts/report/manifest.json"
+MARKER = re.compile(r"<!--n:([A-Za-z0-9_.:-]+)-->(.*?)<!--/n-->", re.S)
+# A displayed interval, as the registry formats it ("[0.18, 0.29]") or in prose.
+INTERVAL_VALUE = re.compile(
+    r"[\[(]\s*[-+]?\d[\d.]*%?\s*[,;]\s*[-+]?\d[\d.]*%?\s*[\])]"
+    r"|[-+]?\d[\d.]*%?\s+to\s+[-+]?\d[\d.]*%?"
+)
+INTERVAL_KEY = re.compile(r"(?i)(?:^|[._-])(?:ci|interval)$")
+LOW_KEY = re.compile(r"(?i)(?:^|[._-])(?:ci[._-]?)?(?:low|lo|lower)$")
+HIGH_KEY = re.compile(r"(?i)(?:^|[._-])(?:ci[._-]?)?(?:high|hi|upper)$")
+IMAGE_MD = re.compile(
+    r"!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+(?:\"[^\"]*\"|'[^']*'|\([^)]*\)))?\s*\)"
+)
+IMAGE_HTML = re.compile(r"<img\b[^>]*?\bsrc\s*=\s*([\"']?)([^\"'\s>]+)\1", re.I)
+LINK_MD = re.compile(r"(?<!!)\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+(?:\"[^\"]*\"|'[^']*'))?\s*\)")
+MERMAID = re.compile(r"(?im)^ {0,3}(?:`{3,}|~{3,})[ \t]*mermaid\b")
+
+
+def text_blocks(text: str, *, rows: bool) -> list[str]:
+    """Paragraphs of the visible Markdown (no code, comments, or headings).
+
+    Tables are not paragraphs; with ``rows`` each table row is a block of its own.
+    """
+    out: list[str] = []
+    current: list[str] = []
+    for line, kind in md_lines(text):
+        table = line.lstrip().startswith("|")
+        if kind != "text" or not line.strip() or table or _heading(line) is not None:
+            if current:
+                out.append("\n".join(current))
+                current = []
+            if kind == "text" and table and rows:
+                out.append(line)
+            continue
+        current.append(line)
+    if current:
+        out.append("\n".join(current))
+    return out
+
+
+def states_interval(block: str) -> bool:
+    """True if ``block`` binds an estimate and its interval to the numbers registry.
+
+    The interval is a bound number whose displayed value is an interval, a bound
+    number keyed as an interval (``...ci``), or a pair of bounds (``...ci_low`` and
+    ``...ci_high``); the estimate is any other bound number.
+    """
+    estimate = interval = low = high = False
+    for key, shown in MARKER.findall(block):
+        if INTERVAL_VALUE.search(shown):
+            interval = True
+            estimate = estimate or re.search(r"\d", INTERVAL_VALUE.sub("", shown)) is not None
+        elif INTERVAL_KEY.search(key):
+            interval = True
+        elif LOW_KEY.search(key):
+            low = True
+        elif HIGH_KEY.search(key):
+            high = True
+        else:
+            estimate = True
+    return estimate and (interval or (low and high))
+
+
+def resolve_link(target: str, base: str) -> str | None:
+    """A link target as a repository path, resolved from directory ``base``; None for
+    URLs, anchors, and paths outside the repository."""
+    if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", target) or target.startswith(("//", "#")):
+        return None
+    target = urllib.parse.unquote(target.split("#", 1)[0].split("?", 1)[0])
+    if not target:
+        return None
+    joined = target.lstrip("/") if target.startswith("/") else posixpath.join(base, target)
+    path = posixpath.normpath(joined)
+    return None if path == ".." or path.startswith("../") else path
+
+
+def image_paths(text: str, base: str) -> list[str]:
+    """Repository paths of the local images in ``text`` (Markdown images and ``<img>``)."""
+    targets = [m.group(1) for m in IMAGE_MD.finditer(text)]
+    targets += [m.group(2) for m in IMAGE_HTML.finditer(text)]
+    return [path for path in (resolve_link(t, base) for t in targets) if path is not None]
+
+
+def link_paths(text: str, base: str) -> list[str]:
+    """Repository paths of the local links in ``text`` (an image inside a link counts as
+    the link's text)."""
+    plain = IMAGE_MD.sub("image", text)
+    found = (resolve_link(m.group(1), base) for m in LINK_MD.finditer(plain))
+    return [path for path in found if path is not None]
+
+
+def manifest_figures(root: Path) -> set[str]:
+    """The figures ``make report`` generated, as listed in its committed manifest."""
+    if not (root / MANIFEST_REL).is_file():
+        return set()
+    data = load_json(root, MANIFEST_REL)
+    figures = data.get("figures", []) if isinstance(data, dict) else []
+    return {posixpath.normpath(str(f)) for f in figures} if isinstance(figures, list) else set()
+
+
+def quickstart_code(readme: str, screen: int = 60) -> str | None:
+    """The first fenced block under a Quickstart heading on the first screen, or None."""
+    lines = md_lines(readme)
+    start = None
+    for index, (line, kind) in enumerate(lines[:screen]):
+        head = _heading(line) if kind == "text" else None
+        if head is not None and "quickstart" in head[1]:
+            start = index
+            break
+    if start is None:
+        return None
+    for index in range(start + 1, min(len(lines), screen)):
+        line, kind = lines[index]
+        if kind == "text" and _heading(line) is not None:
+            return None
+        if kind == "code":
+            block: list[str] = []
+            for code_line, code_kind in lines[index:]:
+                if code_kind != "code":
+                    break
+                block.append(code_line)
+            return "\n".join(block)
+    return None
+
+
 def g13(ctx: Context) -> str:
     """Documentation: README follows section 11, REPORT.md complete, citecheck passes."""
     root = ctx.clone
@@ -784,27 +3403,51 @@ def g13(ctx: Context) -> str:
     brief = (root / "docs" / "BUILD_BRIEF.md").read_text(encoding="utf-8")
     require(readme != brief, "README.md is still the build brief")
     screen = _first_screen(readme)
-    require(re.search(r"^#\s+receipts\b", screen, re.M | re.I) is not None, "no title")
+    titles = [_heading(line) for line, kind in md_lines(screen) if kind == "text"]
     require(
-        "<!--n:" in screen and re.search(r"(?i)\b(CI|interval)\b", screen) is not None,
+        any(
+            head is not None and head[0] == 1 and re.match(r"receipts\b", head[1])
+            for head in titles
+        ),
+        "no title",
+    )
+    require(
+        any(states_interval(block) for block in text_blocks(screen, rows=False)),
         "first screen lacks a bound finding with its interval",
     )
-    figure = re.search(r"!\[[^\]]*\]\(([^)]+\.svg)\)", screen)
-    manifest = root / "artifacts" / "report" / "manifest.json"
-    figures = json.loads(manifest.read_text()).get("figures", []) if manifest.is_file() else []
+    figures = manifest_figures(root)
+    headline = [
+        p for p in image_paths(strip_code(screen), "") if p in figures and (root / p).is_file()
+    ]
+    require(bool(headline), "headline SVG missing or not generated by make report")
     require(
-        figure is not None and (root / figure.group(1)).is_file() and figure.group(1) in figures,
-        "headline SVG missing or not generated by make report",
+        re.search(r"^\|.*\|\s*\n\|\s*:?-{3,}", strip_code(screen), re.M) is not None,
+        "no headline table",
     )
-    require(re.search(r"^\|.*\|\s*\n\|\s*:?-{3,}", screen, re.M) is not None, "no headline table")
+    quickstart = quickstart_code(readme)
+    require(quickstart is not None, "no quickstart on the first screen")
     require(
-        re.search(r"(?i)^#+\s+.*quickstart", screen, re.M) is not None
-        and "```" in screen.split("uickstart", 1)[-1],
-        "no quickstart on the first screen",
+        re.search(r"\bmake\s+demo\b|\btools/demo\.py\b", quickstart or "") is not None,
+        "quickstart does not run make demo (the offline demo)",
     )
     heads = headings(readme)
     missing = [s for s in README_SECTIONS if not any(s in h for h in heads)]
     require(not missing, "README lacks sections: " + ", ".join(missing))
+    results = link_paths(strip_code(section_text(readme, "result")), "")
+    require(
+        any(p.startswith("artifacts/") and (root / p).exists() for p in results),
+        "README key results link to no artifact under artifacts/",
+    )
+    require(
+        any(p.startswith("prereg/") and (root / p).exists() for p in results),
+        "README key results link to no preregistration under prereg/",
+    )
+    how = section_text(readme, "how it works")
+    require(
+        any((root / p).is_file() for p in image_paths(strip_code(how), ""))
+        or MERMAID.search(how) is not None,
+        "README how it works has no diagram",
+    )
     report_path = root / "docs" / "REPORT.md"
     require(report_path.is_file(), "docs/REPORT.md missing")
     report = report_path.read_text(encoding="utf-8")
@@ -812,13 +3455,32 @@ def g13(ctx: Context) -> str:
     require(not missing, "REPORT.md lacks sections: " + ", ".join(missing))
     words = len(re.findall(r"\b\w+\b", strip_code(report)))
     require(REPORT_WORDS[0] <= words <= REPORT_WORDS[1], f"REPORT.md has {words} words")
+    require(
+        any(states_interval(b) for b in text_blocks(section_text(report, "result"), rows=True)),
+        "REPORT.md results state no interval bound to an artifact",
+    )
+    shown = [
+        p for p in image_paths(strip_code(report), "docs") if p in figures and (root / p).is_file()
+    ]
+    require(bool(shown), "REPORT.md shows no figure generated by make report")
     for name, text in (("README.md", readme), ("docs/REPORT.md", report)):
-        require(EM_DASH not in text, f"{name} contains an em dash")
+        require(
+            EM_DASH not in text and EM_DASH_ENTITY.search(text) is None,
+            f"{name} contains an em dash",
+        )
         require(HYPE.search(text) is None, f"{name} uses a hype word")
     ctx.make("setup", 900)
+    rebuilt = ctx.make("reproduce", 600)
+    require(
+        rebuilt.ok and rebuilt.last_line() == "REPRODUCE: PASS",
+        f"make reproduce (figures and numbers rebuilt from artifacts): {rebuilt.last_line()[:60]}",
+    )
     cite = ctx.make("citecheck", 600)
     require(cite.ok, f"make citecheck failed: {cite.last_line()[:80]}")
-    return f"README follows section 11; REPORT.md {words} words; every reference verified"
+    return (
+        f"README follows section 11; REPORT.md {words} words; figures reproduce;"
+        " every reference verified"
+    )
 
 
 def g14(ctx: Context) -> str:
@@ -887,9 +3549,16 @@ def main(argv: Iterable[str] | None = None) -> int:
     tmp = Path(tempfile.mkdtemp(prefix="receipts-ship-check-"))
     logs = tmp / "logs"
     logs.mkdir()
+    # Names only, never values: the caller variables no sub-command saw.
+    _, dropped = scrub_environment(os.environ)
+    (logs / "env-dropped.txt").write_text("".join(f"{n}\n" for n in dropped), encoding="utf-8")
     clone = tmp / "clone"
-    subprocess.run(["git", "clone", "--quiet", str(orig), str(clone)], check=True)
-    subprocess.run(["git", "-C", str(clone), "checkout", "--quiet", "--detach", sha], check=True)
+    subprocess.run(["git", "clone", "--quiet", str(orig), str(clone)], check=True, env=git_env())
+    subprocess.run(
+        ["git", "-C", str(clone), "checkout", "--quiet", "--detach", sha],
+        check=True,
+        env=git_env(),
+    )
     ctx = Context(orig=orig, clone=clone, logs=logs, fast=args.fast, sha=sha, pre=pre)
     results = run_gates(ctx)
     print(f"HEAD {sha} fresh-clone")
