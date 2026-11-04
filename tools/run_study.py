@@ -22,9 +22,10 @@ import subprocess
 import sys
 import threading
 import traceback
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 from receipts.bench.hashing import tree_sha256
 from receipts.bench.spec import TOOLCHAIN_PACKAGES, TOOLCHAIN_PYTHON
@@ -62,6 +63,24 @@ def dirty_files() -> list[str]:
     return sorted(line[3:] for line in out.splitlines() if line.strip())
 
 
+def code_state() -> dict[str, Any]:
+    """Which code this session runs: the working tree, or a snapshot of one commit.
+
+    ``tools/snapshot_code.sh <sha>`` extracts a commit's ``src/`` under
+    ``runs/code/<sha>/`` with a ``SNAPSHOT_OF`` marker; running with ``PYTHONPATH``
+    pointing at it imports that exact code while other work edits the working tree.
+    """
+    import receipts
+
+    src = Path(receipts.__file__).resolve().parents[1]
+    if src == (ROOT / "src").resolve():
+        return {"code": "working tree", "uncommitted_at_start": dirty_files()}
+    marker = src.parent / "SNAPSHOT_OF"
+    if not marker.is_file():
+        raise SystemExit(f"receipts imported from {src}, which is not a recorded snapshot")
+    return {"code": "snapshot", "snapshot_of": marker.read_text(encoding="utf-8").strip()}
+
+
 def pending(plan: Plan, artifacts: Path) -> list[str]:
     """Run ids of the plan that are not banked yet, in execution order."""
     return [r.run_id for r in plan.ordered() if not (artifacts / r.run_id / "run.json").is_file()]
@@ -93,7 +112,7 @@ def one_run(
     state: Path,
     sha: str,
     server: LocalServer,
-    dirty: Sequence[str] = (),
+    code: Mapping[str, Any] | None = None,
 ) -> bool:
     """Execute one run; on an infrastructure failure, log it and return False."""
     task_dir = ROOT / "bench" / "tasks" / spec.task_id
@@ -118,7 +137,7 @@ def one_run(
             extra_provenance={
                 "toolchain_installed": list(toolchain().installed),
                 "task_tree_sha256": tree_sha256(task_dir),
-                "uncommitted_at_start": list(dirty),
+                **dict(code or {}),
             },
         )
     except Exception as exc:  # infrastructure failure: log it, leave the run unbanked
@@ -171,8 +190,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--parallel above 1 needs --engine llama.cpp (continuous batching)")
     if args.limit is not None:
         todo = todo[: args.limit]
-    sha = git_sha()
-    dirty = dirty_files()
+    code = code_state()
+    sha = str(code["snapshot_of"]) if code["code"] == "snapshot" else git_sha()
     specs = {r.run_id: r for r in plan.runs}
     done = 0
     by_model: dict[str, list[str]] = {}
@@ -193,7 +212,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         with server, ThreadPoolExecutor(max_workers=args.parallel) as pool:
             futures = [
-                pool.submit(one_run, plan, specs[r], client, artifacts, state, sha, server, dirty)
+                pool.submit(one_run, plan, specs[r], client, artifacts, state, sha, server, code)
                 for r in run_ids
             ]
             done += sum(1 for f in futures if f.result())
