@@ -145,10 +145,20 @@ def cmd_counts(args: argparse.Namespace, root: Path, command: str) -> int:
 
 
 def cmd_packets(args: argparse.Namespace, root: Path, command: str) -> int:
-    """One writer packet per real run."""
+    """One writer packet per real run.
+
+    Exits 1 (after writing the packets) when a packet's text matches a blindness rule,
+    since the scan would void the writer who reads it.
+    """
     runs = Path(args.runs) if args.runs else root / e0.SMOKE_RUNS
     index = e0.write_writer_packets(root, runs, Path(args.out), command=command)
-    return _written(Path(args.out) / "index.json", root, f"{len(index['packets'])} packets")
+    for flag in index["flagged"]:
+        print(
+            f"{flag['run_id']}: its packet matches the blindness rule {flag['rule']!r} "
+            f"({flag['fragment']!r}); the scan voids a writer who reads it"
+        )
+    _written(Path(args.out) / "index.json", root, f"{len(index['packets'])} packets")
+    return 1 if index["flagged"] else 0
 
 
 def _report(problems: Sequence[str], files: int, what: str) -> int:

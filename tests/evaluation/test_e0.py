@@ -882,6 +882,27 @@ def test_writer_packets_hold_the_fact_sheet_types_and_examples_only(
         assert "Final report" not in text
 
 
+def test_writer_packets_flag_an_example_that_would_void_its_writer(
+    git_repo: Path, commit: Commit
+) -> None:
+    runs = make_world(git_repo)
+    # A synthetic example report that names a claims directory: any writer packet that
+    # shows it as a phrasing example would void the writer who reads it.
+    write_run(runs, "r6", "Moved the checks into `app/claims/rules.py`.")
+    commit(git_repo, "world")
+    out = git_repo / "wp"
+    index = e0.write_writer_packets(git_repo, runs, out, command="synthetic packets")
+    flagged = {flag["run_id"]: flag for flag in index["flagged"]}
+    showing = {e["run_id"] for e in index["packets"] if "r6" in e["examples"]}
+    assert showing and set(flagged) == showing
+    for flag in flagged.values():
+        assert flag["rule"] == "directory" and "app/claims/rules.py" in flag["fragment"]
+    clean = git_repo / "wp-clean"
+    write_run(runs, "r6", "Moved the checks into a new module.")
+    commit(git_repo, "clean world")
+    assert e0.write_writer_packets(git_repo, runs, clean, command="c")["flagged"] == []
+
+
 def test_writer_packets_need_three_examples(git_repo: Path, commit: Commit) -> None:
     runs = git_repo / "runs"
     make_world(git_repo)

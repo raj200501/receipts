@@ -200,7 +200,11 @@ output, no verifier output, and no code, and tells the writer to create its outp
 with its file-writing tool rather than a shell command. `index.json` lists per run the
 packet file, its SHA-256, the number of fact lines, the SHA-256 of the numbered fact
 sheet, the SHA-256 of the ledger it was built from (`ledger_sha256`), and the example run
-ids.
+ids; `flagged` lists every packet whose text matches a blindness violation rule (for
+example an example report that names a `claims` directory), and the step then exits 1,
+since the scan would void a writer who reads it. The style rule asks for the voice of the
+examples (tone, phrasing, structure) but lets a report run longer, about 6 to 12
+checkable statements, so each report covers more of its run (DECISIONS D40).
 
 **Writer output** is one JSON file per report:
 
