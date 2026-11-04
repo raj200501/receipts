@@ -82,7 +82,14 @@ Subagent use: none yet.
 
 ## Blocked
 
-Nothing yet.
+- 2026-11-04 about 03:55 UTC: every subagent stopped with "You've hit your weekly limit,
+  resets 7am (UTC)". Per section 8, no new model work started until the reset. At 07:10
+  UTC Raj said "try again": the stopped workflows (claims and bench fixes, harness
+  verification, task authoring) resumed from their journals, with bulk roles (task
+  authors, reviewers, finding verifiers) on Sonnet to spread plan usage. The local-model
+  pilot, killed by the worker restart, restarted from a snapshot of 71db6e6 (it uses no
+  plan usage). The E0-tooling and analysis-pipeline builds wait until the claims fix
+  lands.
 
 ## Backlog (suggestions for Raj, not ladder rungs)
 
