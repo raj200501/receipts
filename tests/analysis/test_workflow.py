@@ -53,7 +53,8 @@ def synthetic_run_records(seed: int, n_tasks: int, replicates: int) -> list[dict
 
     The 16 half-fraction cells times ``replicates``, identical work in every arm.
     False success follows a random-intercept logistic model with the parameters above;
-    a run without a report has no claims and no success report.
+    a run without a report has no claims and no success report. Every record carries
+    ``synthetic: True``.
     """
     rng = np.random.default_rng(seed)
     task_effect = rng.normal(0.0, 0.8, n_tasks)
@@ -90,6 +91,7 @@ def synthetic_run_records(seed: int, n_tasks: int, replicates: int) -> list[dict
                     if reported
                     else [],
                     "omissions": 0,
+                    "synthetic": True,
                 }
             )
     return records
@@ -98,11 +100,10 @@ def synthetic_run_records(seed: int, n_tasks: int, replicates: int) -> list[dict
 def synthetic_e1(seed: int, n_tasks: int, replicates: int) -> list[dict[str, Any]]:
     """SYNTHETIC rows in the shape of ``artifacts/e1/runs.jsonl``, built by ``e1_rows``.
 
-    ``e1_rows`` serves banked agent runs and so labels every row ``synthetic: False``;
-    these rows are generated here, so the label is set back to True.
+    ``e1_rows`` copies each run record's ``synthetic`` flag, so every row says it is
+    synthetic (the test checks this after the JSONL round trip).
     """
-    rows = e1_rows(synthetic_run_records(seed, n_tasks, replicates))
-    return [{**row, "synthetic": True} for row in rows]
+    return e1_rows(synthetic_run_records(seed, n_tasks, replicates))
 
 
 def test_package_exports_resolve() -> None:
