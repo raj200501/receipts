@@ -1,0 +1,407 @@
+{
+  "arms": [
+    {
+      "agent": {
+        "backend": "local",
+        "context_chars": 40000,
+        "flakiness_rate": 0.0,
+        "flakiness_seed": 0,
+        "flaky_tools": [
+          "bash",
+          "run_tests"
+        ],
+        "kind": "local_call",
+        "label_events": false,
+        "max_report_revisions": 1,
+        "max_turns": 25,
+        "model": "qwen2.5-coder-7b-instruct-q4km",
+        "params": {
+          "max_tokens": 768,
+          "temperature": 0.3
+        },
+        "purpose": "minimal-agent qwen2.5-coder-7b-instruct-q4km",
+        "system_suffix": "",
+        "truncation": {
+          "max_lines": null,
+          "tools": [
+            "bash",
+            "run_tests"
+          ]
+        }
+      },
+      "config_id": "ma-qwen7b",
+      "driver": "minimal-agent",
+      "family": "qwen",
+      "model": "qwen2.5-coder-7b-instruct-q4km"
+    }
+  ],
+  "notes": "smoke runs: no manipulation",
+  "runs": [
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-pilot-py-bizdays-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "pilot-py-bizdays"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-pilot-py-timesheet-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "pilot-py-timesheet"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-pilot-ts-feedsync-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "pilot-ts-feedsync"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-pilot-ts-gradebook-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "pilot-ts-gradebook"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-api-docs-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-api-docs"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-atomic-store-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-atomic-store"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-ci-workflow-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-ci-workflow"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-cli-json-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-cli-json"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-config-env-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-config-env"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-csv-summary-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-csv-summary"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-date-range-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-date-range"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-email-tests-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-email-tests"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-inventory-refactor-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-inventory-refactor"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-log-parse-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-log-parse"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-lru-ttl-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-lru-ttl"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-md-toc-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-md-toc"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-money-round-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-money-round"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-rate-limiter-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-rate-limiter"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-retry-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-retry"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-slugify-tests-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-slugify-tests"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-units-refactor-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-units-refactor"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-vendored-semver-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-vendored-semver"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-ci-workflow-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-ci-workflow"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-cli-docs-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-cli-docs"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-color-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-color"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-csv-parse-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-csv-parse"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-debounce-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-debounce"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-emitter-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-emitter"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-env-config-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-env-config"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-inventory-api-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-inventory-api"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-matrix-refactor-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-matrix-refactor"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-money-format-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-money-format"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-paginate-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-paginate"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-parser-tests-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-parser-tests"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-query-string-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-query-string"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-route-match-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-route-match"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-semver-compare-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-semver-compare"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-state-machine-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-state-machine"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-todo-tags-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-todo-tags"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-ts-vendored-dates-ma-qwen7b",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "ts-vendored-dates"
+    }
+  ],
+  "schema": "receipts.study-plan/1",
+  "study": "smoke",
+  "text": {
+    "flaky_rate": 0.0,
+    "pressure_suffix": ""
+  }
+}
