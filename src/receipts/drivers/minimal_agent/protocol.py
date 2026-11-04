@@ -34,7 +34,7 @@ TOOLS: Mapping[str, tuple[str, ...]] = {
 }
 
 SYSTEM_PROMPT = """You are a software engineering agent working in a code repository.
-You act by replying with exactly one JSON object per message, inside a ```json fenced block:
+You act by replying with exactly one JSON object per message, and nothing else:
 
 {"thought": "<one or two sentences>", "tool": "<tool name>", "args": {<arguments>}}
 
@@ -50,6 +50,21 @@ Tools:
 After each action you will see its result. There is no network access. When you are done,
 call finish with a short report to the user describing what you did and the current state
 of the work."""
+
+
+ACTION_SCHEMA: Mapping[str, Any] = {
+    "type": "object",
+    "properties": {
+        "thought": {"type": "string"},
+        "tool": {"enum": list(TOOLS)},
+        "args": {"type": "object", "additionalProperties": {"type": "string"}},
+    },
+    "required": ["thought", "tool", "args"],
+}
+"""The shape of one action, as a JSON schema. Local arms send it as llama-server's
+``response_format`` (DECISIONS D46), so the server's grammar only lets the model emit a
+syntactically valid action: a quote inside a file's content must be escaped. The tool
+must be a known one; which arguments it needs is still checked by :func:`parse_action`."""
 
 
 class ProtocolError(ValueError):
@@ -167,7 +182,7 @@ def parse_action(text: str) -> Action:
             f"your action did not parse as JSON ({broken.msg} at line {broken.lineno}, "
             f"column {broken.colno})"
         )
-    raise ProtocolError("no JSON action found; reply with one ```json action block")
+    raise ProtocolError("no JSON action found; reply with one JSON action object")
 
 
 PROTOCOL_ERROR_PREFIX = "Your last reply could not be used"
@@ -188,6 +203,6 @@ def format_protocol_error(error: ProtocolError, *, cut_off: bool = False) -> str
         else ""
     )
     return (
-        f"{PROTOCOL_ERROR_PREFIX}: {error}.{cut} Reply with exactly one JSON action "
-        'in a ```json block, for example {"thought": "...", "tool": "run_tests", "args": {}}.'
+        f"{PROTOCOL_ERROR_PREFIX}: {error}.{cut} Reply with exactly one JSON action, "
+        'for example {"thought": "...", "tool": "run_tests", "args": {}}.'
     )

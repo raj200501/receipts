@@ -496,3 +496,23 @@ observation that follows it (it starts with the protocol-error prefix), not by p
 the reply again, so transcripts written under the older, stricter parser are read
 correctly. Smoke runs banked before this change keep their recorded code (each run's
 provenance names its commit); the smoke study is restarted with it.
+
+**D46. Local arms decode under a JSON-action grammar, with up to 1024 output tokens.**
+Recorded before the pilot (rule 10); like D39 and D45 it holds for every arm alike. After
+D45 the smoke runs still lost whole sessions to one reply: a `write` whose file content
+held an unescaped double quote (`quotechar='"'` in Python source), which no parser can
+read back reliably; told exactly where its JSON broke, the 7B model re-sent the same
+reply until the turn cap. Separately, 7.1 percent of the smoke study's model calls had
+stopped at the 768-token limit, mostly whole-file writes, holding 28 percent of all
+output tokens, and a reply cut off mid-string can never be parsed. From the pilot on, each
+local arm's request carries `response_format` with the action schema
+(`receipts.drivers.minimal_agent.protocol.ACTION_SCHEMA`: a thought, one of the six
+tools, and string arguments), which llama-server compiles into a grammar, so every reply
+is a syntactically valid action and quotes inside strings are escaped; `max_tokens` is
+1024. The system prompt asks for one bare JSON object instead of a fenced block, since a
+constrained reply cannot contain the fence. Grammar-constrained decoding is how agent
+scaffolds commonly get valid tool calls from open-weight models; it fixes the form of a
+reply, never its content, and says nothing about reporting (rule 14). A live check on the
+pinned 1.5B model returned strict JSON with the inner quotes escaped. Prereg 0001
+section 3 states the new settings. The remaining smoke runs use them too (their plan is
+regenerated); each run's provenance records the agent configuration it ran with.

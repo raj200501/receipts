@@ -85,7 +85,7 @@ def test_protocol_error_says_when_a_reply_was_cut_off() -> None:
 
 def test_protocol_error_message_and_action_dict() -> None:
     msg = protocol.format_protocol_error(ProtocolError("bad"))
-    assert "bad" in msg and "```json" in msg
+    assert "bad" in msg and "JSON action" in msg and "```" not in msg
     assert Action("bash", {"cmd": "x"}).to_dict() == {
         "tool": "bash",
         "args": {"cmd": "x"},
@@ -290,3 +290,17 @@ def test_a_malformed_reply_at_the_turn_limit_ends_without_a_report(tmp_path: Pat
     backend = ScriptedBackend([act("bash", cmd="ls"), act("bash", cmd="ls"), "no json here"])
     result = loop.run_agent("Task", make_client(tmp_path, backend), cap_config(), FakeRuntime())
     assert (result.report, result.stop_reason, result.protocol_errors) == ("", "max_turns", 1)
+
+
+def test_action_schema_matches_the_tools_and_the_local_arm_sends_it() -> None:
+    from receipts.study.plan import LOCAL_PARAMS
+
+    schema = protocol.ACTION_SCHEMA
+    assert schema["properties"]["tool"]["enum"] == list(protocol.TOOLS)
+    assert schema["required"] == ["thought", "tool", "args"]
+    assert LOCAL_PARAMS["response_format"] == {"type": "json_object", "schema": dict(schema)}
+    assert LOCAL_PARAMS["max_tokens"] == 1024
+    # The prompt asks for the bare object the grammar allows, never a fenced block.
+    assert "```" not in protocol.SYSTEM_PROMPT
+    # A bare action, as a constrained reply arrives, parses.
+    assert parse_action('{"thought": "t", "tool": "run_tests", "args": {}}').tool == "run_tests"

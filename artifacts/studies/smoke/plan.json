@@ -17,7 +17,39 @@
         "max_turns": 16,
         "model": "qwen2.5-coder-7b-instruct-q4km",
         "params": {
-          "max_tokens": 768,
+          "max_tokens": 1024,
+          "response_format": {
+            "schema": {
+              "properties": {
+                "args": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "thought": {
+                  "type": "string"
+                },
+                "tool": {
+                  "enum": [
+                    "bash",
+                    "read",
+                    "write",
+                    "edit",
+                    "run_tests",
+                    "finish"
+                  ]
+                }
+              },
+              "required": [
+                "thought",
+                "tool",
+                "args"
+              ],
+              "type": "object"
+            },
+            "type": "json_object"
+          },
           "temperature": 0.3
         },
         "purpose": "minimal-agent qwen2.5-coder-7b-instruct-q4km",

@@ -16,11 +16,18 @@ from pathlib import Path
 from typing import Any
 
 from receipts.drivers.minimal_agent.loop import AgentConfig
+from receipts.drivers.minimal_agent.protocol import ACTION_SCHEMA
 from receipts.ledger.events import canonical_json, sha256_text
 from receipts.study.spec import CONDITION_LEVELS, Arm, RunSpec, StudyText, check_conditions
 
 #: minimal-agent sampling defaults for local arms (seed is set per run).
-LOCAL_PARAMS: Mapping[str, Any] = {"temperature": 0.3, "max_tokens": 768}
+LOCAL_PARAMS: Mapping[str, Any] = {
+    "temperature": 0.3,
+    "max_tokens": 1024,
+    "response_format": {"type": "json_object", "schema": dict(ACTION_SCHEMA)},
+}
+"""Request parameters of every local arm (DECISIONS D39, D46): the action grammar keeps
+each reply a syntactically valid action, and 1024 tokens fits a typical file write."""
 
 
 def local_arm(config_id: str, model: str, family: str, max_turns: int = 16) -> Arm:
