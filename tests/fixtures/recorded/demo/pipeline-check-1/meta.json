@@ -1,0 +1,10 @@
+{
+  "agent": "minimal-agent",
+  "config_id": "ma-qwen1.5b",
+  "ledger_sha256": "72c4d26c7b532547968af76e83f3d17cd2820692be5026a49e4fc55ce272139f",
+  "model": "qwen2.5-coder-1.5b-instruct-q4km",
+  "note": "copied from a real banked run by tools/record_demo.py; not synthetic",
+  "recorded_from": "artifacts/studies/pipeline-check/runs/pipeline-check-1 (run at 8c08701cb1ec)",
+  "run_id": "pipeline-check-1",
+  "task_id": "pilot-py-timesheet"
+}

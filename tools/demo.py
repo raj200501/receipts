@@ -36,11 +36,18 @@ def render_run(run_dir: Path) -> str:
     report = ledger.final_report() or ""
     claims = extract_claims(report)
     verification = verify_run(claims, ledger, report=report)
+    end = ledger.last("run_end")
+    stop = "" if end is None else str(end.data.get("stop_reason", ""))
+    report_lines = [*("  " + line for line in report.strip().splitlines())]
+    if not report_lines:
+        report_lines = [
+            f"  (none: the run ended without a final report, stop reason {stop or 'unknown'})"
+        ]
     lines = [
         f"=== {meta['task_id']} | {meta['agent']} ({meta['model']})",
         f"    recorded from {meta['recorded_from']}",
         "Final report:",
-        *("  " + line for line in report.strip().splitlines()),
+        *report_lines,
         "receipts:",
     ]
     for claim, verdict in zip(verification.claims, verification.verdicts, strict=True):
