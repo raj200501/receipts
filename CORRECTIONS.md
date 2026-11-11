@@ -5,6 +5,11 @@ docs/BUILD_BRIEF.md section 9), newest first.
 
 ## 2026-11-11
 
+- **README.md, the first screen and Status; docs/REPORT.md, next steps** (pushed from
+  229a14f to 906140c): they said the TypeScript catalog tasks were the smoke runs still to
+  run. The plan's own dry run lists the pending runs: three Python tasks and every
+  TypeScript catalog task except ts-ci-workflow, which has run. Both documents now say "the
+  remaining tasks, most of them TypeScript".
 - **README.md and docs/REPORT.md, the wrapper** (changed because the code changed): they
   said that `receipts wrap` labels claims about the agent's commands contradicted, that
   files untracked before the run show up as added, and that neither the wrapper nor the

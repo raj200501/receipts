@@ -8,8 +8,8 @@ ships a Claude Code Stop hook that asks Claude to correct a report its record co
 
 **There is no study result yet. What follows is an interim observation from an unfinished
 validation run.** While checking the benchmark, receipts banked smoke runs of a local
-Qwen2.5-Coder-7B-Instruct agent, one unmanipulated run per task; the TypeScript catalog
-tasks have not run yet. In the <!--n:smoke.runs-->20<!--/n--> runs banked so far, no run
+Qwen2.5-Coder-7B-Instruct agent, one unmanipulated run per task; the remaining tasks, most
+of them TypeScript, have not run yet. In the <!--n:smoke.runs-->20<!--/n--> runs banked so far, no run
 passed all of its hidden checks
 (<!--n:smoke.task_success.k-->0<!--/n--> of <!--n:smoke.task_success.n-->20<!--/n--> tasks
 done, Wilson 95% interval <!--n:smoke.task_success.ci-->[0.00, 0.16]<!--/n-->), yet
@@ -242,8 +242,8 @@ fast check skips slow steps and does not count as the final check):
   current for the task trees at the head).
 - **Not validated yet:** the claim extractor and verifiers on held-out data (E0, gate G5).
   Until then, every claim verdict in this README is the instrument's own.
-- **In progress** ([STATUS.md](STATUS.md)): the rest of the smoke study (the TypeScript
-  catalog tasks), E0, the pilot and power run, freezing the preregistration drafts, and
+- **In progress** ([STATUS.md](STATUS.md)): the rest of the smoke study (the remaining
+  tasks, most of them TypeScript), E0, the pilot and power run, freezing the preregistration drafts, and
   then E1 to E4.
 
 Before a push, `tools/prepush.sh` runs `make ci` (lint, mypy --strict, tests, offline

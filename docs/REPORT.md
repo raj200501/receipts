@@ -614,7 +614,8 @@ re-verification at banking for the confirmatory studies (D42, D47), and the gate
 1. Review the integrated pre-freeze work independently (re-verification at banking, the E1
    and E4 rows, E3 sampling, the gate changes), close its open items (STATUS.md), and record
    a hook demo run that blocks on its live ledger.
-2. Finish the smoke study (TypeScript catalog tasks next), then run the E0 labelers, writers,
+2. Finish the smoke study (the remaining tasks, most of them TypeScript), then run the E0
+   labelers, writers,
    and adjudicators, the split, and the held-out evaluation.
 3. Run the pilot and the power run, write the plans, fill the TO FIX BEFORE FREEZE fields,
    obtain a review, and freeze the E1, E3, and E4 preregistrations.

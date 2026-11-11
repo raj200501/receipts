@@ -60,7 +60,8 @@ freeze and runs, E2 to E4, then an independent review. CAP_SHARE stays 0.2.
   canary string; no file the agent sees does, so the banked smoke runs stay valid runs of
   the same task. The reference validation, banked again from the canary commit 85f9b92 with
   a clean `bench/` tree, finds every task valid.
-- **Smoke study restart (D53).** The remaining runs (the TypeScript catalog tasks) run from
+- **Smoke study restart (D53).** The remaining runs (three Python tasks and the TypeScript
+  catalog tasks other than ts-ci-workflow) run from
   a snapshot of the commit that banks the validation, with the earlier arm and server
   settings; nothing in the agent scaffold changed since the earlier runs.
 
@@ -79,7 +80,8 @@ freeze and runs, E2 to E4, then an independent review. CAP_SHARE stays 0.2.
    `prereg.py freeze` refusing unparsable machine-readable lines; E4 banking-code list;
    the E3 failure log, shared-text stratum, and condition 8; the none and hook arms
    sharing a response cache key; snapshot contents checked against their commit.
-2. Finish the smoke study (the 20 `ts-*` runs left), bank `smoke_runs.json` (G6), run the
+2. Finish the smoke study (the runs still pending, most of them TypeScript), bank
+   `smoke_runs.json` (G6), run the
    E0 labelers, writers, and adjudicators (D40, D43), and score the held-out split (G5).
 3. Pilot, power run, E1/E4 plans, fill the TO FIX fields, review, freeze 0001 to 0003, and
    launch E1 from the freeze-commit snapshot (`runs/launch-study.sh` semantics).
