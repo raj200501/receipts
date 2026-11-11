@@ -12692,7 +12692,7 @@ index 0000000..2d19bac
 +    assert "decision: block" in first
 +    assert "stop_hook_active: true" in first
 +    assert str(ROOT) not in first
-+    assert "—" not in first
++    assert "\N{EM DASH}" not in first
 diff --git a/tests/repo_tools/test_make_plans.py b/tests/repo_tools/test_make_plans.py
 new file mode 100644
 index 0000000..1002a9a
