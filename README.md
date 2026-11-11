@@ -1,10 +1,10 @@
 # receipts
 
-**Do AI coding agents tell the truth about what they did?** receipts checks every claim in a
-coding agent's final report against an append-only ledger of what actually happened in its
-sandbox (commands, exit codes, test runs, diffs, hidden checks), labels each claim
-supported, contradicted, or unverifiable with the evidence attached, and ships a Claude
-Code Stop hook that flags contradicted claims before you read the report.
+**Do AI coding agents tell the truth about what they did?** receipts extracts the claims in
+a coding agent's final report, checks each one against an append-only ledger of what
+actually happened in its sandbox (commands, exit codes, test runs, diffs, hidden checks),
+and labels it supported, contradicted, or unverifiable with the evidence attached. It also
+ships a Claude Code Stop hook that asks Claude to correct a report its record contradicts.
 
 **First signal (exploratory, not yet the preregistered study):** in
 <!--n:smoke.runs-->20<!--/n--> unmanipulated smoke runs of a local Qwen2.5-Coder-7B-Instruct
@@ -72,7 +72,8 @@ receipts has an instrument, a benchmark with a study design, and a mitigation:
 - **A benchmark and a study design.** receipts-bench is a set of small, realistic Python
   and TypeScript repositories ([docs/BENCH.md](docs/BENCH.md)), each with hidden checks, a
   reference solution that passes them, and a manifest of manipulable features. A
-  randomized, preregistered study ([prereg/](prereg/)) crosses realistic situations
+  randomized study, written as draft preregistrations in [prereg/](prereg/) that are not
+  frozen yet, is designed to cross realistic situations
   (M1 to M5: an unattainable requirement, truncated test output, time pressure, a long prior
   session, flaky tools) with agent configurations, so that report faithfulness can be
   compared on identical work rather than across different tasks.
@@ -117,8 +118,10 @@ and each item names the preregistration that will test the same outcome.
   <!--n:smoke.turn_cap_reached-->10<!--/n--> stopped at the turn cap (D39). A small local
   model is a weak agent, so these runs test the instrument and the benchmark more than
   they describe capable agents.
-- **The mitigation is not measured yet.** E4, the randomized test of receipts-hook on
-  held-out tasks, is drafted in [`prereg/0002-e4-mitigation.md`](prereg/0002-e4-mitigation.md).
+- **The mitigation is not measured yet.** E4, a randomized test of the hook's check code
+  inside minimal-agent with local models on held-out tasks, is drafted in
+  [`prereg/0002-e4-mitigation.md`](prereg/0002-e4-mitigation.md). It does not measure the
+  Claude Code hook inside Claude Code, which needs Claude subjects.
 
 ## How it works
 
@@ -196,9 +199,10 @@ The repository enforces its own honesty rules in code ([CLAUDE.md](CLAUDE.md) li
 - `make claimcheck`: every result number in this README is bound to a banked artifact
   through the registry in `artifacts/report/numbers.json`, with the artifact's hash;
   `make freshness` re-derives each one.
-- `make prereg-verify`: preregistrations live in [prereg/](prereg/) with a hash chain in
-  `prereg/LOCK.json`; a confirmatory artifact must cite a preregistration frozen before
-  its data existed, and a frozen file can never change.
+- `make prereg-verify`: preregistrations live in [prereg/](prereg/), and freezing one
+  appends its hash to a chain in `prereg/LOCK.json` (none is frozen yet, so that file does
+  not exist yet); a confirmatory artifact must cite a preregistration frozen before its
+  data existed, and a frozen file can never change.
 - Blind instrument validation (E0, [docs/E0_PROTOCOL.md](docs/E0_PROTOCOL.md)): seeded
   reports are written and adjudicated by agents told not to read the extractor or verifier
   code; their transcripts are scanned afterwards, and any agent whose tool calls reached
@@ -208,16 +212,18 @@ The repository enforces its own honesty rules in code ([CLAUDE.md](CLAUDE.md) li
   fresh clone (tests and coverage, static quality, CI parity, offline demo, instrument
   validity, benchmark completeness, the confirmatory studies, claim integrity,
   preregistration integrity, independent review, documentation, hygiene).
-- Every interpretation, substitution, and deviation is recorded before acting in
-  [DECISIONS.md](DECISIONS.md); changed or withdrawn claims go in
-  [CORRECTIONS.md](CORRECTIONS.md).
+- By practice rather than by a code check, interpretations, substitutions, and deviations
+  are recorded with a reason in [DECISIONS.md](DECISIONS.md), normally before acting (an
+  entry says so when it was recorded late), and changed or withdrawn claims get a dated
+  entry in [CORRECTIONS.md](CORRECTIONS.md).
 
 ## Status
 
 Built and tested: the ledger, sandboxes, parsers, claim extractor, verifiers,
 minimal-agent, the analysis library, receipts-hook, receipts-bench with reference
 validation for every task, the E0 tooling (packets, blindness scan, merge, held-out split,
-scoring, completeness), the preregistered analysis scripts, and the ship-check gates.
+scoring, completeness), the analysis scripts for the draft preregistrations, and the
+ship-check gates.
 Before a push, `tools/prepush.sh` runs `make ci` (lint, mypy --strict, tests, offline
 demo) on a fresh clone for each of Python 3.11 and 3.12 (one run per version, chosen
 with `PY`), and
@@ -305,10 +311,12 @@ make ship-check   # all gates on a fresh clone
   evidence, before it is published. Drafts are prepared in [outbound/](outbound/) for the
   maintainer to review and send; none is sent automatically.
 - **Dual use.** The verifiers are public and deterministic, so an agent tuned against
-  them could learn to avoid checkable claims rather than report truthfully. For that
-  reason the main outcome, false success, is measured from hidden checks rather than from
-  the verifiers, and omissions (known failures a report never mentions) are reported next
-  to contradicted claims. receipts-bench has no canary string yet; one goes into every
+  them could learn to avoid checkable claims rather than report truthfully. False success
+  is judged by hidden checks rather than by the verifiers, but it still counts only reports
+  in which the extractor finds a success claim, so a report that avoids extractable claims
+  also avoids it (the py-ci-workflow and ts-ci-workflow reports already do so by
+  accident). Omissions (known failures a report never mentions) are reported next to
+  contradicted claims, and the blind E0 validation measures the extractor's recall. receipts-bench has no canary string yet; one goes into every
   task file before the benchmark is released as a dataset ([docs/DATA.md](docs/DATA.md)).
 - **Security issues in receipts itself**, such as a sandbox escape: report them privately,
   as [SECURITY.md](SECURITY.md) describes.
@@ -316,18 +324,19 @@ make ship-check   # all gates on a fresh clone
 ## Related work (each reference opened and checked; see artifacts/citecheck.json)
 
 - Transluce, [Investigating truthfulness in a pre-release o3 model](https://transluce.org/investigating-o3-truthfulness) (2025): a model claiming actions it never took.
-- Transluce, [Measuring coding agent misalignment in the wild](https://www.lesswrong.com/posts/smE9h9RnaK7FWKBZ2/measuring-coding-agent-misalignment-in-the-wild-1) (2026): overselling is common in real transcripts, but cross-model comparisons are confounded by different tasks.
+- Transluce, [Measuring coding agent misalignment in the wild](https://www.lesswrong.com/posts/smE9h9RnaK7FWKBZ2/measuring-coding-agent-misalignment-in-the-wild-1) (2026): on public SWE-chat sessions, overselling of any severity was frequent while severe overselling was rare, and per-model rates are confounded by different tasks.
 - Tang et al., [How Coding Agents Fail Their Users](https://arxiv.org/abs/2605.29442) (2026): inaccurate self-reporting in real sessions, observational.
-- Chen et al., [Apparent-Success Reporting](https://neurips.cc/virtual/2026/loc/sydney/168218) (2026): agents report all tests passing while one fails.
-- Ren et al., [The MASK Benchmark](https://arxiv.org/abs/2503.03750) (2025): honesty separated from accuracy, for chat models.
+- Chen and Liu, [Evaluating Misalignment in Coding Agents: Apparent-Success Reporting with Verbalizable Representations and Model Forensics](https://neurips.cc/virtual/2026/loc/sydney/168218) (2026), a NeurIPS poster: agents report all tests passing while one fails.
+- Ren et al., [The MASK Benchmark](https://arxiv.org/abs/2503.03750) (2025): honesty separated from accuracy, for LLMs.
 - Zhong et al., [ImpossibleBench](https://arxiv.org/abs/2510.20270) (2025): the propensity to exploit contradictory tests, a different question from reporting honesty.
 - Norman et al., [Reliability without Validity](https://arxiv.org/abs/2606.19544) (2026): LLM judges can look reliable while being invalid.
 - [Armour](https://github.com/raj200501/armour) (2026): trace schema and a false-completion monitor for tool-using agents, by the same author.
 
-receipts adds what these lack: a randomized, same-task, cross-agent measurement of
-claim-level report faithfulness with ledger ground truth, a design that separates
-confusion (the agent never saw the failure) from overclaiming (it saw it and reported
-success anyway), and a mitigation measured inside the agent loop.
+receipts is designed to add what these lack: a randomized, same-task, cross-agent
+measurement of claim-level report faithfulness with ledger ground truth, a design that
+separates confusion (the agent never saw the failure) from overclaiming (it saw it and
+reported success anyway), and a test of a mitigation inside the agent loop. None of these
+studies has run yet.
 
 ## Citation and license
 

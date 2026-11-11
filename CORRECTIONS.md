@@ -5,6 +5,17 @@ docs/BUILD_BRIEF.md section 9), newest first.
 
 ## 2026-11-11
 
+- **README.md and docs/REPORT.md, status and scope wording** (pushed up to d2aa9ea): they
+  called the study and its analysis scripts "preregistered" (the preregistrations are
+  unfrozen drafts and `prereg/LOCK.json` does not exist yet), said receipts "checks every
+  claim" (only the claims its extractor finds) and "adds" a cross-agent measurement and a
+  mitigation (designed, not yet run), described E4 as a test of receipts-hook (it tests
+  the hook's check code inside minimal-agent, not the Claude Code hook), presented false
+  success as safe from claim avoidance (it still depends on extraction), stated a
+  universal before-acting rule for DECISIONS.md (one entry was recorded late), and
+  summarized two related-work sources more strongly than their banked checks support
+  (overselling "common"; MASK "for chat models"). docs/REPORT.md also said CORRECTIONS.md
+  had no entries and that no draft covered E3. All corrected.
 - **README.md and docs/REPORT.md, the first signal** (pushed from a7067e9 to 035bf29): they
   presented "no extracted claim was contradicted" in most false successes as evidence that
   reports check out claim by claim while being wrong about the outcome, and README.md

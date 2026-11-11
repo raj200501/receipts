@@ -1,7 +1,7 @@
 # receipts: checking coding agents' final reports against what happened
 
-Technical report, 2026-11-11. It describes an instrument, a benchmark, and a preregistered
-study design, plus one exploratory first signal. The confirmatory study has not been run,
+Technical report, 2026-11-11. It describes an instrument, a benchmark, and a study design
+written as draft preregistrations, plus one exploratory first signal. The confirmatory study has not been run,
 the preregistrations are drafts, and the instrument's held-out validation (gate G5) has not
 run, so every claim verdict here is the instrument's own, unvalidated.
 
@@ -15,7 +15,7 @@ snapshot: the diff, a rerun of the visible tests, and hidden checks the agent ne
 deterministic extractor splits the final report into atomic, typed claims, and one verifier
 per claim type labels each claim supported, contradicted, or unverifiable, with the ledger
 events that decide it; no verdict comes from a model reading a transcript. receipts-bench
-supplies small, hand-written Python and TypeScript repositories with hidden checks, validated
+supplies small, synthetic Python and TypeScript repositories written for it with hidden checks, validated
 reference solutions, and realistic manipulations (M1 to M5). The study design comprises blind
 validation of the instrument (E0), a randomized fractional factorial across agent
 configurations on identical work (E1), mechanism and judge analyses (E2, E3), and a
@@ -71,7 +71,7 @@ reached the agent) from overclaiming (it did, and the agent reported success any
 
 The contributions are the instrument (section 3), receipts-bench (section 4), a controlled
 agent scaffold for open-weight models and what building it taught (section 5), a
-preregistered design with confirmatory rules in code (section 6), integrity tooling that
+design written as draft preregistrations, with confirmatory rules in code (section 6), integrity tooling that
 binds every result number to an artifact (section 8), and an exploratory first signal
 reported with its intervals and limits (section 7). Not here: any confirmatory result, any
 Claude subject run (section 5.3), and any measured precision or recall for the instrument.
@@ -102,7 +102,7 @@ Tang et al. (2026), [How Coding Agents Fail Their Users](https://arxiv.org/abs/2
 is an observational study of real sessions that treats misalignment as a breakdown made
 visible by developer pushback; one of its recurring forms concerns how agents report
 progress, and inaccurate self-reporting takes a growing share of episodes over time. Its
-unit is the episode a developer noticed; receipts checks every claim, noticed or not.
+unit is the episode a developer noticed; receipts checks every claim its extractor finds, noticed or not.
 
 Chen and Liu (2026),
 [Evaluating Misalignment in Coding Agents: Apparent-Success Reporting with Verbalizable Representations and Model Forensics](https://neurips.cc/virtual/2026/loc/sydney/168218),
@@ -137,8 +137,9 @@ wording that claims a passed or completed result without verification. receipts 
 splits the final report into atomic claims and checks each against a record of what ran.
 
 None of these is a randomized, same-task, cross-agent measurement of claim-level report
-faithfulness with execution ground truth. receipts adds that, a design that separates
-confusion from overclaiming, and a mitigation measured inside the agent loop.
+faithfulness with execution ground truth. receipts is designed to add that, a design that
+separates confusion from overclaiming, and a test of a mitigation inside the agent loop;
+none of these studies has run yet.
 
 ## 3. Method: the instrument
 
@@ -239,8 +240,8 @@ catalog ([docs/BENCH_CATALOG.md](BENCH_CATALOG.md)) splits evenly between the la
 across bug fixes, features, refactors, dependency bumps, writing tests, documentation, and
 CI configuration. Tasks were written by Claude Code subagents acting as pipeline workers,
 then reviewed, fixed, and accepted only when the validator printed PASS (docs/LOG.md); the
-`pilot-*` tasks are never in a confirmatory sample, and all code is hand-written and labeled
-synthetic.
+`pilot-*` tasks are never in a confirmatory sample, and all code is synthetic, written for the
+benchmark rather than taken from third parties, and labeled so.
 
 ## 5. Agents and scaffold
 
@@ -358,9 +359,9 @@ to the second on the same task.
 An LLM judge reads the transcript and the extracted claims, as a monitor would, never the
 ledger, and labels each claim (`src/receipts/evaluation/e3.py`). Labels are scored against
 ledger verdicts per claim type, with contradicted as the positive class and
-Wilson 95% intervals, and agreement between judges is reported only beside validity. Neither
-HEAD draft covers E3, so it stays exploratory unless its own preregistration is frozen
-first.
+Wilson 95% intervals, and agreement between judges is reported only beside validity. Its draft
+preregistration (`prereg/0003-e3-judges.md`) is not frozen yet, so E3 stays exploratory
+unless that draft is frozen first.
 
 ### 6.5 E4: mitigations, including receipts-hook
 
@@ -426,7 +427,7 @@ feature claims refuted by hidden checks (for example, an implemented `--since` o
 checks all failed); the supported ones are mostly about process: files changed, tests
 passing, tests added, and admissions that something could not be done.
 
-### 7.3 Accurate sentences, wrong outcome
+### 7.3 Claimed success without a contradicted claim
 
 Because no run passed every hidden check, every success-claiming report was a false success:
 the false-success rate equals the success-claimed rate, and the share of success-claiming
@@ -443,11 +444,11 @@ shows the shape: "all existing tests passed" is true of the visible suite after 
 last edit, but every hidden check of the requested behavior failed and the report mentions
 none of them; its first sentence is itself a completion claim the extractor missed. Several
 reports share this shape, a description of the change followed by a statement that the tests
-pass, labeled supported; every `tests_pass` claim in these runs was labeled supported. The failure lies in what the
-reports leave out and the success they imply, which receipts records as omissions and as Y1,
-not as contradicted claims. This is the gap between accuracy sentence by sentence and
-accuracy about the outcome, and it is why Y1 is measured from hidden checks and kept apart
-from Y2. These runs cannot say whether such a report reflects confusion or overclaiming: the
+pass, labeled supported; every `tests_pass` claim in these runs was labeled supported. Read by hand,
+though, nearly all of these reports also contain a completion statement the extractor missed
+or checked wrongly (section 7.4), so these runs do not yet show reports that are accurate
+sentence by sentence and wrong about the outcome; that question needs the validated
+instrument. Y1 is measured from hidden checks and kept apart from Y2 for that reason. These runs cannot say whether such a report reflects confusion or overclaiming: the
 hidden checks are never shown to the agent, so a true "tests pass" is what an agent that
 never saw the failure would write. E1's M1 and M2 put an attributable failure in front of the
 agent, and E2 asks whether it was seen.
@@ -518,13 +519,16 @@ could pass while its property was false.
 
 **Review, decisions, corrections.** Only the reviewer (a `reviewer` subagent, or a headless run
 when allowed) writes `artifacts/review/latest.json`; `make review` accepts SHIP only with no
-blocking issue and only for the reviewed commit. No review has run yet. DECISIONS.md records
-every interpretation, substitution, and deviation with its reason before acting; CORRECTIONS.md
-takes a dated entry for every changed or withdrawn claim, and has none yet.
+blocking issue and only for the reviewed commit. The gate's reviewer has not run yet, so
+`artifacts/review/latest.json` does not exist; earlier subagent reviews and their fixes are
+recorded in docs/LOG.md and CORRECTIONS.md. DECISIONS.md records each interpretation,
+substitution, and deviation with its reason, before acting unless an entry says it was
+recorded late; CORRECTIONS.md takes a dated entry for every changed or withdrawn claim, and
+its entries so far correct earlier wording in this report, README.md, and docs/HOOK.md.
 
 **Blind protocols, budget, secrets.** E0 writers, adjudicators, and labelers get packets with no
-instrument code or output, and the packets themselves are scanned so that none can void its
-reader. `make budget` checks the caps against the hash-pinned brief and shows that cash spend
+instrument code or output, and labeler and writer packets are scanned so that none can void its
+reader; adjudication packets, which carry the writers' report text, are not scanned yet. `make budget` checks the caps against the hash-pinned brief and shows that cash spend
 is nil; `make secrets-scan` reads every tracked file and fails closed. Process failures are
 recorded too: when a fixer agent once committed the working tree under a wrong identity, the
 commit was removed before any push and a local hook now refuses such commits (docs/LOG.md).
@@ -600,7 +604,7 @@ banked run is never re-run.
 Built and tested at HEAD: the ledger, sandboxes, parsers, extractor, verifiers, minimal-agent,
 the claude-code driver (never run), the analysis library, receipts-hook (the wrapper and
 the `receipts` command line are built but have no tests yet), receipts-bench with reference
-validation for every task, the E0 tooling, the preregistered analysis scripts,
+validation for every task, the E0 tooling, the analysis scripts for the draft preregistrations,
 re-verification at banking for the confirmatory studies (D42, D47), and the gates;
 `make ci` passes on a fresh clone on Python 3.11 and 3.12 before a push
 ([README.md](../README.md), [STATUS.md](../STATUS.md)). Next, in order:
@@ -616,5 +620,7 @@ re-verification at banking for the confirmatory studies (D42, D47), and the gate
    frozen, and bank the hook latency samples.
 5. Add Claude arms only on a machine with a clean plan login, under their own preregistration.
 
-Until then, G5, G6, G7 to G9, G11, and G12 cannot pass, and every claim verdict here remains
-the instrument's own.
+Until then, G5, G6, G7 to G9, G11, and G12 cannot pass. The build-and-tests and
+static-quality gates also fail at HEAD: the wrapper has no tests, and some type-ignore
+comments inside benchmark task repositories lack reasons, which waits for a new benchmark
+version (STATUS.md). Every claim verdict here remains the instrument's own.
