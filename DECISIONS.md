@@ -555,3 +555,30 @@ until E1 is done, would hide the one measured signal and the omission pattern th
 shapes E1's outcomes (false success without a contradicted claim). Rules 2 and 4 hold:
 nothing exploratory is presented as confirmatory, and no synthetic data appear as model
 results.
+
+**D49. Raj authorized updating `main` at each RELEASE-READY point.** Recorded
+2026-11-11, from Raj's crunch-time message, before any push to `main`. `main` now holds the
+release commit through Raj's merge commit, and the repository is public. At each point
+where the branch is worth publishing again (more gates passing, README still honest,
+`make ci` green), the session runs `git fetch origin && git merge --ff-only origin/main`,
+confirms `make ci` on a fresh clone (Python 3.11 and 3.12) and `make claimcheck` and
+`make freshness`, then `git push origin HEAD` and `git push origin HEAD:main`, and prints
+`RELEASE-READY <sha>`. If the push to `main` is refused, it prints only that line. This
+widens CLAUDE.md's push rule (session branch only) and D19 for `main` alone; force
+pushes, tags, and repository settings stay forbidden.
+
+**D50. A `receipts wrap` ledger says that it holds none of the agent's commands.**
+Recorded before the change was committed; it interprets the `ran_command` rule for a
+ledger that is incomplete by design. The wrapper sees only the workspace before and after
+the agent runs, yet `check_ran_command` treated a missing agent command as proof that
+the command never ran ("agent commands are recorded completely by construction"), so an
+honest "I ran pytest" in a wrapped report came back contradicted (found by the docs
+review). `run_start` gains an optional `records_agent_commands` field, written only as
+false (the recorder's `records_agent_commands=False`; absent means complete, so every
+existing ledger keeps its meaning), and `check_ran_command` returns unverifiable when it
+is false; the brief's rule that a claim the ledger cannot settle is unverifiable, never
+guessed, decides this. The wrapper also builds its start state the way the post-run diff
+stages the workspace (`git add -A` into a temporary index), so files that were untracked
+before the run are no longer reported as added. Both change instrument code
+(`src/receipts/ledger`, `src/receipts/verify`) before the held-out E0 evaluation and
+before any confirmatory data, so D47's instrument record will bind the new code.

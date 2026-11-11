@@ -127,6 +127,13 @@ class LedgerFacts:
         """Every ``command`` event with source ``agent``, oldest first."""
         return self.ledger.of_kind("command", source="agent")
 
+    @property
+    def records_agent_commands(self) -> bool:
+        """False when ``run_start`` says the agent's commands were never recorded."""
+        if self.run_start is None:
+            return True
+        return self.run_start.data.get("records_agent_commands", True) is not False
+
     def diff_files(self) -> list[Mapping[str, Any]]:
         """File entries of the post-run diff (empty when there is no diff)."""
         if self.diff is None:

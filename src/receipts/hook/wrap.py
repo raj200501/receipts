@@ -8,8 +8,9 @@ what it can observe from outside: the workspace state before the agent runs, and
 afterwards a snapshot (the diff against that state and a rerun of the tests inside the
 sandbox). The final report is the file at ``--report-file`` if given, else the agent's
 stdout. The report's claims are checked against that ledger and an annotation block is
-printed after the report. Claims about individual commands the agent ran are
-unverifiable here (no per-command record), never contradicted.
+printed after the report. The ledger's ``run_start`` records that the agent's commands
+were not recorded, so claims about individual commands the agent ran are unverifiable
+here, never contradicted.
 
 The agent command itself runs as the user's own process, exactly as it would without
 the wrapper; only the test rerun goes through the receipts sandbox.
@@ -18,8 +19,10 @@ the wrapper; only the test rerun goes through the receipts sandbox.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,20 +41,50 @@ MARK = {
 }
 
 
-def _git(workspace: Path, *args: str) -> str:
+# Git for the start state ignores the user's global and system configuration (as the
+# sandbox's git does), so ``.gitignore`` decides what the start state holds exactly as
+# it decides what the post-run diff holds; the identity only names the start commit.
+_GIT_ENV = {
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_AUTHOR_NAME": "receipts wrap",
+    "GIT_AUTHOR_EMAIL": "receipts-wrap@localhost.invalid",
+    "GIT_COMMITTER_NAME": "receipts wrap",
+    "GIT_COMMITTER_EMAIL": "receipts-wrap@localhost.invalid",
+}
+
+
+def _git(workspace: Path, *args: str, index: Path | None = None) -> str:
+    env = {**os.environ, **_GIT_ENV}
+    if index is not None:
+        env["GIT_INDEX_FILE"] = str(index)
     return subprocess.run(
-        ["git", "-C", str(workspace), *args], capture_output=True, text=True, check=True
+        ["git", "-C", str(workspace), *args],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
     ).stdout.strip()
 
 
 def start_state(workspace: Path) -> str:
     """A commit capturing the workspace before the agent runs, without changing it.
 
-    ``git stash create`` records uncommitted changes as a commit object without touching
-    the working tree or the stash list; with a clean tree, HEAD is the start state.
+    The post-run diff stages the whole working tree, untracked files included, and
+    compares it with this commit, so the start state is staged the same way: ``git add
+    -A`` into a temporary index, then ``write-tree`` and ``commit-tree``. A file that was
+    untracked before the run is therefore not reported as added by the agent. The
+    working tree, the real index, the refs, and the stash list are untouched. With
+    nothing uncommitted, HEAD itself is the start state.
     """
-    stash = _git(workspace, "stash", "create")
-    return stash or _git(workspace, "rev-parse", "HEAD")
+    head = _git(workspace, "rev-parse", "HEAD")
+    with tempfile.TemporaryDirectory(prefix="receipts-wrap-") as tmp:
+        index = Path(tmp) / "index"
+        _git(workspace, "-c", "core.fsmonitor=false", "add", "-A", "--", ".", index=index)
+        tree = _git(workspace, "write-tree", index=index)
+    if tree == _git(workspace, "rev-parse", "HEAD^{tree}"):
+        return head
+    return _git(workspace, "commit-tree", tree, "-p", head, "-m", "receipts wrap: start state")
 
 
 @dataclass(frozen=True)
@@ -107,6 +140,7 @@ def wrap(
         config_id="wrap",
         workspace=str(workspace),
         base_commit=base,
+        records_agent_commands=False,
     )
     take_snapshot(sandbox, recorder, base, test_cmd)
     recorder.record_run_end(report, 0, "finished" if code == 0 else f"exit {code}")

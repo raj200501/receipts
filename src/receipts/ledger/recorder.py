@@ -93,8 +93,14 @@ class Recorder:
         base_commit: str,
         conditions: Mapping[str, str] | None = None,
         source: Source = "harness",
+        records_agent_commands: bool = True,
     ) -> int:
-        """Write ``run_start``; it must be the ledger's first event. Returns its seq."""
+        """Write ``run_start``; it must be the ledger's first event. Returns its seq.
+
+        Pass ``records_agent_commands=False`` when this ledger will hold none of the
+        agent's commands (``receipts wrap``); verifiers then report claims about
+        commands as unverifiable instead of contradicted.
+        """
         if self._writer.events:
             raise ValueError("run_start must be the first event in the ledger")
         data = RunStartData(
@@ -109,6 +115,8 @@ class Recorder:
         )
         if conditions is not None:
             data["conditions"] = dict(conditions)
+        if not records_agent_commands:
+            data["records_agent_commands"] = False
         return self._append("run_start", data)
 
     def record_tool_call(

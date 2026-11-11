@@ -2,6 +2,26 @@
 
 History moved out of STATUS.md, newest first.
 
+## 2026-11-11: release sprint (goal_turn 5), moved from STATUS.md
+
+Release sprint, 2026-11-11 (goal_turn 5): Raj is making the repository public. The goal's
+experiments are on hold during the sprint; no model calls and no model-heavy runs.
+
+- **Safe to publish.** `make secrets-scan` is clean. Nothing under `private/` or `runs/`,
+  and no `.env` file, is tracked or was ever tracked on this branch. Every email address
+  in the tracked files is a reserved test address, Raj's GitHub noreply address, or a
+  public organizational contact quoted in a citation record; no commit, commit message,
+  or past file version on the branch holds a personal address or a secret pattern, and
+  the only commit identities are Raj's noreply and Claude's noreply. The benchmark tasks
+  are synthetic and use reserved domains, with no vulnerability details, vendored
+  dependencies, or binaries, and no third-party datasets are used (docs/DATA.md).
+- **Checks.** `make ci` (lint, typecheck, test, demo) passes on a fresh clone of the
+  pushed head on Python 3.11 and 3.12 (`tools/prepush.sh`, and `PY=3.12`).
+- **README.** The first screen says there is no study result yet and that its numbers
+  are interim observations from an unfinished validation run; the results section says
+  no manipulation effect, model comparison, or mitigation effect has been measured; the
+  Status section lists which gates pass in the fast check and why the others fail.
+
 ## 2026-11-11: final push (goal_turn 4), moved from STATUS.md
 
 Stopped 2026-11-11 at the end of Raj's final push. Origin's session branch has every

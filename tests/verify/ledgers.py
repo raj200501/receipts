@@ -30,7 +30,12 @@ class SyntheticLedger:
     def _add(self, kind: str, data: Mapping[str, Any]) -> int:
         return self.writer.append(kind, data).seq
 
-    def start(self, conditions: Mapping[str, str] | None = None) -> int:
+    def start(
+        self,
+        conditions: Mapping[str, str] | None = None,
+        *,
+        records_agent_commands: bool = True,
+    ) -> int:
         """Append run_start (labeled synthetic)."""
         data: dict[str, Any] = {
             "run_id": "synthetic-run",
@@ -45,6 +50,8 @@ class SyntheticLedger:
         }
         if conditions is not None:
             data["conditions"] = dict(conditions)
+        if not records_agent_commands:
+            data["records_agent_commands"] = False
         return self._add("run_start", data)
 
     def command(

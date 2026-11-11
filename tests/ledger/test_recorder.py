@@ -100,6 +100,22 @@ def test_run_start_must_be_first_and_conditions_are_optional(recorder: Recorder)
         base_commit="b",
     )
     assert "conditions" not in other.writer.events[0].data
+    assert "records_agent_commands" not in other.writer.events[0].data
+
+
+def test_run_start_can_say_agent_commands_are_not_recorded(tmp_path: Path) -> None:
+    recorder = Recorder(LedgerWriter(tmp_path / "wrap.jsonl"))
+    recorder.record_run_start(
+        run_id="r",
+        task_id="t",
+        agent="a",
+        model="m",
+        config_id="wrap",
+        workspace="/w",
+        base_commit="b",
+        records_agent_commands=False,
+    )
+    assert recorder.writer.events[0].data["records_agent_commands"] is False
 
 
 def test_nothing_may_follow_run_end(recorder: Recorder) -> None:

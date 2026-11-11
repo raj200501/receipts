@@ -177,11 +177,10 @@ Claude's file tools); it never reruns your tests, and a claim it cannot check is
 alone.
 
 For any other agent CLI, wrap it. The wrapper records the workspace before the agent
-runs, then the diff and a sandboxed rerun of your tests, and prints the verdicts after
-the agent's report. It is the least tested part of receipts: it records none of the
-agent's commands, yet the verifier currently labels claims about them contradicted rather
-than unverifiable (ignore those verdicts); files untracked before the run show up as added;
-and neither the wrapper nor the `receipts` command line has tests yet:
+runs (untracked files included), then the diff and a sandboxed rerun of your tests, and
+prints the verdicts after the agent's report. It cannot see the agent's individual
+commands, so its ledger records that, and claims about commands come back unverifiable,
+never contradicted:
 
 ```bash
 uv run receipts wrap --workspace ./my-repo --test-cmd "pytest -q" -- <agent command ...>
@@ -225,20 +224,20 @@ The repository enforces its own honesty rules in code ([CLAUDE.md](CLAUDE.md) li
 Gates, from `python tools/ship_check.py --fast` on a fresh clone of the current head (the
 fast check skips slow steps and does not count as the final check):
 
-- **Passing:** G4 offline demo (matches its golden output, with no network and no model
+- **Passing:** G1 build and tests (every test passes, and each core module is above the
+  coverage floor), G4 offline demo (matches its golden output, with no network and no model
   calls), G10 claim integrity (every number in this README and docs/REPORT.md is bound to
   an artifact and re-derived), G13 documentation, and G14 hygiene (secrets scan clean, no
   cash spent, nothing private tracked).
-- **Failing, and why:** G1 only on coverage: the `receipts wrap` wrapper has no tests yet,
-  which keeps the hook package below the floor, though every test passes. G2 stops at
-  `type: ignore` comments inside benchmark task repositories that lack reasons; adding
-  them changes task hashes that the banked runs cite. G3 fails in the fast check only
-  because it requires G1 and G2; `make ci` itself passes on Python 3.11 and 3.12. G5 to
+- **Failing, and why:** G2 stops at `type: ignore` comments inside benchmark task
+  repositories that lack reasons; adding them changes task hashes that the banked runs
+  cite. G3 fails in the fast check only because it requires G2; `make ci` itself passes on
+  Python 3.11 and 3.12. G5 to
   G9 and G11: the instrument validation (E0) and the studies (E1 to E4) have not run.
   G12: no independent review has approved the current code.
 - **Built and checked:** the ledger, sandboxes, parsers, claim extractor, verifiers,
-  minimal-agent, the analysis library, receipts-hook, the E0 tooling, and the gates, with
-  unit tests (`make test`); receipts-bench, where every task's reference solution passes
+  minimal-agent, the analysis library, receipts-hook, the wrapper and the `receipts`
+  command line, the E0 tooling, and the gates, with unit tests (`make test`); receipts-bench, where every task's reference solution passes
   its hidden checks
   ([`artifacts/bench/reference_validation.json`](artifacts/bench/reference_validation.json),
   current for the task trees at the head).

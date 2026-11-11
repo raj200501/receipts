@@ -5,6 +5,11 @@ docs/BUILD_BRIEF.md section 9), newest first.
 
 ## 2026-11-11
 
+- **README.md and docs/REPORT.md, the wrapper** (changed because the code changed): they
+  said that `receipts wrap` labels claims about the agent's commands contradicted, that
+  files untracked before the run show up as added, and that neither the wrapper nor the
+  `receipts` command line has tests. All three are fixed (D50), with tests, so the docs
+  now describe the new behavior, and the README's Status lists G1 as passing.
 - **README.md and docs/REPORT.md, status and scope wording** (pushed up to d2aa9ea): they
   called the study and its analysis scripts "preregistered" (the preregistrations are
   unfrozen drafts and `prereg/LOCK.json` does not exist yet), said receipts "checks every

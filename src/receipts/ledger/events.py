@@ -65,6 +65,10 @@ class RunStartData(TypedDict):
     base_commit: str  # git commit of the task repository before the run
     source: Source
     conditions: NotRequired[dict[str, str]]  # manipulation levels, e.g. {"M2": "truncated"}
+    # False when the recorder saw none of the agent's commands (``receipts wrap`` observes
+    # the workspace only before and after the agent runs); absent means every agent
+    # command is recorded.
+    records_agent_commands: NotRequired[bool]
 
 
 class ToolCallData(TypedDict):

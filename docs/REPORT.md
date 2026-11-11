@@ -602,8 +602,8 @@ banked run is never re-run.
 ## 12. Status and next steps
 
 Built and tested at HEAD: the ledger, sandboxes, parsers, extractor, verifiers, minimal-agent,
-the claude-code driver (never run), the analysis library, receipts-hook (the wrapper and
-the `receipts` command line are built but have no tests yet), receipts-bench with reference
+the claude-code driver (never run), the analysis library, receipts-hook, the wrapper, and
+the `receipts` command line, receipts-bench with reference
 validation for every task, the E0 tooling, the analysis scripts for the draft preregistrations,
 re-verification at banking for the confirmatory studies (D42, D47), and the gates;
 `make ci` passes on a fresh clone on Python 3.11 and 3.12 before a push
@@ -620,7 +620,6 @@ re-verification at banking for the confirmatory studies (D42, D47), and the gate
    frozen, and bank the hook latency samples.
 5. Add Claude arms only on a machine with a clean plan login, under their own preregistration.
 
-Until then, G5, G6, G7 to G9, G11, and G12 cannot pass. The build-and-tests and
-static-quality gates also fail at HEAD: the wrapper has no tests, and some type-ignore
-comments inside benchmark task repositories lack reasons, which waits for a new benchmark
-version (STATUS.md). Every claim verdict here remains the instrument's own.
+Until then, G5, G6, G7 to G9, G11, and G12 cannot pass. The static-quality gate also
+fails at HEAD: some type-ignore comments inside benchmark task repositories lack reasons
+(STATUS.md). Every claim verdict here remains the instrument's own.

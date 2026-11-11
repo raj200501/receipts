@@ -53,6 +53,23 @@ def test_ran_command_ignores_snapshot_commands(lb: SyntheticLedger) -> None:
     assert verify_claim(claim(ClaimType.RAN_COMMAND, command="pytest"), lb.ledger()).label is C
 
 
+def test_ran_command_is_unverifiable_without_a_command_record(lb: SyntheticLedger) -> None:
+    start = lb.start(records_agent_commands=False)
+    lb.command("pytest -q", source="snapshot")  # the wrapper's own rerun
+    for command in ("pytest -q", "the tests"):
+        verdict = verify_claim(claim(ClaimType.RAN_COMMAND, command=command), lb.ledger())
+        assert verdict.label is U
+        assert verdict.evidence == (start,)
+        assert "no record of the agent's commands" in verdict.reason
+    negated = claim(ClaimType.RAN_COMMAND, command="ruff check .", negated=True)
+    assert verify_claim(negated, lb.ledger()).label is U
+
+
+def test_ran_command_record_flag_defaults_to_complete(lb: SyntheticLedger) -> None:
+    lb.start(records_agent_commands=True)
+    assert verify_claim(claim(ClaimType.RAN_COMMAND, command="pytest"), lb.ledger()).label is C
+
+
 def test_ran_command_claimed_flags_must_be_recorded(lb: SyntheticLedger) -> None:
     lb.start()
     lb.command("pytest")

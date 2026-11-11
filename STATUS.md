@@ -1,9 +1,10 @@
-goal_turn: 5
+goal_turn: 6
 STATE: ACTIVE
 
 # Status
 
-Updated 2026-11-11, goal_turn 5 (release sprint: Raj is making the repository public).
+Updated 2026-11-11, goal_turn 6 (crunch time: the repository is public; Raj is away and
+authorized updating `main` at each RELEASE-READY point, D49).
 History is in docs/LOG.md.
 
 ## Gates
@@ -37,23 +38,17 @@ G12 wait on the studies and on a review of the current code.
 
 ## Now
 
-Release sprint, 2026-11-11 (goal_turn 5): Raj is making the repository public. The goal's
-experiments are on hold during the sprint; no model calls and no model-heavy runs.
+Crunch time, 2026-11-11 (goal_turn 6). `main` holds the release commit through Raj's
+merge commit and the repository is public. Raj's order: G1, G2, G3, the canary string
+(before any more smoke runs), the smoke runs and `smoke_runs.json` (G5, G6), E0, the E1
+freeze and runs, E2 to E4, then an independent review. CAP_SHARE stays 0.2.
 
-- **Safe to publish.** `make secrets-scan` is clean. Nothing under `private/` or `runs/`,
-  and no `.env` file, is tracked or was ever tracked on this branch. Every email address
-  in the tracked files is a reserved test address, Raj's GitHub noreply address, or a
-  public organizational contact quoted in a citation record; no commit, commit message,
-  or past file version on the branch holds a personal address or a secret pattern, and
-  the only commit identities are Raj's noreply and Claude's noreply. The benchmark tasks
-  are synthetic and use reserved domains, with no vulnerability details, vendored
-  dependencies, or binaries, and no third-party datasets are used (docs/DATA.md).
-- **Checks.** `make ci` (lint, typecheck, test, demo) passes on a fresh clone of the
-  pushed head on Python 3.11 and 3.12 (`tools/prepush.sh`, and `PY=3.12`).
-- **README.** The first screen says there is no study result yet and that its numbers
-  are interim observations from an unfinished validation run; the results section says
-  no manipulation effect, model comparison, or mitigation effect has been measured; the
-  Status section lists which gates pass in the fast check and why the others fail.
+- **G1, receipts-hook coverage.** `receipts wrap` and the `receipts` CLI now have real
+  tests (a real git workspace, a real pytest rerun through the test sandbox, real
+  extraction and verification), and the bugs the docs review found are fixed (D50):
+  command claims in a wrapped report are unverifiable, not contradicted, and files
+  untracked before the run are no longer reported as added. Hook coverage measured on
+  the hook and CLI tests alone: 98%.
 
 ## Next three actions
 
@@ -100,18 +95,7 @@ made in this push.
 
 ## Needs Raj
 
-1. **Fast-forward `main` before the repository goes public.** The default branch `main`
-   still holds only the brief (9e14f44). The session branch `claude/sweet-newton-r3x6t3`
-   is a fast-forward of it. From a checkout: `git fetch origin && git push origin
-   origin/claude/sweet-newton-r3x6t3:main`, or merge on GitHub. That push runs
-   `.github/workflows/ci.yml` (`make ci` on Python 3.11 and 3.12); both pass on a fresh
-   clone of the pushed head here (`tools/prepush.sh`, and `PY=3.12` for 3.12). CI has not
-   run on GitHub since 2026-10-23, when it failed only because the demo was not built yet.
-2. **Canary string before a dataset release (rule 9).** receipts-bench has no canary
-   string yet. If a public repository counts as releasing the benchmark, a canary string
-   belongs in every task file first; that changes the task hashes, so the smoke runs would
-   be re-run for the new task version.
-3. **Claude subject runs are disabled here (billing guard).** This runtime sets
+1. **Claude subject runs are disabled here (billing guard).** This runtime sets
    `ANTHROPIC_BASE_URL` and `CLAUDE_CODE_USE_CCR_V2`, which section 8 treats as possible
    per-token billing, so no `claude -p` child is launched (D4). E1 and E4 therefore use
    four local minimal-agent arms (D25), which meets G7's "3 configurations, 2 families",

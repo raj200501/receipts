@@ -332,13 +332,22 @@ def check_ran_command(claim: Claim, facts: LedgerFacts, requirements: Requiremen
     Generic claims ("ran the tests", "ran the linter", "ran the type checker",
     "ran the build") match any agent-source ``test_run``, ``lint_run`` or
     ``typecheck_run``, or any agent command of that kind. No match: CONTRADICTED,
-    because agent commands are recorded completely by construction. Negated
-    ("did not run the linter") inverts.
+    because agent commands are recorded completely by construction. The exception is
+    a ledger whose ``run_start`` says the agent's commands were not recorded at all
+    (``records_agent_commands`` false, as ``receipts wrap`` writes): there every
+    command claim is UNVERIFIABLE. Negated ("did not run the linter") inverts.
     """
     del requirements
     command = param_str(claim, "command")
     if command is None:
         return _unverifiable((), "the claim names no command")
+    if not facts.records_agent_commands:
+        start = (facts.run_start.seq,) if facts.run_start is not None else ()
+        return _unverifiable(
+            start,
+            "this ledger holds no record of the agent's commands (run_start says so), so"
+            f" whether it ran {_quote(command)} cannot be checked",
+        )
     agent_cmds = facts.agent_commands()
     examined = tuple(e.seq for e in agent_cmds[-_MAX_EVIDENCE:])
     kind = generic_kind(command)
