@@ -9,7 +9,7 @@ It has two parts:
 
 - **Recorder hooks** (`PreToolUse`, `PostToolUse`, `PostToolUseFailure`): each tool call,
   the text Claude received back, every Bash command with its exit code, and every file
-  edit (content before and after) go into an append-only, hash-chained ledger file.
+  edit (hashes of the file before and after) go into an append-only, hash-chained ledger file.
 - **Stop hook**: when Claude finishes, receipts extracts the atomic claims from its final
   message (`last_assistant_message`), checks each against the ledger, and, if any is
   contradicted, returns `{"decision": "block", "reason": ...}` listing those claims and

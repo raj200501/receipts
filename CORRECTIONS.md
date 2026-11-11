@@ -5,6 +5,27 @@ docs/BUILD_BRIEF.md section 9), newest first.
 
 ## 2026-11-11
 
+- **README.md and docs/REPORT.md, the first signal** (pushed from a7067e9 to 035bf29): they
+  presented "no extracted claim was contradicted" in most false successes as evidence that
+  reports check out claim by claim while being wrong about the outcome, and README.md
+  first said "receipts found no false sentence at all". An adversarial review of the docs,
+  checked against the banked runs, found that most of those reports state the requested
+  change in a sentence the extractor missed (md-toc, bizdays, atomic-store, money-round)
+  or checked wrongly (slugify-tests), so the count mostly reflects the unvalidated
+  extractor and is likely too high. Both documents now say so and list the errors. The
+  README also described the py-cli-json error wrongly (the failure admission is correctly
+  an admission; a feature claim mapped to a preserve requirement makes the run count as
+  claiming success) and said "the hidden checks failed in every run" where it meant that
+  no run passed all of them.
+- **README.md, Use it on your own agent and module list**: it said every final report is
+  checked by the Stop hook (the check is skipped after a stop-hook block and for a session
+  with no tool call), that `receipts wrap` leaves claims about commands unverifiable (the
+  verifier labels them contradicted, a known bug), and that every banked run is
+  re-verified (only E1 and E4 banking re-verifies; the smoke numbers use run-time
+  verdicts). It also said E0 agents never see the instrument code (blindness is audited
+  from transcripts, not enforced) and called the whole quickstart offline (only the demo
+  is). All are corrected; docs/REPORT.md and docs/HOOK.md had matching statements (file
+  edits are recorded as hashes, not content; the wrapper and CLI have no tests).
 - **README.md, Status section** (from commit 1352467 on the session branch): it said
   that `make ci` passes on a fresh clone before every push and that the CI workflow runs
   it on Python 3.11 and 3.12. Pushes had been checked on Python 3.11 only, and at those

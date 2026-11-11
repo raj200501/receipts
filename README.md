@@ -8,19 +8,18 @@ Code Stop hook that flags contradicted claims before you read the report.
 
 **First signal (exploratory, not yet the preregistered study):** in
 <!--n:smoke.runs-->20<!--/n--> unmanipulated smoke runs of a local Qwen2.5-Coder-7B-Instruct
-agent on receipts-bench, the hidden checks failed in every run
+agent on receipts-bench, no run passed all of its hidden checks
 (<!--n:smoke.task_success.k-->0<!--/n--> of <!--n:smoke.task_success.n-->20<!--/n--> tasks
 done, Wilson 95% interval <!--n:smoke.task_success.ci-->[0.00, 0.16]<!--/n-->), yet
 <!--n:smoke.success_claimed.pct-->50%<!--/n--> of final reports claimed success
-(<!--n:smoke.success_claimed.ci-->[0.30, 0.70]<!--/n-->). In
-<!--n:smoke.false_success_without_contradicted_claim.k-->7<!--/n--> of those
-<!--n:smoke.false_success_without_contradicted_claim.n-->10<!--/n--> false successes,
-no claim that receipts extracted was contradicted: statements like "all tests pass" held
-for the visible tests, while the hidden checks of the requested behavior failed and the
-report never mentioned them. A report can check out claim by claim and still be wrong
-about the outcome; that gap is what receipts measures. These counts are the unvalidated
-instrument's own, and reading the reports by hand shows it erring in both directions
-(see Limitations).
+(<!--n:smoke.success_claimed.ci-->[0.30, 0.70]<!--/n-->). The runs also test receipts
+itself. In <!--n:smoke.false_success_without_contradicted_claim.k-->7<!--/n--> of those
+<!--n:smoke.false_success_without_contradicted_claim.n-->10<!--/n--> false successes, no
+claim that receipts extracted was contradicted, and reading the reports by hand shows
+why: most of them say the requested change was made, in a sentence the unvalidated
+extractor missed or checked wrongly, next to a statement that the tests pass. So that
+count mostly measures the extractor and is likely too high (see Limitations). The blind
+validation of the instrument (E0) has to pass before any of these numbers is a finding.
 
 ![Exploratory smoke runs: task success versus claimed success](docs/figures/smoke_outcomes.svg)
 
@@ -46,7 +45,7 @@ success, because every hidden check of the requested behavior failed and the rep
 admits none of them. The panel is cut from the committed `make demo` output by
 `make report`.
 
-## Quickstart (offline, about a minute)
+## Quickstart (the demo runs offline, with no model calls)
 
 ```bash
 git clone https://github.com/raj200501/receipts.git && cd receipts
@@ -94,7 +93,8 @@ They are banked in
 [`artifacts/exploratory/smoke_outcomes.json`](artifacts/exploratory/smoke_outcomes.json),
 and each item names the preregistration that will test the same outcome.
 
-- **False success is frequent, and often has no contradicted claim.** The report claimed
+- **False success is frequent; the unvalidated extractor found no contradicted claim in
+  most of those reports.** The report claimed
   success while a hidden check failed in <!--n:smoke.false_success.k-->10<!--/n--> of
   <!--n:smoke.false_success.n-->20<!--/n--> runs (Wilson 95% interval
   <!--n:smoke.false_success.ci-->[0.30, 0.70]<!--/n-->). In
@@ -102,7 +102,8 @@ and each item names the preregistration that will test the same outcome.
   <!--n:smoke.false_success_without_contradicted_claim.n-->10<!--/n--> reports, no extracted
   claim was contradicted (interval
   <!--n:smoke.false_success_without_contradicted_claim.ci-->[0.40, 0.89]<!--/n-->).
-  Confirmatory test: E1, outcome Y1, in
+  Read by hand, most of those reports state the requested change in a sentence the
+  extractor missed or checked wrongly (see Limitations). Confirmatory test: E1, outcome Y1, in
   [`prereg/0001-e1-main-study.md`](prereg/0001-e1-main-study.md) (a draft, not frozen).
 - **Claim by claim, most extracted claims check out.** Of the
   <!--n:smoke.claims-->29<!--/n--> claims receipts extracted from the final reports,
@@ -149,8 +150,9 @@ flowchart LR
   by adaptive Gauss-Hermite quadrature, separation checks, cluster bootstrap intervals,
   Holm-adjusted contrasts, and simulation power analysis.
 - [`src/receipts/study`](src/receipts/study): study plans, the run executor, banking, and
-  re-verification of every banked run with the checkout's instrument (DECISIONS D42), so
-  outcomes never come from verdicts written at run time; the E1 and E4 analyses.
+  the E1 and E4 analyses. E1 and E4 banking re-verifies every run with the checkout's
+  instrument (DECISIONS D42), so confirmatory outcomes never come from verdicts written at
+  run time; the exploratory smoke numbers above still do.
 - [`src/receipts/evaluation`](src/receipts/evaluation): the blind E0 tooling (seeded
   reports, fact sheets, ledger completeness), mechanism classification (E2), and LLM
   judges scored against the ledger (E3).
@@ -160,16 +162,20 @@ flowchart LR
 ## Use it on your own agent
 
 Install receipts-hook for Claude Code with the steps in [docs/HOOK.md](docs/HOOK.md): add
-the record hooks and the Stop hook to your user settings, start a session, and every
-final report is checked against the session's own record before you see it. The hook sees
+the record hooks and the Stop hook to your user settings, start a session, and when
+Claude stops, its final report is checked against the session's own record. The check is
+skipped for the report Claude writes after a stop hook has already asked for a correction,
+and for a session that made no tool call, which has no record to check. The hook sees
 only what the session did (commands, their output, test runs it can parse, edits made with
 Claude's file tools); it never reruns your tests, and a claim it cannot check is left
 alone.
 
 For any other agent CLI, wrap it. The wrapper records the workspace before the agent
 runs, then the diff and a sandboxed rerun of your tests, and prints the verdicts after
-the agent's report. Claims about individual commands are left unverifiable there,
-because it cannot see them:
+the agent's report. It is the least tested part of receipts: it records none of the
+agent's commands, yet the verifier currently labels claims about them contradicted rather
+than unverifiable (ignore those verdicts); files untracked before the run show up as added;
+and neither the wrapper nor the `receipts` command line has tests yet:
 
 ```bash
 uv run receipts wrap --workspace ./my-repo --test-cmd "pytest -q" -- <agent command ...>
@@ -194,9 +200,10 @@ The repository enforces its own honesty rules in code ([CLAUDE.md](CLAUDE.md) li
   `prereg/LOCK.json`; a confirmatory artifact must cite a preregistration frozen before
   its data existed, and a frozen file can never change.
 - Blind instrument validation (E0, [docs/E0_PROTOCOL.md](docs/E0_PROTOCOL.md)): seeded
-  reports are written and adjudicated by agents that never see the extractor or verifier
-  code, their transcripts are scanned for any access to it, and a held-out split of the
-  seeded set is hashed and committed before the instrument is ever scored on it.
+  reports are written and adjudicated by agents told not to read the extractor or verifier
+  code; their transcripts are scanned afterwards, and any agent whose tool calls reached
+  that code is voided, so blindness is audited rather than enforced; and a held-out split
+  of the seeded set is hashed and committed before the instrument is ever scored on it.
 - `tools/ship_check.py`: the definition of done, implemented as gates G1 to G14 on a
   fresh clone (tests and coverage, static quality, CI parity, offline demo, instrument
   validity, benchmark completeness, the confirmatory studies, claim integrity,
@@ -212,7 +219,8 @@ minimal-agent, the analysis library, receipts-hook, receipts-bench with referenc
 validation for every task, the E0 tooling (packets, blindness scan, merge, held-out split,
 scoring, completeness), the preregistered analysis scripts, and the ship-check gates.
 Before a push, `tools/prepush.sh` runs `make ci` (lint, mypy --strict, tests, offline
-demo) on a fresh clone on Python 3.11 and 3.12, and
+demo) on a fresh clone for each of Python 3.11 and 3.12 (one run per version, chosen
+with `PY`), and
 [.github/workflows/ci.yml](.github/workflows/ci.yml) runs the same target on both versions.
 
 In progress (see [STATUS.md](STATUS.md)): the G6 smoke study (one run per task; the runs
@@ -249,19 +257,31 @@ make ship-check   # all gates on a fresh clone
 
 - **The first signal is exploratory.** The smoke runs are unmanipulated, use one model
   and one seed, and were not preregistered as a test. The scaffold changed during the
-  smoke study (D44 to D46), so later runs used a more capable harness than earlier ones;
-  each run records the code it ran.
+  smoke study (first the turn cap with its final-report request, D39, then the serving,
+  parsing, and grammar fixes, D44 to D46), so later runs used a more capable harness than
+  earlier ones; each run records the code and agent settings it ran with.
 - **Claim verdicts are not yet validated.** The extractor and verifiers are checked by
   unit tests and a development corpus, but their held-out precision and recall (G5) are
   not measured yet.
 - **Known instrument errors in these runs.** Reading the banked reports by hand finds
-  errors in both directions. Completion statements were not extracted from reports whose
-  hidden checks failed (md-toc, bizdays); with better extraction those runs would likely
-  have a contradicted claim, so the count of false successes without one is, if
-  anything, too high. One report whose only statements are of that kind yields no claim
-  at all, so its run does not count as claiming success (py-ci-workflow). One report
-  says its tests are failing, yet receipts recorded that sentence as a supported
-  tests-pass claim and the run counts as claiming success (py-cli-json).
+  these extraction and checking errors:
+  - Completion statements were not extracted from several reports whose hidden checks
+    failed (md-toc, bizdays, atomic-store, money-round). With better extraction those runs
+    would likely have a contradicted claim, so the count of false successes without one
+    is too high.
+  - In slugify-tests, "the new tests also passed" was labeled supported although pytest
+    never collected the new test file, because the tests-pass check ignores a claim's
+    scope.
+  - The py-ci-workflow and ts-ci-workflow reports describe a finished workflow, yet
+    neither yields a success claim (the first yields no claim, the second only file
+    claims), so neither run counts as claiming success; the success-claimed rate is too
+    low by those runs.
+  - In py-cli-json, receipts correctly records "the tests are failing" as an admission,
+    yet the run counts as claiming success: keyword overlap mapped its feature claim to
+    the task's preserve requirement, whose checks passed.
+
+  [docs/REPORT.md](docs/REPORT.md) section 7 discusses them; measuring such errors is what
+  the blind E0 validation is for.
   [docs/REPORT.md](docs/REPORT.md) section 7 lists them; measuring such errors is what
   the blind E0 validation is for.
 - **No Claude subjects yet.** This environment's billing guard keeps headless Claude runs

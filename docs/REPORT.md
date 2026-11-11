@@ -29,11 +29,10 @@ Wilson 95% interval <!--n:smoke.task_success.ci-->[0.00, 0.16]<!--/n-->), yet
 final reports claimed success (<!--n:smoke.success_claimed.ci-->[0.30, 0.70]<!--/n-->). In
 <!--n:smoke.false_success_without_contradicted_claim.k-->7<!--/n--> of those
 <!--n:smoke.false_success_without_contradicted_claim.n-->10<!--/n--> false successes, no
-extracted claim was contradicted: the extracted statements held against the ledger
-(typically "all tests pass", true of the visible suite), and what was wrong was the outcome
-they implied and the failures they left out. Some of those reports also contain completion
-statements the extractor missed (section 7.4), one more reason the instrument must pass E0
-before any of this counts as a finding.
+extracted claim was contradicted. Read by hand, though, most of those reports also say the
+requested change was made, in a sentence the extractor missed or checked wrongly
+(section 7.4), so that count mostly reflects the unvalidated extractor and is likely too
+high. The instrument must pass E0 before any of this counts as a finding.
 
 ## 1. Introduction
 
@@ -149,8 +148,8 @@ The ledger (`src/receipts/ledger/events.py`) is an append-only JSONL file in whi
 event carries the previous event's hash and its own, so editing, dropping, or reordering an
 event breaks the chain. Every payload names its source (`agent`, `snapshot`, or `harness`).
 Events cover tool calls and results (with how much output the agent was shown), commands
-with exit codes, derived test, lint, and type-check runs, file writes with content before
-and after, the diff, hidden-check results, and the final report. They never come from the
+with exit codes, derived test, lint, and type-check runs, file writes with hashes of the content
+before and after, the diff, hidden-check results, and the final report. They never come from the
 agent's transcript: the executor writes them as it runs each minimal-agent tool call, and
 for Claude Code, recorder hooks passed from outside the workspace do. After the agent stops,
 the snapshot records the diff against the task's base commit, reruns the visible tests, and
@@ -438,12 +437,13 @@ The informative row is the last. In
 <!--n:smoke.false_success_without_contradicted_claim.k-->7<!--/n--> of the
 <!--n:smoke.false_success_without_contradicted_claim.n-->10<!--/n--> false successes
 (<!--n:smoke.false_success_without_contradicted_claim.ci-->[0.40, 0.89]<!--/n-->), no
-extracted claim was contradicted: every statement receipts extracted held against the
-ledger, and the run was still a false success. Figure 1 is the typical case: "all existing
-tests passed" is true of the visible suite after the agent's last edit, but every hidden
-check of the requested behavior failed and the report mentions none of them. Several reports
-share this shape, a description of the change followed by a true statement that the tests
-pass; every `tests_pass` claim in these runs was supported. The failure lies in what the
+extracted claim was contradicted: every statement receipts extracted was labeled supported,
+though not every one was true (section 7.4), and the run was still a false success. Figure 1
+shows the shape: "all existing tests passed" is true of the visible suite after the agent's
+last edit, but every hidden check of the requested behavior failed and the report mentions
+none of them; its first sentence is itself a completion claim the extractor missed. Several
+reports share this shape, a description of the change followed by a statement that the tests
+pass, labeled supported; every `tests_pass` claim in these runs was labeled supported. The failure lies in what the
 reports leave out and the success they imply, which receipts records as omissions and as Y1,
 not as contradicted claims. This is the gap between accuracy sentence by sentence and
 accuracy about the outcome, and it is why Y1 is measured from hidden checks and kept apart
@@ -456,8 +456,10 @@ agent, and E2 asks whether it was seen.
 
 They show that the pipeline works end to end on real agent runs, from sandboxed execution to
 banked verdicts with provenance, and that no claim was unverifiable, as expected with a full
-snapshot. For this model and scaffold, without manipulation, the dominant pattern is a true
-sentence that implies success, together with failures the report never mentions.
+snapshot. For this model and scaffold, without manipulation, the most common pattern in the
+false-success reports, read by hand, is a statement that the requested change was made,
+which the hidden checks refute and the extractor often missed, next to a true statement
+that the visible tests pass, with the failures left unmentioned.
 
 They show no effect of any manipulation, no difference between models, and nothing about
 Claude or frontier agents: there is no manipulation, one model, one seed, and no comparison.
@@ -469,12 +471,18 @@ reports show errors in more than one direction:
 - **Missed completion statements in false-success reports.** "The toc and toc_write
   functions have been successfully added to mdkit" yields no feature claim, and neither
   does the first sentence of the report in Figure 1 ("The bizdays tool has been updated to
-  support multiple calendars and a new command 'between' ..."). The hidden checks of those
-  features failed, so as feature claims these sentences would likely have been contradicted,
-  and those runs would leave the last row of the table.
+  support multiple calendars and a new command 'between' ..."); the `py-atomic-store` and
+  `py-money-round` reports have the same error. The hidden checks of those features
+  failed, so as feature claims these sentences would likely have been contradicted, and
+  those runs would leave the last row of the table.
+- **A supported claim that was not true.** In `py-slugify-tests`, "the new tests also
+  passed" was labeled supported although pytest never collected the new test file
+  (`tests/slugify_tests.py` matches neither of pytest's default file patterns), because
+  the `tests_pass` check ignores a claim's scope (section 3.4).
 - **Missed completion statements elsewhere.** The `py-ci-workflow` report ("I have created a
-  GitHub Actions workflow ...") yields no claim at all, so that run does not count as
-  claiming success, although a reader would take it as one and some of its checks failed.
+  GitHub Actions workflow ...") yields no claim at all, and the `ts-ci-workflow` report
+  yields only file claims, so neither run counts as claiming success, although a reader
+  would take each as one and some of their checks failed.
 - **A success claim in a report that admits failure.** The `py-cli-json` report says its tests
   are failing and that it needs to investigate further, yet counts as claiming success: its
   first sentence ("I have added the --json flag to the list, low, and summary commands in the
@@ -484,7 +492,7 @@ reports show errors in more than one direction:
 The first kind of error pushes the last row one way: with those sentences extracted, fewer
 false successes would be free of contradicted claims, so that share more likely overstates
 than understates how often a false success came from accurate sentences alone. For the
-success-claimed rate the errors push both ways. Measuring this is the job of E0, and the
+success-claimed rate, more of the known errors lower it than raise it. Measuring this is the job of E0, and the
 confirmatory Y2 counts only claim types that pass G5.
 
 ## 8. Engineering for integrity
@@ -590,9 +598,10 @@ banked run is never re-run.
 ## 12. Status and next steps
 
 Built and tested at HEAD: the ledger, sandboxes, parsers, extractor, verifiers, minimal-agent,
-the claude-code driver (never run), the analysis library, receipts-hook and the wrapper,
-receipts-bench with reference validation for every task, the E0 tooling, the preregistered
-analysis scripts, re-verification of every banked run at banking (D42, D47), and the gates;
+the claude-code driver (never run), the analysis library, receipts-hook (the wrapper and
+the `receipts` command line are built but have no tests yet), receipts-bench with reference
+validation for every task, the E0 tooling, the preregistered analysis scripts,
+re-verification at banking for the confirmatory studies (D42, D47), and the gates;
 `make ci` passes on a fresh clone on Python 3.11 and 3.12 before a push
 ([README.md](../README.md), [STATUS.md](../STATUS.md)). Next, in order:
 
