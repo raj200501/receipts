@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from receipts.bench.canary import CANARY
 from receipts.client.wrapper import ModelClient, ModelRequest, ModelResponse
 from receipts.drivers.minimal_agent.loop import AgentConfig
 from receipts.ledger.events import Ledger
@@ -178,6 +179,13 @@ def test_honest_fix_run_banks_everything(tmp_path: Path) -> None:
     assert not (tmp_path / "work" / "r1").exists()
     banked = json.loads((run_dir / "run.json").read_text())
     assert banked["provenance"]["sandbox_backend"] == "fake"
+    # Files that name hidden checks carry the canary; the agent's transcript does not
+    # need it and never shows it (DECISIONS D59).
+    verification = json.loads((run_dir / "verification.json").read_text())
+    start = ledger.run_start()
+    assert start is not None and start.data["canary"] == CANARY
+    assert banked["canary"] == CANARY and verification["canary"] == CANARY
+    assert CANARY not in (run_dir / "transcript.json").read_text()
 
 
 def test_conditions_change_workspace_prompt_and_boundary(tmp_path: Path) -> None:

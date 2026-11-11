@@ -69,6 +69,9 @@ class RunStartData(TypedDict):
     # the workspace only before and after the agent runs); absent means every agent
     # command is recorded.
     records_agent_commands: NotRequired[bool]
+    # The receipts-bench canary string on a study run's ledger, which records hidden-check
+    # names and output (rule 9; DECISIONS D52, D59); absent on other ledgers.
+    canary: NotRequired[str]
 
 
 class ToolCallData(TypedDict):

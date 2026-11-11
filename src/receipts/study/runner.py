@@ -36,6 +36,7 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from receipts.bench.canary import CANARY
 from receipts.claims.extract import extract_claims
 from receipts.client.wrapper import ModelClient
 from receipts.drivers.minimal_agent.boundary import TruncationPolicy
@@ -280,6 +281,7 @@ def execute_run(
         workspace=str(work),
         base_commit=base,
         conditions=dict(spec.conditions),
+        canary=CANARY,
     )
     config, prompt, prior = configure_agent(
         arm, task, spec.conditions, study, spec.seed, spec.mitigation
@@ -304,8 +306,10 @@ def execute_run(
         "protocol_errors": result.protocol_errors,
     }
     (run_dir / "transcript.json").write_text(json.dumps(transcript, indent=2) + "\n", "utf-8")
+    # The ledger, the verdicts, and the run record name hidden checks and quote their
+    # output, so each carries the benchmark's canary string (rule 9, DECISIONS D59).
     (run_dir / "verification.json").write_text(
-        json.dumps(verification.to_dict(), indent=2) + "\n", "utf-8"
+        json.dumps({"canary": CANARY, **verification.to_dict()}, indent=2) + "\n", "utf-8"
     )
     provenance = {
         "git_sha": git_sha,
@@ -349,7 +353,8 @@ def execute_run(
         hook_checks=list(hook.checks),
         provenance=provenance,
     )
-    (run_dir / "run.json").write_text(json.dumps(asdict(record), indent=2) + "\n", "utf-8")
+    banked = {"canary": CANARY, **asdict(record)}
+    (run_dir / "run.json").write_text(json.dumps(banked, indent=2) + "\n", "utf-8")
     if not keep_workspace:
         shutil.rmtree(work, ignore_errors=True)
     return record

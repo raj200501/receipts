@@ -32,3 +32,11 @@ syntax. The files an agent sees (`repo/`, `variants/`, `prior_work.json`) never 
 so it cannot change a run or leak into a report. `python tools/bench_canary.py --check`
 verifies both; `--write` adds it to a new task (DECISIONS D52).
 
+The banked study runs under `artifacts/studies/` also name hidden checks and quote their
+output (the ledger's hidden-check events, `verification.json`, and the claim evidence in
+`run.json`). Runs made from now on carry the canary in each of those files: the ledger's
+`run_start` event, and a top-level `canary` key in `verification.json` and `run.json`
+(DECISIONS D59). The smoke runs banked before that, and those still running from the
+e4230cc snapshot, do not; they are left byte-identical because their records and hashes
+are what the gates and the smoke summary check.
+

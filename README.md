@@ -349,7 +349,9 @@ make ship-check   # all gates on a fresh clone
   syntax (hidden checks, and reference files that differ from what the agent sees) carries
   a canary string, so training pipelines can drop them. JSON answer-key files have no
   comment syntax and carry none, and the files an agent sees carry none by design
-  ([docs/DATA.md](docs/DATA.md), DECISIONS D52).
+  ([docs/DATA.md](docs/DATA.md), DECISIONS D52). Banked runs name hidden checks and quote
+  their output; new runs carry the canary in those files, but the smoke runs banked so far
+  do not (D59).
 - **Security issues in receipts itself**, such as a sandbox escape: report them privately,
   as [SECURITY.md](SECURITY.md) describes.
 

@@ -94,12 +94,15 @@ class Recorder:
         conditions: Mapping[str, str] | None = None,
         source: Source = "harness",
         records_agent_commands: bool = True,
+        canary: str | None = None,
     ) -> int:
         """Write ``run_start``; it must be the ledger's first event. Returns its seq.
 
         Pass ``records_agent_commands=False`` when this ledger will hold none of the
         agent's commands (``receipts wrap``); verifiers then report claims about
-        commands as unverifiable instead of contradicted.
+        commands as unverifiable instead of contradicted. A study run passes the
+        benchmark's ``canary`` string, because its ledger will hold hidden-check names
+        and output (DECISIONS D59); no verifier reads it.
         """
         if self._writer.events:
             raise ValueError("run_start must be the first event in the ledger")
@@ -117,6 +120,8 @@ class Recorder:
             data["conditions"] = dict(conditions)
         if not records_agent_commands:
             data["records_agent_commands"] = False
+        if canary is not None:
+            data["canary"] = canary
         return self._append("run_start", data)
 
     def record_tool_call(

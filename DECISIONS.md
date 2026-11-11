@@ -712,3 +712,18 @@ every committed row to equal its re-derivation (transcript commands, ledger comm
 missing commands, and `unparsed_actions`), with no re-derived run left out. The
 re-derivation uses the project's own transcript parser; `unparsed_actions` exposes the
 assistant turns that parser could not read, and the evidence line reports their number.
+
+**D59. Study runs carry the canary in the files that name hidden checks.** Recorded
+2026-11-11, before the change is committed (review N8). A banked run's ledger records each
+hidden check's name and output, and `verification.json` and `run.json` quote them in claim
+evidence, so those files are answer-key material, and the repository is public (rule 9).
+JSON has no comment syntax, so the study runner now writes the canary as data: a `canary`
+field in the ledger's `run_start` event (`Recorder.record_run_start(canary=...)`; no
+verifier reads it, and other ledgers, such as the hook's, carry none) and a top-level
+`canary` key in `verification.json` and `run.json`. The agent's transcript holds nothing
+it did not see, so it carries none, and the agent never sees any of these files. The smoke
+runs banked so far, and the ones still running from the e4230cc snapshot (D53), are not
+rewritten: their ledgers are hash-chained and their records are the inputs that G6 and
+the smoke summary hash, so they stay byte-identical and docs/DATA.md says they carry no
+canary. The recorder change is to instrument code (`src/receipts/ledger`, D47) before any
+held-out E0 scoring, so it binds no evaluation yet.

@@ -5,6 +5,11 @@ docs/BUILD_BRIEF.md section 9), newest first.
 
 ## 2026-11-11
 
+- **README.md, Responsible disclosure, the canary string**: it described the canary as
+  covering the benchmark's answer keys without saying that the banked runs quote those
+  answer keys (hidden-check names and output) and carry no canary (review N8). New study
+  runs now carry it in those files (D59); the README and docs/DATA.md state that the smoke
+  runs banked so far do not.
 - **README.md and docs/REPORT.md, what freshness re-derives** (until the commit after
   8692254): they said `make freshness` re-derives every live number from the banked
   artifacts, but it rebuilt only the registry, so the smoke summary it reads was never
