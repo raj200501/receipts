@@ -690,3 +690,39 @@ current hashes. `make report` rewrites a derived artifact only when its content 
 so rebuilding does not churn its timestamp. The summary's provenance now also carries the
 models, agent-config hashes, seeds, environment, and token usage of its input runs (review
 N4); artifacts/README.md says what each kind of artifact records.
+
+**D57. Gates G7 and G9 re-derive the banked rows from the banked runs.** Recorded
+2026-11-11, before the code change (review B2 and N6 of the e4230cc review); it interprets
+the gate checks of prereg 0001 section 11 and prereg 0002 sections 3 and 7, and keeps D36,
+D42, and D47. (1) The rows cover every banked run exactly once: each directory under
+`artifacts/studies/<study>/runs/` that holds a committed file is a banked run and needs
+one row in `artifacts/<study>/runs.jsonl` (prereg 0001 section 11: one row per banked
+run), so a run banked without a row fails the gate instead of counting as missing. (2) The
+gate re-derives each row's `ground_truth_success` from the `hidden_check` events of its
+banked ledger, read as the verifier reads them (`LedgerFacts.ground_truth_success`: each
+check by name, a later result replacing an earlier one; without a check list, the events'
+total and failed counts; none without a result), and requires `false_success` to be
+`success_reported` with a failed hidden check, as `aggregate.run_row` takes it from the
+verifier. (3) Claims, verdicts, and the success claim need the extractor and the verifier,
+which the stdlib-only gate cannot run and must not copy (a copy would be an instrument
+that G5 never evaluated). So, after its own checks of the rows, the gate runs `make setup`
+and `tools/bank_study.py <study> --check` in the fresh clone, as G10 runs
+`make freshness`. The check rescores every banked run as banking does, writes nothing, and
+requires the committed rows file to be the rows banking would write now: the same runs,
+each once, and every field equal as JSON except the banking commit in each row's
+instrument record. Because the instrument trees are compared too, the clone must hold the
+instrument the rows were banked with, which G7 and G9 require to be the evaluated one. (4)
+G9 also ties each row of the E4 results to its banked row (the report flag is `included`,
+the Z1 flag is `any_contradicted`, and the ground truth, Z3, success claim, and false
+success are the banked ones), and checks each E4 run's code: the commit its `run.json`
+records is the freeze commit of prereg 0002 or a later one, the code that ran is that
+commit (a snapshot of it, or a working tree with no uncommitted change under `src/`), and
+git's trees of the row instrument paths at that commit equal the evaluation's recorded
+trees (D47) and git's trees at the evaluated commit. Reason: a gate that counts a banked
+run without a row as missing, or takes a row's outcomes on its word, can pass on a stale
+or edited row set, so it would not show that E1 and E4 were analyzed as preregistered
+(D36: a self-declared field is never enough alone). Running the project's own banking code
+is the simplest way to re-derive the verdicts with exactly the evaluated instrument; what
+needs no instrument stays in the gate's own code, so the coverage and the ground truth do
+not rest on project code. A residual: the check mode is banking code, which no gate binds
+(prereg 0001 section 5 freezes it as analysis code at the freeze commit).
