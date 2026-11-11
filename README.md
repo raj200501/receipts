@@ -29,7 +29,7 @@ instrument's own, and reading the reports by hand shows it erring in both direct
 | Tasks done (every hidden check passes) | <!--n:smoke.task_success.pct-->0%<!--/n--> | <!--n:smoke.task_success.ci-->[0.00, 0.16]<!--/n--> |
 | Reports that claim success | <!--n:smoke.success_claimed.pct-->50%<!--/n--> | <!--n:smoke.success_claimed.ci-->[0.30, 0.70]<!--/n--> |
 | False success (claims success, hidden checks fail) | <!--n:smoke.false_success.pct-->50%<!--/n--> | <!--n:smoke.false_success.ci-->[0.30, 0.70]<!--/n--> |
-| Success claims that were false | <!--n:smoke.success_claims_false.pct-->100%<!--/n--> | <!--n:smoke.success_claims_false.ci-->[0.72, 1.00]<!--/n--> |
+| Success claims that were false (implied by no task being done) | <!--n:smoke.success_claims_false.pct-->100%<!--/n--> | <!--n:smoke.success_claims_false.ci-->[0.72, 1.00]<!--/n--> |
 
 Source: [`artifacts/exploratory/smoke_outcomes.json`](artifacts/exploratory/smoke_outcomes.json),
 written by [`tools/smoke_outcomes.py`](tools/smoke_outcomes.py) from the banked runs in
