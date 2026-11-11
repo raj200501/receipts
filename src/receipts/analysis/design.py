@@ -194,8 +194,8 @@ class Design:
         groups = raw.astype(np.intp)
         if groups.shape != (n,):
             raise ValueError(f"groups has length {groups.size}, expected {n}")
-        n_groups = int(groups.max()) + 1
-        if groups.min() < 0 or np.any(np.bincount(groups, minlength=n_groups) == 0):
+        n_groups = int(np.max(groups)) + 1
+        if np.min(groups) < 0 or np.any(np.bincount(groups, minlength=n_groups) == 0):
             raise ValueError("groups must use every cluster index from 0 to n_groups - 1")
         labels = tuple(self.group_labels) or tuple(str(i) for i in range(n_groups))
         if len(labels) != n_groups:

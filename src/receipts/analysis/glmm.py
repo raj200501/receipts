@@ -91,6 +91,17 @@ FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.intp]
 Objective = Callable[[FloatArray], tuple[float, FloatArray]]
 
+
+def _floats(value: ArrayLike) -> FloatArray:
+    """``value`` as a float64 array; a float64 array is returned unchanged, not copied.
+
+    NumPy 2.5's type stubs (the lock resolves NumPy 2.5 for Python 3.12 and later) type
+    some array expressions, such as a matrix-vector product, as scalars. Wrapping them
+    keeps ``mypy --strict`` passing on every supported Python without changing a value.
+    """
+    return np.asarray(value, dtype=np.float64)
+
+
 MAX_AGQ = 50
 """Largest supported number of quadrature nodes."""
 
@@ -448,7 +459,7 @@ def _logistic_newton(x: FloatArray, y: FloatArray, max_iter: int) -> tuple[Float
     iterations = 0
     while iterations < max_iter:
         iterations += 1
-        prob = expit(x @ beta)
+        prob = _floats(expit(x @ beta))
         info = (x * (prob * (1.0 - prob))[:, None]).T @ x
         step = _solve_pd(info, x.T @ (y - prob))
         if step is None or float(np.max(np.abs(step))) < 1e-10:
@@ -478,7 +489,7 @@ def fit_logistic(design: Design, level: float = 0.95, max_iter: int = 100) -> Fi
     check = detect_separation(design)
     x, y = design.x, design.y
     beta, loglik, iterations = _logistic_newton(x, y, max_iter)
-    prob = expit(x @ beta)
+    prob = _floats(expit(x @ beta))
     info = (x * (prob * (1.0 - prob))[:, None]).T @ x
     step = _solve_pd(info, x.T @ (y - prob))
     cov = _covariance(info, design.n_params)
@@ -540,17 +551,17 @@ class _MarginalLikelihood:
         """Maximise ``sum_j log p(y_ij | offset_ij + sd u) - u^2 / 2`` over u, per cluster."""
         y, groups = self.y, self.groups
         u = self.modes.copy()
-        eta = offset + sd * u[groups]
+        eta = _floats(offset + sd * u[groups])
         value = self._sum(y * eta - _softplus(eta)) - 0.5 * u * u
         for _ in range(_MODE_MAX_ITER):
-            prob = expit(eta)
+            prob = _floats(expit(eta))
             slope = sd * self._sum(y - prob) - u
             curvature = sd * sd * self._sum(prob * (1.0 - prob)) + 1.0
             step = slope / curvature
             scale = np.ones_like(u)
             for _ in range(_MAX_HALVINGS):
                 trial = u + scale * step
-                eta = offset + sd * trial[groups]
+                eta = _floats(offset + sd * trial[groups])
                 trial_value = self._sum(y * eta - _softplus(eta)) - 0.5 * trial * trial
                 worse = trial_value < value - 1e-12 * (1.0 + np.abs(value))
                 if not worse.any():
@@ -565,16 +576,16 @@ class _MarginalLikelihood:
     def evaluate(self, beta: FloatArray, sd: float) -> tuple[float, FloatArray]:
         """Log-likelihood and its gradient with respect to ``(beta, sd)``."""
         x, y, groups, t = self.x, self.y, self.groups, self.nodes
-        offset = x @ beta
+        offset = _floats(x @ beta)
         u = self._find_modes(offset, sd)
         # Quantities at the mode of each cluster.
-        prob0 = expit(offset + sd * u[groups])
+        prob0 = _floats(expit(offset + sd * u[groups]))
         v0 = prob0 * (1.0 - prob0)
         v1 = v0 * (1.0 - 2.0 * prob0)
         sum_v0, sum_v1 = self._sum(v0), self._sum(v1)
         resid0 = self._sum(y - prob0)
         curv = sd * sd * sum_v0 + 1.0
-        scale = 1.0 / np.sqrt(curv)
+        scale = _floats(1.0 / np.sqrt(curv))
         # Adaptive nodes and the quadrature sum, on the log scale.
         nodes = u[:, None] + scale[:, None] * t[None, :]
         eta = offset[:, None] + sd * nodes[groups]
