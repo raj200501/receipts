@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 320" width="720" height="320" role="img" aria-label="Exploratory smoke runs (n = 24, Qwen2.5-Coder-7B): share of runs, Wilson 95% intervals">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 320" width="720" height="320" role="img" aria-label="Exploratory smoke runs (n = 25, Qwen2.5-Coder-7B): share of runs, Wilson 95% intervals">
 <style>
 svg { --fg: #1f2328; --muted: #59636e; --grid: #d1d9e0; --bar: #3b6ea8; --bar2: #c56a2d; }
 @media (prefers-color-scheme: dark) {
@@ -9,7 +9,7 @@ text { fill: var(--fg); font: 12px -apple-system, Segoe UI, Helvetica, Arial, sa
 .bar { fill: var(--bar); } .bar2 { fill: var(--bar2); }
 .ci { stroke: var(--fg); stroke-width: 1.5; }
 </style>
-<text x="56" y="20">Exploratory smoke runs (n = 24, Qwen2.5-Coder-7B): share of runs, Wilson 95% intervals</text>
+<text x="56" y="20">Exploratory smoke runs (n = 25, Qwen2.5-Coder-7B): share of runs, Wilson 95% intervals</text>
 <line class="grid" x1="56" x2="704" y1="256.0" y2="256.0"/>
 <text class="muted" x="50" y="260.0" text-anchor="end">0.00</text>
 <line class="grid" x1="56" x2="704" y1="201.0" y2="201.0"/>
@@ -21,19 +21,19 @@ text { fill: var(--fg); font: 12px -apple-system, Segoe UI, Helvetica, Arial, sa
 <line class="grid" x1="56" x2="704" y1="36.0" y2="36.0"/>
 <text class="muted" x="50" y="40.0" text-anchor="end">1.00</text>
 <text class="muted" transform="translate(14 146.0) rotate(-90)" text-anchor="middle">share of runs</text>
-<rect class="bar" x="99.2" y="256.0" width="129.6" height="0.0"><title>Task done (hidden checks pass): 0.000 [0.000, 0.138]</title></rect>
-<line class="ci" x1="164.0" x2="164.0" y1="256.0" y2="225.6"/>
+<rect class="bar" x="99.2" y="256.0" width="129.6" height="0.0"><title>Task done (hidden checks pass): 0.000 [0.000, 0.133]</title></rect>
+<line class="ci" x1="164.0" x2="164.0" y1="256.0" y2="226.7"/>
 <line class="ci" x1="159.0" x2="169.0" y1="256.0" y2="256.0"/>
-<line class="ci" x1="159.0" x2="169.0" y1="225.6" y2="225.6"/>
+<line class="ci" x1="159.0" x2="169.0" y1="226.7" y2="226.7"/>
 <text x="164.0" y="272" text-anchor="middle">Task done (hidden checks pass)</text>
-<rect class="bar2" x="315.2" y="160.3" width="129.6" height="95.7"><title>Report claims success: 0.435 [0.256, 0.632]</title></rect>
-<line class="ci" x1="380.0" x2="380.0" y1="199.6" y2="117.0"/>
-<line class="ci" x1="375.0" x2="385.0" y1="199.6" y2="199.6"/>
-<line class="ci" x1="375.0" x2="385.0" y1="117.0" y2="117.0"/>
+<rect class="bar2" x="315.2" y="164.3" width="129.6" height="91.7"><title>Report claims success: 0.417 [0.245, 0.612]</title></rect>
+<line class="ci" x1="380.0" x2="380.0" y1="202.2" y2="121.4"/>
+<line class="ci" x1="375.0" x2="385.0" y1="202.2" y2="202.2"/>
+<line class="ci" x1="375.0" x2="385.0" y1="121.4" y2="121.4"/>
 <text x="380.0" y="272" text-anchor="middle">Report claims success</text>
-<rect class="bar2" x="531.2" y="160.3" width="129.6" height="95.7"><title>False success: 0.435 [0.256, 0.632]</title></rect>
-<line class="ci" x1="596.0" x2="596.0" y1="199.6" y2="117.0"/>
-<line class="ci" x1="591.0" x2="601.0" y1="199.6" y2="199.6"/>
-<line class="ci" x1="591.0" x2="601.0" y1="117.0" y2="117.0"/>
+<rect class="bar2" x="531.2" y="164.3" width="129.6" height="91.7"><title>False success: 0.417 [0.245, 0.612]</title></rect>
+<line class="ci" x1="596.0" x2="596.0" y1="202.2" y2="121.4"/>
+<line class="ci" x1="591.0" x2="601.0" y1="202.2" y2="202.2"/>
+<line class="ci" x1="591.0" x2="601.0" y1="121.4" y2="121.4"/>
 <text x="596.0" y="272" text-anchor="middle">False success</text>
 </svg>
