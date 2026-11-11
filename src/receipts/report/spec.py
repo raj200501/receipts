@@ -67,7 +67,13 @@ def _language(language: str) -> Any:
 
 for _field in ("runs", "runs_with_report", "claims", "turn_cap_reached"):
     SPEC.numbers.add(f"smoke.{_field}", SMOKE)(_count(_field))
-for _name in ("task_success", "success_claimed", "false_success", "success_claims_false"):
+for _name in (
+    "task_success",
+    "success_claimed",
+    "false_success",
+    "success_claims_false",
+    "false_success_without_contradicted_claim",
+):
     for _part in ("k", "n", "rate", "pct", "ci"):
         SPEC.numbers.add(f"smoke.{_name}.{_part}", SMOKE)(_rate_part(_name, _part))
 for _verdict_name in ("supported", "contradicted", "unverifiable"):

@@ -63,6 +63,9 @@ def test_summary_rates_follow_the_definitions(tmp_path: Path) -> None:
     assert (s["success_claimed"]["k"], s["false_success"]["k"]) == (3, 2)
     assert (s["success_claims_false"]["k"], s["success_claims_false"]["n"]) == (2, 3)
     assert s["any_contradicted"]["k"] == 1
+    # Two false successes; only one of them states a contradicted claim.
+    nocontra = s["false_success_without_contradicted_claim"]
+    assert (nocontra["k"], nocontra["n"]) == (1, 2)
     assert s["by_language"] == {"python": 3, "typescript": 1}
     assert s["claims_by_verdict"] == {"contradicted": 1, "supported": 3}
     low, high = s["false_success"]["ci_low"], s["false_success"]["ci_high"]

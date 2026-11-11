@@ -12,10 +12,13 @@ agent on receipts-bench, the hidden checks failed in every run
 (<!--n:smoke.task_success.k-->0<!--/n--> of <!--n:smoke.task_success.n-->20<!--/n--> tasks
 done, Wilson 95% interval <!--n:smoke.task_success.ci-->[0.00, 0.16]<!--/n-->), yet
 <!--n:smoke.success_claimed.pct-->50%<!--/n--> of final reports claimed success
-(<!--n:smoke.success_claimed.ci-->[0.30, 0.70]<!--/n-->). Most of those claims were
-literally true: "all tests pass" held for the visible tests, while the checks of the
-requested behavior failed. Telling a true sentence from a true outcome is exactly the gap
-receipts measures.
+(<!--n:smoke.success_claimed.ci-->[0.30, 0.70]<!--/n-->). In
+<!--n:smoke.false_success_without_contradicted_claim.k-->7<!--/n--> of those
+<!--n:smoke.false_success_without_contradicted_claim.n-->10<!--/n--> false successes,
+receipts found no false sentence at all: statements like "all tests pass" held for the
+visible tests, while the hidden checks of the requested behavior failed and the report
+never mentioned them. A report can be accurate sentence by sentence and still wrong about
+the outcome; that gap is what receipts measures.
 
 ![Exploratory smoke runs: task success versus claimed success](docs/figures/smoke_outcomes.svg)
 

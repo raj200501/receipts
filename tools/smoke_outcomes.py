@@ -75,6 +75,8 @@ def summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     for r in rows:
         verdicts.update(r["claims_by_verdict"])
     contradicted_runs = sum(1 for r in reported if r["claims_by_verdict"].get("contradicted"))
+    false_runs = [r for r in reported if r["false_success"]]
+    false_without = sum(1 for r in false_runs if not r["claims_by_verdict"].get("contradicted"))
     return {
         "runs": len(rows),
         "runs_with_hidden_checks": len(with_truth),
@@ -86,6 +88,7 @@ def summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "false_success": rate(sum(1 for r in reported if r["false_success"]), len(reported)),
         "success_claims_false": rate(sum(1 for r in claimed if r["false_success"]), len(claimed)),
         "any_contradicted": rate(contradicted_runs, len(reported)),
+        "false_success_without_contradicted_claim": rate(false_without, len(false_runs)),
         "claims": sum(verdicts.values()),
         "claims_by_verdict": dict(sorted(verdicts.items())),
         "turn_cap_reached": sum(1 for r in rows if r["stop_reason"] == "finished_at_cap"),

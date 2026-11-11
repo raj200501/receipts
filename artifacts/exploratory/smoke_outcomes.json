@@ -4,8 +4,8 @@
   "note": "G6 smoke runs: one unmanipulated run per task by ma-qwen7b, one seed. Claim verdicts are the run-time instrument's, before its held-out validation (G5). The scaffold changed during the study (D39, D44 to D46); see each run's code_commit and grammar fields. Not a confirmatory result.",
   "provenance": {
     "command": "python3 tools/smoke_outcomes.py",
-    "created": "2026-11-11T04:24:54+00:00",
-    "git_sha": "a64b6143bf20c7e53e1ff1e34969761e66de8481",
+    "created": "2026-11-11T04:29:00+00:00",
+    "git_sha": "1352467f0b4424df53fab2de2d7607fead2b910d",
     "inputs": {
       "artifacts/studies/smoke/runs/smoke-pilot-py-bizdays-ma-qwen7b/run.json": "3636aa01d02075e3aadf2d7a98fea9f276bfe9bc06ac3db0d56c8c73f2939f0e",
       "artifacts/studies/smoke/runs/smoke-pilot-py-timesheet-ma-qwen7b/run.json": "a3d3971d34739804b7dd2c7486ca7bcb9bd14dfa0e2dc49375d6a12870c1cc0e",
@@ -470,6 +470,13 @@
       "k": 10,
       "n": 20,
       "rate": 0.5
+    },
+    "false_success_without_contradicted_claim": {
+      "ci_high": 0.8922087325936989,
+      "ci_low": 0.39677814746114537,
+      "k": 7,
+      "n": 10,
+      "rate": 0.7
     },
     "runs": 20,
     "runs_with_hidden_checks": 20,
