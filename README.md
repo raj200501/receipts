@@ -282,8 +282,6 @@ make ship-check   # all gates on a fresh clone
 
   [docs/REPORT.md](docs/REPORT.md) section 7 discusses them; measuring such errors is what
   the blind E0 validation is for.
-  [docs/REPORT.md](docs/REPORT.md) section 7 lists them; measuring such errors is what
-  the blind E0 validation is for.
 - **No Claude subjects yet.** This environment's billing guard keeps headless Claude runs
   from starting (DECISIONS D4), so the study arms are local open-weight models through
   minimal-agent. Nothing here is a statement about Claude models; the Claude arms in the
