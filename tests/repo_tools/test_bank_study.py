@@ -20,6 +20,8 @@ from typing import Any
 import pytest
 
 import bank_study
+from receipts.bench.canary import remove_canary
+from receipts.bench.hashing import tree_sha256
 from receipts.evaluation import e0
 from receipts.study import aggregate, rescore
 
@@ -33,8 +35,16 @@ Commit = Callable[[Path, str], str]
 
 @pytest.fixture
 def checkout(git_repo: Path, commit: Commit, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A SYNTHETIC scratch checkout holding copies of one REAL task and its smoke run."""
-    shutil.copytree(ROOT / "bench" / "tasks" / TASK, git_repo / "bench" / "tasks" / TASK)
+    """A SYNTHETIC scratch checkout holding copies of one REAL task and its smoke run.
+
+    The smoke run was made before the canary (DECISIONS D52), so the copy of its task
+    has the canary taken out again: the task files exactly as the run recorded them.
+    """
+    task = git_repo / "bench" / "tasks" / TASK
+    shutil.copytree(ROOT / "bench" / "tasks" / TASK, task)
+    remove_canary(task)
+    record = json.loads((REAL_RUN / "run.json").read_text(encoding="utf-8"))
+    assert tree_sha256(task) == record["provenance"]["task_tree_sha256"]
     for study in STUDIES:
         shutil.copytree(REAL_RUN, git_repo / "artifacts" / "studies" / study / "runs" / RUN_ID)
     (git_repo / "README.md").write_text("SYNTHETIC scratch checkout for bank_study tests\n")

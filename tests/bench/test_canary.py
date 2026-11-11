@@ -17,8 +17,11 @@ from receipts.bench.canary import (
     canary_problems,
     canary_targets,
     comment_for,
+    remove_canary,
     with_canary,
+    without_canary,
 )
+from receipts.bench.hashing import tree_sha256
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -82,6 +85,16 @@ def test_add_then_check(tmp_path: Path) -> None:
     assert canary_problems(root) == []
     assert add_canary(root) == []  # idempotent
     assert CANARY not in (root / "repo" / "app.py").read_text(encoding="utf-8")
+
+
+def test_removal_restores_the_exact_bytes(tmp_path: Path) -> None:
+    root = task(tmp_path)
+    before = tree_sha256(root)
+    add_canary(root)
+    assert tree_sha256(root) != before
+    assert len(remove_canary(root)) == 5
+    assert tree_sha256(root) == before
+    assert without_canary("no canary here\n", PurePosixPath("a.py")) == "no canary here\n"
 
 
 def test_a_canary_the_agent_can_see_is_a_problem(tmp_path: Path) -> None:
