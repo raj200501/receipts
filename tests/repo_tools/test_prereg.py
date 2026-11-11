@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import subprocess
 from collections.abc import Callable
@@ -50,6 +51,71 @@ def test_freeze_rejects_bad_names_and_refreeze(git_repo: Path, commit: Commit) -
         prereg.freeze(git_repo, "prereg/0001-e1-main.md", "2026-10-23")
     with pytest.raises(ValueError, match="does not match"):
         prereg.freeze(git_repo, "prereg/e1.md", "2026-10-23")
+
+
+# ---------------------------------------------------------------- unfinished drafts (D42 item 6)
+# The texts below are SYNTHETIC preregistrations written only for these tests.
+
+DRAFT_STATUS = (
+    "Status: DRAFT. Not frozen. Fields marked TO FIX BEFORE FREEZE are filled before the\nfreeze.\n"
+)
+FILLED = "# E9 (SYNTHETIC)\n\nStatus: FROZEN on 2026-11-05.\n\nplanned_runs_per_config: 64\n"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param(f"# E9 (SYNTHETIC)\n\n{DRAFT_STATUS}", id="the-draft-status-paragraph"),
+        pytest.param(FILLED + "- K: TO FIX BEFORE FREEZE\n", id="a-placeholder"),
+        pytest.param(FILLED + "K is fixed later (TO FIX BEFORE\nFREEZE).\n", id="a-wrapped-one"),
+        pytest.param(FILLED + "- K: to fix before freeze\n", id="in-lower-case"),
+        pytest.param("# E9 (SYNTHETIC)\n\nStatus: DRAFT\n", id="a-draft-status-line"),
+        pytest.param("# E9 (SYNTHETIC)\n\n**Status:** Draft, not frozen\n", id="emphasized"),
+        pytest.param("# E9 (SYNTHETIC)\n\n> status:draft\n", id="quoted-without-a-space"),
+    ],
+)
+def test_freeze_refuses_an_unfinished_draft(git_repo: Path, text: str) -> None:
+    (git_repo / "prereg").mkdir()
+    (git_repo / "prereg" / "0009-e9.md").write_text(text, encoding="utf-8")
+    with pytest.raises(ValueError, match=r"TO FIX BEFORE FREEZE|Status: DRAFT"):
+        prereg.freeze(git_repo, "prereg/0009-e9.md", "2026-11-05")
+    assert not (git_repo / prereg.LOCK).exists()
+
+
+def test_freeze_accepts_a_filled_file_that_names_the_rules(git_repo: Path) -> None:
+    # Words near the markers are not the markers: a status other than DRAFT, a draft
+    # mentioned later in a line, and the freeze rule paraphrased without the phrase.
+    text = (
+        FILLED + "The Status line said DRAFT until the freeze commit.\n"
+        "Status: FROZEN (it was a DRAFT before).\n"
+        "Placeholders to fix were filled before the freeze.\n"
+    )
+    (git_repo / "prereg").mkdir()
+    (git_repo / "prereg" / "0009-e9.md").write_text(text, encoding="utf-8")
+    entry = prereg.freeze(git_repo, "prereg/0009-e9.md", "2026-11-05")
+    assert entry.sha256 == hashlib.sha256(text.encode("utf-8")).hexdigest()
+    assert [e.file for e in prereg.load_lock(git_repo)] == ["prereg/0009-e9.md"]
+
+
+def test_freeze_refuses_a_missing_or_non_text_file(git_repo: Path) -> None:
+    (git_repo / "prereg").mkdir()
+    with pytest.raises(ValueError, match="does not exist"):
+        prereg.freeze(git_repo, "prereg/0009-e9.md", "2026-11-05")
+    (git_repo / "prereg" / "0009-e9.md").write_bytes(b"# E9 \xff\xfe SYNTHETIC\n")
+    with pytest.raises(ValueError, match="not UTF-8 text"):
+        prereg.freeze(git_repo, "prereg/0009-e9.md", "2026-11-05")
+    assert not (git_repo / prereg.LOCK).exists()
+
+
+def test_main_reports_a_refused_freeze(git_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (git_repo / "prereg").mkdir()
+    (git_repo / "prereg" / "0009-e9.md").write_text(f"# E9\n\n{DRAFT_STATUS}", "utf-8")
+    args = ["--root", str(git_repo), "freeze", "prereg/0009-e9.md", "--date", "2026-11-05"]
+    assert prereg.main(args) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("prereg freeze: refused: prereg/0009-e9.md")
+    assert "TO FIX BEFORE FREEZE" in err and "Traceback" not in err
+    assert not (git_repo / prereg.LOCK).exists()
 
 
 def test_edit_after_freeze_is_caught(git_repo: Path, commit: Commit) -> None:

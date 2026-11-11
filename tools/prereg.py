@@ -5,6 +5,12 @@ preregistration file, its SHA-256, the previous entry's hash, and its own hash
 ``sha256(prev + "\\n" + file + "\\n" + sha256)``. A file is frozen at the first
 commit that contains its LOCK entry.
 
+``freeze`` refuses an unfinished draft (DECISIONS D42 item 6): a file that still says
+``TO FIX BEFORE FREEZE`` (in any case, also wrapped across lines) or has a line that
+starts ``Status: DRAFT`` (in any case, also behind list, quote, or emphasis marks).
+It also refuses a name outside ``prereg/NNNN-<slug>.md``, a file frozen before, and a
+file that is missing or not UTF-8 text. It hashes the bytes it checked.
+
 ``verify`` checks that:
 
 1. the chain is intact and every entry's file exists with its locked hash;
@@ -34,6 +40,7 @@ pass when no confirmatory artifact exists yet.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -59,6 +66,12 @@ AMENDS = re.compile(r"^Amends:\s*(prereg/\S+\.md)\s*$", re.MULTILINE)
 EXPERIMENT = re.compile(r"^artifacts/(?:studies/)?(e\d+)/")
 GENESIS = "0" * 64
 EXAMPLES = 5
+#: A field a draft still has to fill (D42 item 6), also when a line break splits it.
+PLACEHOLDER = re.compile(r"TO\s+FIX\s+BEFORE\s+FREEZE", re.IGNORECASE)
+#: A draft's status line: ``Status: DRAFT``, also behind list, quote, or emphasis marks.
+DRAFT_STATUS = re.compile(
+    r"^[ \t>*_-]*status[ \t*_]*:[ \t*_]*draft\b", re.IGNORECASE | re.MULTILINE
+)
 
 
 @dataclass(frozen=True)
@@ -105,14 +118,46 @@ def write_lock(root: Path, entries: Sequence[LockEntry]) -> None:
     (root / LOCK).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def draft_markers(text: str) -> list[str]:
+    """Why ``text`` is still a draft: a ``TO FIX BEFORE FREEZE`` field or a
+    ``Status: DRAFT`` line (empty when there is neither)."""
+    found: list[str] = []
+    placeholders = len(PLACEHOLDER.findall(text))
+    if placeholders:
+        found.append(f"{placeholders} field(s) still say TO FIX BEFORE FREEZE")
+    if DRAFT_STATUS.search(text):
+        found.append("a line still says Status: DRAFT")
+    return found
+
+
 def freeze(root: Path, rel: str, today: str) -> LockEntry:
-    """Append ``rel`` to the chain. Refuses names outside the convention and refreezes."""
+    """Append ``rel`` to the chain.
+
+    Raises:
+        ValueError: ``rel`` is outside the naming convention, already frozen, missing,
+            not UTF-8 text, or an unfinished draft (:func:`draft_markers`). Nothing is
+            written then.
+    """
     if not PREREG_NAME.match(rel):
         raise ValueError(f"{rel} does not match prereg/NNNN-<slug>.md")
     entries = load_lock(root)
     if any(e.file == rel for e in entries):
         raise ValueError(f"{rel} is already frozen; write a dated amendment instead")
-    digest = sha256_file(root / rel)
+    path = root / rel
+    if not path.is_file():
+        raise ValueError(f"{rel} does not exist")
+    raw = path.read_bytes()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{rel} is not UTF-8 text ({exc.reason} at byte {exc.start})") from exc
+    markers = draft_markers(text)
+    if markers:
+        raise ValueError(
+            f"{rel} is an unfinished draft ({'; '.join(markers)}): fill every field and "
+            "replace the Status: DRAFT paragraph by a Status: FROZEN line before freezing"
+        )
+    digest = hashlib.sha256(raw).hexdigest()
     prev = entries[-1].entry_hash if entries else GENESIS
     entry = LockEntry(rel, digest, prev, entry_hash(prev, rel, digest), today)
     write_lock(root, [*entries, entry])
@@ -450,7 +495,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = repo_root(args.root)
     if args.command == "freeze":
-        entry = freeze(root, args.file, args.date)
+        try:
+            entry = freeze(root, args.file, args.date)
+        except ValueError as exc:
+            print(f"prereg freeze: refused: {exc}", file=sys.stderr)
+            return 2
         print(f"frozen {entry.file} sha256={entry.sha256}; commit {LOCK} with it now")
         return 0
     result = verify(root)

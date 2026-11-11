@@ -16,6 +16,10 @@ real runs of the ``pilot-*`` tasks, which are never pooled with confirmatory dat
 - **Run duration.** Per arm, the mean wall time of its pilot runs (the pilot runs four
   at a time on the shared CPU, as E1 does).
 
+The tool refuses (exit 2) unless the pilot banked runs of exactly the four E1 arms
+(``E1_ARMS``): an arm with no banked pilot run would drop out of both the wall-time
+estimate and the simulated design, and a run of another arm would enter them.
+
 Rule: the candidates are R = 4, 5, ... up to the largest R whose estimated E1 wall time,
 the sum over arms of ``16 R mean_wall_s / PARALLEL`` seconds, fits the budget (default
 20 hours). R is the smallest candidate at which every manipulation's simulated power
@@ -55,6 +59,8 @@ OUT = ROOT / "artifacts" / "power" / "e1_power.json"
 
 FACTORS = ("M1", "M2", "M3", "M4", "M5")
 FIRST_LEVELS = {"M1": "attainable", "M2": "full", "M3": "neutral", "M4": "short", "M5": "reliable"}
+E1_ARMS = ("ma-qwen7b", "ma-qwen1.5b", "ma-granite8b", "ma-granite2b")
+"""The four E1 arms (prereg 0001 section 3, ``ARMS`` in tools/make_plans.py)."""
 REFERENCE_ARM = "ma-qwen7b"
 ODDS_RATIO = 2.0
 ALPHA = 0.005
@@ -74,6 +80,22 @@ def load_runs(runs_dir: Path) -> list[dict[str, Any]]:
     for path in sorted(runs_dir.glob("*/run.json")):
         records.append(json.loads(path.read_text(encoding="utf-8")))
     return records
+
+
+def arm_problem(records: Sequence[Mapping[str, Any]]) -> str | None:
+    """Why the pilot records are not runs of exactly the four E1 arms (None when they are)."""
+    rule = f"the pilot must have banked runs of exactly the four E1 arms ({', '.join(E1_ARMS)})"
+    arms = [record.get("config_id") for record in records]
+    if any(not isinstance(arm, str) or not arm for arm in arms):
+        return f"{rule}: a record names no arm (config_id)"
+    found = {str(arm) for arm in arms}
+    missing = [arm for arm in E1_ARMS if arm not in found]
+    unexpected = sorted(found - set(E1_ARMS))
+    if not missing and not unexpected:
+        return None
+    parts = [f"missing {', '.join(missing)}"] if missing else []
+    parts += [f"unexpected {', '.join(unexpected)}"] if unexpected else []
+    return f"{rule}: {'; '.join(parts)}"
 
 
 def _reported(record: Mapping[str, Any]) -> bool:
@@ -169,12 +191,17 @@ def size_search(
     replicates: Sequence[int],
     n_sim: int,
 ) -> dict[str, Any]:
-    """The preregistered search over ``replicates`` (module docstring), as a dict."""
+    """The preregistered search over ``replicates`` (module docstring), as a dict.
+
+    The rule checks the five manipulations only: the arms enter the design with no
+    effect, so their power stays near alpha and is never a target.
+    """
     effects = {f: math.log(ODDS_RATIO) for f in FACTORS}
     search = smallest_sufficient(
         "replicates",
         list(replicates),
         TARGET,
+        check=list(FACTORS),
         base_rate=rate,
         effects=effects,
         random_sd=sd,
@@ -229,6 +256,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if any(r.get("synthetic") for r in records):
         print("a pilot record is marked synthetic; refusing", file=sys.stderr)
+        return 2
+    problem = arm_problem(records)
+    if problem is not None:
+        print(f"{problem}; refusing", file=sys.stderr)
         return 2
     rate, sd, walls = base_rate(records), random_sd(records), mean_wall_s(records)
     n_tasks = args.n_tasks if args.n_tasks is not None else e1_task_count()

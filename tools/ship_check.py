@@ -45,6 +45,7 @@ import json  # noqa: E402
 import math  # noqa: E402
 import os  # noqa: E402
 import posixpath  # noqa: E402
+import random  # noqa: E402
 import re  # noqa: E402
 import shlex  # noqa: E402
 import shutil  # noqa: E402
@@ -544,7 +545,6 @@ def strip_code(text: str) -> str:
 
 
 HEX40 = re.compile(r"[0-9a-f]{40}")
-HEX64 = re.compile(r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])")
 SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 RENAME_HOPS = 20
 
@@ -724,19 +724,6 @@ def repo_path(rel: object) -> str | None:
         return None
     norm = posixpath.normpath(rel)
     return None if norm in (".", "..") or norm.startswith("../") else norm
-
-
-def json_digests(raw: bytes) -> set[str]:
-    """The SHA-256 of a JSON file's bytes and of its canonical form (sorted keys, compact
-    separators, UTF-8): the two ways this project cites a study plan."""
-    digests = {hashlib.sha256(raw).hexdigest()}
-    try:
-        data = json.loads(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return digests
-    canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    digests.add(hashlib.sha256(canonical.encode("utf-8")).hexdigest())
-    return digests
 
 
 def is_number(value: object) -> TypeGuard[int | float]:
@@ -2560,8 +2547,28 @@ E1_RUNS = "artifacts/e1/runs.jsonl"
 E1_PLAN = "artifacts/studies/e1/plan.json"
 # E1's confirmatory data, first committed after the freeze (the roots tools/prereg.py uses).
 E1_DATA = ("artifacts/e1", "artifacts/studies/e1/runs")
+# The preregistrations' machine-readable lines (prereg 0001 and 0002 section 3): the value
+# on the same line as its name, the digest in lowercase hex; the first match counts.
 PLANNED_RUNS = re.compile(r"planned_runs_per_config:[ \t]*(\d+)\b")
 PLAN_SHA = re.compile(r"plan_sha256:[ \t]*([0-9a-f]{64})\b")
+
+
+def check_plan_digest(prereg: str, text: str, rel: str, raw: bytes) -> None:
+    """The first ``plan_sha256:`` line of the frozen ``prereg`` records the SHA-256 of
+    the bytes of the plan file ``rel`` (``raw``). The canonical content hash
+    (``Plan.sha256()``) is not accepted, and a prereg without the line does not fix
+    the plan."""
+    recorded = PLAN_SHA.search(text)
+    require(
+        recorded is not None,
+        f"{prereg} has no plan_sha256: line (the SHA-256 of the bytes of {rel}, recorded at "
+        "freeze), so the plan is not shown to be the preregistered one",
+    )
+    assert recorded is not None
+    require(
+        recorded.group(1) == hashlib.sha256(raw).hexdigest(),
+        f"{prereg} records a plan_sha256 that is not the SHA-256 of the bytes of {rel}",
+    )
 
 
 def _e1_runs(root: Path) -> list[dict[str, Any]]:
@@ -2645,11 +2652,11 @@ def check_planned_agent(run: BankedRun, arms: Arms, config: str) -> None:
     )
 
 
-def e1_plan(root: Path, prereg: str, text: str, fz: str) -> tuple[dict[str, dict[str, Any]], Arms]:
+def e1_plan(root: Path, prereg: str, text: str) -> tuple[dict[str, dict[str, Any]], Arms]:
     """The planned E1 runs by run id, and the arms by config id (driver, model, and
-    family), from the plan the frozen preregistration fixes: the prereg records the
-    plan's SHA-256, or the freeze commit holds plan.json and no later commit touches it.
-    Every arm is planned for ``planned_runs_per_config`` runs, the number the prereg
+    family), from the plan the frozen preregistration fixes: its first ``plan_sha256:``
+    line is the SHA-256 of the bytes of plan.json (:func:`check_plan_digest`). Every arm
+    is planned for ``planned_runs_per_config`` runs, the number its first such line
     states."""
     path = root / E1_PLAN
     require(path.is_file(), f"{E1_PLAN} missing")
@@ -2658,19 +2665,7 @@ def e1_plan(root: Path, prereg: str, text: str, fz: str) -> tuple[dict[str, dict
         plan = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise GateError(f"{E1_PLAN} is not valid JSON") from exc
-    digests = json_digests(raw)
-    recorded = set(PLAN_SHA.findall(text))
-    require(
-        not recorded or bool(recorded & digests),
-        f"{prereg} records a plan_sha256 that is not the SHA-256 of {E1_PLAN}",
-    )
-    if not digests & set(HEX64.findall(text)):
-        held = git_or_none(root, "cat-file", "-e", f"{fz}:{E1_PLAN}") is not None
-        require(
-            held and not commits_after(root, fz, E1_PLAN),
-            f"{E1_PLAN} is not the plan frozen with {prereg} (the prereg does not record "
-            "its SHA-256, and the freeze commit does not hold it unchanged since)",
-        )
+    check_plan_digest(prereg, text, E1_PLAN, raw)
     runs = plan.get("runs") if isinstance(plan, dict) else None
     require(isinstance(runs, list), f"{E1_PLAN} has no runs")
     assert isinstance(runs, list)
@@ -2705,7 +2700,10 @@ def check_e1_rows(
     runs: Sequence[Mapping[str, Any]], planned: Mapping[str, Mapping[str, Any]], arms: Arms
 ) -> None:
     """Every row is a distinct planned run with its planned task, arm, conditions, and
-    seed, and the model family of its planned arm."""
+    seed, and the model family of its planned arm. Its hidden-check result
+    (``ground_truth_success``) is true, false, or null, never absent, so no run leaves
+    Y1 silently, and ``false_success`` is a boolean that is true only when a hidden
+    check failed."""
     for index, row in enumerate(runs, start=1):
         fields = ("run_id", "config_id", "model_family", "task_id")
         require(
@@ -2718,6 +2716,15 @@ def check_e1_rows(
             and isinstance(claims, list)
             and all(isinstance(c, dict) for c in claims),
             f"{E1_RUNS} row {index} has no included flag or claims list",
+        )
+        truth = row.get("ground_truth_success", "absent")
+        require(
+            isinstance(row.get("false_success"), bool)
+            and (truth is None or isinstance(truth, bool))
+            and (row["false_success"] is False or truth is False),
+            f"{E1_RUNS} row {index} lacks a ground_truth_success of true, false, or null, or "
+            f"a false_success flag that is true only when a hidden check failed "
+            f"(ground_truth_success {truth!r}, false_success {row.get('false_success')!r})",
         )
     counts = Counter(str(row["run_id"]) for row in runs)
     repeated = sorted(rid for rid, n in counts.items() if n > 1)
@@ -2747,9 +2754,10 @@ def check_e1_banked(
     root: Path, runs: Sequence[Mapping[str, Any]], arms: Arms, prereg: str, fz: str
 ) -> None:
     """Every row is a banked E1 run (:func:`banked_run`) made by its planned arm's agent,
-    with the row's arm, family, conditions, seed, and inclusion (a non-empty final
-    report), launched from the freeze commit of ``prereg`` or a later one
-    (``provenance.git_sha``: the commit, or the snapshot, it ran)."""
+    with the row's arm, family, conditions, seed, inclusion (a non-empty final report),
+    and ``report_sha256`` (the report the row was rescored from), launched from the
+    freeze commit of ``prereg`` or a later one (``provenance.git_sha``: the commit, or
+    the snapshot, it ran)."""
     after: dict[str, bool] = {}
     for row in runs:
         run = banked_run(root, "e1", row)
@@ -2764,6 +2772,8 @@ def check_e1_banked(
             diffs.append("family")
         if bool(run.report.strip()) is not row.get("included"):
             diffs.append("included")
+        if row.get("report_sha256") != text_sha256(run.report):
+            diffs.append("report_sha256")
         require(
             not diffs, f"{row['run_id']} differs from its banked run.json in " + ", ".join(diffs)
         )
@@ -2774,6 +2784,141 @@ def check_e1_banked(
             isinstance(sha, str) and after[sha],
             f"{row['run_id']} was launched from {str(sha)[:12]}, not from the freeze commit "
             f"of {prereg} or a later one",
+        )
+
+
+#: A UTF-16 surrogate on its own, which the ledger stores as U+FFFD
+#: (``receipts.ledger.events.stored_text``).
+LONE_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
+def text_sha256(text: str) -> str:
+    """SHA-256 of a report's UTF-8 text as the ledger stores it (a lone surrogate as
+    U+FFFD), as banking hashes the rescored report into a row's ``report_sha256``."""
+    return hashlib.sha256(LONE_SURROGATE.sub("\ufffd", text).encode("utf-8")).hexdigest()
+
+
+Evaluated = tuple[str, dict[str, str]]
+#: The paths a banked row's instrument record binds: exactly the code re-verification
+#: runs, the extractor, the verifier, and the ledger reader
+#: (``receipts.study.rescore.INSTRUMENT_RECORD_PATHS``, DECISIONS D47). The held-out
+#: evaluation records them among its paths.
+ROW_INSTRUMENT_PATHS = ("src/receipts/claims", "src/receipts/verify", "src/receipts/ledger")
+
+
+def evaluated_trees(root: Path) -> Evaluated:
+    """``(commit, trees)`` of the instrument the held-out G5 evaluation scored
+    (``instrument`` in artifacts/e0/seeded_eval.json), after checking that the file is
+    the held-out split, that it ran a clean instrument (``dirty`` false, nothing
+    uncommitted), at a commit of this repository, and that it records a git tree for
+    every path it covers, :data:`ROW_INSTRUMENT_PATHS` among them (prereg 0001 section
+    5, Instrument version). ``trees`` holds the trees of :data:`ROW_INSTRUMENT_PATHS`
+    only, the ones a row's instrument record must equal."""
+    seeded = load_json(root, E0_EVAL)
+    require(
+        isinstance(seeded, dict) and seeded.get("split") == "heldout",
+        f"{E0_EVAL} is not the held-out G5 evaluation (split: heldout)",
+    )
+    instrument = seeded.get("instrument")
+    require(isinstance(instrument, dict), f"{E0_EVAL} does not record the instrument it evaluated")
+    assert isinstance(instrument, dict)
+    sha, paths, trees = instrument.get("commit"), instrument.get("paths"), instrument.get("trees")
+    require(
+        is_commit(root, sha), f"the evaluated instrument {sha!r} is not a commit of this repository"
+    )
+    require(
+        isinstance(paths, list)
+        and bool(paths)
+        and all(is_text(p) for p in paths)
+        and isinstance(trees, dict)
+        and set(trees) == set(paths)
+        and all(is_text(t) for t in trees.values()),
+        f"{E0_EVAL} does not record a git tree for each instrument path it covers",
+    )
+    require(
+        instrument.get("dirty") is False and not instrument.get("uncommitted"),
+        "the G5 evaluation ran on an instrument with uncommitted changes",
+    )
+    assert isinstance(sha, str) and isinstance(trees, dict)
+    unbound = [rel for rel in ROW_INSTRUMENT_PATHS if rel not in trees]
+    require(
+        not unbound,
+        f"{E0_EVAL} records no git tree for " + ", ".join(unbound) + ", which banked rows bind",
+    )
+    return sha, {rel: trees[rel] for rel in ROW_INSTRUMENT_PATHS}
+
+
+def git_trees(root: Path, sha: str, paths: Iterable[str]) -> dict[str, str | None]:
+    """The git object id of each of ``paths`` at commit ``sha`` (None when absent)."""
+    out: dict[str, str | None] = {}
+    for rel in paths:
+        found = git_or_none(root, "rev-parse", "--verify", "-q", f"{sha}:{rel}")
+        out[rel] = found.strip() if found else None
+    return out
+
+
+def check_instruments(
+    root: Path, rel: str, rows: Sequence[Mapping[str, Any]], evaluated: Evaluated
+) -> None:
+    """Every row of ``rel`` comes from the evaluated instrument (DECISIONS D42 item 1).
+
+    Its ``instrument`` record (``receipts.study.rescore.instrument_record`` of the
+    banking checkout) has ``trees`` equal to the evaluated ones of
+    :data:`ROW_INSTRUMENT_PATHS` (``evaluated``, from :func:`evaluated_trees`) and shows no
+    uncommitted change, the row is not ``instrument_dirty``, and git holds the same
+    trees of the instrument paths at its banking commit (``instrument.commit``) as at
+    the evaluated commit. So a recorded tree that git does not hold at the recorded
+    commit, in a row or in the evaluation, cannot make two instruments look equal.
+    """
+    sha, trees = evaluated
+    paths = sorted(trees)
+    want = git_trees(root, sha, paths)
+    holds: dict[str, bool] = {}
+    for row in rows:
+        rid = str(row.get("run_id"))
+        record = row.get("instrument")
+        require(
+            isinstance(record, dict) and record.get("trees") == trees,
+            f"{rid} in {rel} was rescored by an instrument whose git trees differ from those of "
+            f"the held-out G5 evaluation (instrument.commit {sha[:12]})",
+        )
+        assert isinstance(record, dict)
+        require(
+            row.get("instrument_dirty") is False
+            and record.get("dirty") is False
+            and record.get("uncommitted") == [],
+            f"{rid} in {rel} was banked from code with uncommitted changes (instrument_dirty, "
+            "or an instrument record that is dirty), so it is exploratory",
+        )
+        banking = record.get("commit")
+        require(
+            is_commit(root, banking),
+            f"{rid} in {rel} records the banking commit {banking!r}, which is not a commit of "
+            "this repository",
+        )
+        assert isinstance(banking, str)
+        if banking not in holds:
+            holds[banking] = git_trees(root, banking, paths) == want
+        require(
+            holds[banking],
+            f"{rid} in {rel} was banked at {banking[:12]}, which does not hold the instrument "
+            f"of the evaluated commit {sha[:12]} (git trees of {', '.join(paths)})",
+        )
+
+
+def check_inputs(root: Path, rel: str, artifact: Mapping[str, Any], inputs: Sequence[str]) -> None:
+    """The artifact ``rel`` was computed from the committed ``inputs``: its
+    ``provenance.inputs`` records the SHA-256 of each of these files, as the analyses
+    record every input they read."""
+    recorded = dig(artifact, "provenance", "inputs")
+    for name in inputs:
+        path = root / name
+        require(
+            isinstance(recorded, dict)
+            and path.is_file()
+            and recorded.get(name) == sha256_file(path),
+            f"{rel} was not computed from the committed {name} (its provenance.inputs does "
+            "not record that file's SHA-256)",
         )
 
 
@@ -2803,10 +2948,13 @@ def g7(ctx: Context) -> str:
     )
     prereg, text, fz = frozen_prereg(root, results.get("prereg"), results.get("prereg_sha256"))
     committed_after_freeze(root, prereg, fz, E1_DATA, (E1_RESULTS, E1_RUNS))
-    planned, arms = e1_plan(root, prereg, text, fz)
+    planned, arms = e1_plan(root, prereg, text)
     runs = _e1_runs(root)
     check_e1_rows(runs, planned, arms)
     check_e1_banked(root, runs, arms, prereg, fz)
+    evaluated = evaluated_trees(root)
+    check_inputs(root, E1_RESULTS, results, (E1_RUNS, E0_EVAL))
+    check_instruments(root, E1_RUNS, runs, evaluated)
     missing = sorted(set(planned) - {str(r["run_id"]) for r in runs})
     accounting = results.get("runs")
     reported = accounting.get("missing_run_ids", []) if isinstance(accounting, dict) else []
@@ -2839,11 +2987,13 @@ def g7(ctx: Context) -> str:
             f"{config}: n_runs mismatch",
         )
         claims = [c for r in rows for c in r["claims"]]
+        # Y1 (prereg 0001 section 5): the included runs with a hidden-check result.
+        judged = [r for r in rows if r.get("ground_truth_success") is not None]
         stats = (
             (
                 "false_success_rate",
-                sum(1 for r in rows if r.get("false_success") is True),
-                len(rows),
+                sum(1 for r in judged if r.get("false_success") is True),
+                len(judged),
             ),
             (
                 "contradicted_claim_rate",
@@ -2856,7 +3006,8 @@ def g7(ctx: Context) -> str:
     sizes = ", ".join(f"{c}={n}" for c, n in sorted(banked.items()))
     return (
         f"{len(banked)} configs, {len(families)} families, runs {sizes}; "
-        f"plan and freeze of {prereg} hold; rates and Wilson intervals recompute"
+        f"plan and freeze of {prereg} hold; rows from the evaluated instrument at "
+        f"{evaluated[0][:12]}; rates and Wilson intervals recompute"
     )
 
 
@@ -2864,13 +3015,189 @@ def g7(ctx: Context) -> str:
 
 E2_HEADING = re.compile(r"\be2\b|\bmechanisms?\b")
 E3_HEADING = re.compile(r"\be3\b|\bjudges?\b")
+E3_JUDGES = "artifacts/e3/judges.json"
+# The E3 sample takes K // 4 runs from each of the four E1 arms (prereg 0003 section 3).
+E3_ARMS = 4
+#: The attempts after which an unservable E3 call excludes its run (prereg 0003
+#: section 7; ``receipts.evaluation.e3.MAX_ATTEMPTS``).
+E3_MAX_ATTEMPTS = 3
+
+
+def e3_sample(rows: Sequence[Mapping[str, Any]], k: int, seed: int) -> list[str]:
+    """The run ids prereg 0003 section 3 samples from the E1 rows, sorted: one
+    ``random.Random(seed)``; for each arm in sorted ``config_id`` order, its eligible
+    run ids (included, with at least one claim), sorted, are sampled with
+    ``rng.sample(ids, K // 4)``, or all taken when the arm has at most K // 4 (then
+    nothing is drawn). Arms without eligible runs draw nothing, so listing the E1 arms
+    that have no row changes nothing."""
+    per_arm = k // E3_ARMS
+    eligible: dict[str, list[str]] = {}
+    for row in rows:
+        ids = eligible.setdefault(str(row.get("config_id")), [])
+        claims = row.get("claims")
+        if row.get("included") is True and isinstance(claims, list) and claims:
+            ids.append(str(row.get("run_id")))
+    rng = random.Random(seed)
+    sampled: list[str] = []
+    for arm in sorted(eligible):
+        ids = sorted(eligible[arm])
+        sampled += ids if len(ids) <= per_arm else rng.sample(ids, per_arm)
+    return sorted(sampled)
+
+
+def check_e3_exclusions(judges: Mapping[str, Any], excluded: set[str]) -> None:
+    """Every excluded E3 run carries the record prereg 0003 section 7 gives it, and no
+    other run does: an ``exclusions`` entry with a call of at least
+    :data:`E3_MAX_ATTEMPTS` logged attempts, each logged error listed, and an
+    ``excluded_unservable`` deviation. So ``runs.excluded`` cannot drop a sampled run
+    from the judgment without the failed attempts that justify it."""
+    entries = judges.get("exclusions", [])
+    require(
+        isinstance(entries, list) and all(isinstance(e, dict) for e in entries),
+        "E3 exclusions malformed",
+    )
+    assert isinstance(entries, list)
+    shown: set[str] = set()
+    for entry in entries:
+        rid, calls = str(entry.get("run_id")), entry.get("calls")
+        require(rid in excluded, f"E3 records an exclusion of {rid}, which runs.excluded omits")
+        require(
+            isinstance(calls, list)
+            and any(
+                isinstance(c, dict)
+                and is_count(c.get("attempts"))
+                and c["attempts"] >= E3_MAX_ATTEMPTS
+                and isinstance(c.get("errors"), list)
+                and len(c["errors"]) >= c["attempts"]
+                for c in calls
+            ),
+            f"E3 excludes {rid} without a call that failed {E3_MAX_ATTEMPTS} logged attempts "
+            "(prereg 0003 section 7)",
+        )
+        shown.add(rid)
+    unshown = sorted(excluded - shown)
+    require(
+        not unshown,
+        f"E3 excludes {len(unshown)} run(s) with no exclusions record of their failed "
+        "attempts: " + ", ".join(unshown[:3]),
+    )
+    deviations = judges.get("deviations", [])
+    noted = {
+        str(d.get("run_id"))
+        for d in (deviations if isinstance(deviations, list) else [])
+        if isinstance(d, dict) and d.get("kind") == "excluded_unservable"
+    }
+    require(
+        noted == excluded,
+        "E3 excluded_unservable deviations do not name exactly the excluded runs",
+    )
+
+
+def check_e3_sample(
+    root: Path, judges: Mapping[str, Any], rows: Sequence[Mapping[str, Any]], judge_ids: list[str]
+) -> tuple[int, int, int]:
+    """E3 judged its whole recorded sample (prereg 0003 sections 3, 7, and 8), counted
+    again here instead of taken from ``runs.complete`` alone.
+
+    ``runs.complete`` is true; the artifact was computed from the committed E1 rows;
+    its recorded sample is the section 3 draw (:func:`e3_sample`) from them with its
+    recorded K (a positive multiple of 4) and seed; ``runs.excluded`` names sampled
+    runs only, each with the record of section 7 (:func:`check_e3_exclusions`); the
+    scored items are every claim of exactly the other
+    sampled runs, each scored against the verdict of its row; and every judge has a
+    served call for each of those runs. Returns ``(sampled, judged, excluded)``.
+    """
+    require(
+        dig(judges, "runs", "complete") is True,
+        "E3 did not judge its whole sample (runs.complete is not true)",
+    )
+    check_inputs(root, E3_JUDGES, judges, (E1_RUNS,))
+    k, seed = dig(judges, "sample", "sample_runs"), dig(judges, "sample", "seed")
+    require(
+        is_count(k) and k > 0 and k % E3_ARMS == 0 and is_count(seed),
+        f"E3 records no sample size K (a positive multiple of {E3_ARMS}) and seed",
+    )
+    assert isinstance(k, int) and isinstance(seed, int)
+    recorded = dig(judges, "sample", "sampled_run_ids")
+    require(
+        isinstance(recorded, list)
+        and bool(recorded)
+        and all(is_text(r) for r in recorded)
+        and len(set(recorded)) == len(recorded),
+        "E3 records no sample of run ids",
+    )
+    assert isinstance(recorded, list)
+    require(
+        sorted(recorded) == e3_sample(rows, k, seed),
+        f"the E3 sample is not the prereg 0003 section 3 draw of K = {k} with seed {seed} "
+        f"from {E1_RUNS}",
+    )
+    excluded = dig(judges, "runs", "excluded")
+    require(
+        isinstance(excluded, list)
+        and len(set(map(str, excluded))) == len(excluded)
+        and set(map(str, excluded)) <= set(recorded),
+        "E3 excludes runs that are not in its sample",
+    )
+    assert isinstance(excluded, list)
+    check_e3_exclusions(judges, {str(r) for r in excluded})
+    judged = set(recorded) - set(map(str, excluded))
+    items, calls = judges.get("items"), judges.get("calls")
+    require(
+        isinstance(items, list)
+        and all(isinstance(i, dict) for i in items)
+        and isinstance(calls, list)
+        and all(isinstance(c, dict) for c in calls),
+        "E3 items or calls malformed",
+    )
+    assert isinstance(items, list) and isinstance(calls, list)
+    require(
+        {str(i.get("run_id")) for i in items} == judged,
+        "E3 items do not cover exactly the sampled runs that were not excluded",
+    )
+    truth = {
+        (str(row.get("run_id")), str(c.get("claim_id"))): c.get("verdict")
+        for row in rows
+        if str(row.get("run_id")) in judged and isinstance(row.get("claims"), list)
+        for c in row["claims"]
+        if isinstance(c, dict)
+    }
+    scored = [(str(i.get("run_id")), str(i.get("claim_id"))) for i in items]
+    require(
+        len(set(scored)) == len(scored) and set(scored) == set(truth),
+        "E3 items are not every claim of the judged runs, once each",
+    )
+    wrong = sorted(
+        f"{r}/{c}"
+        for (r, c), i in zip(scored, items, strict=True)
+        if i.get("truth") != truth[(r, c)]
+    )
+    require(
+        not wrong,
+        f"E3 ground truth is not the verdict of the row in {E1_RUNS} for " + ", ".join(wrong[:3]),
+    )
+    for judge_id in judge_ids:
+        served = {
+            str(c.get("run_id"))
+            for c in calls
+            if c.get("judge_id") == judge_id and c.get("served") is True
+        }
+        missing = sorted(judged - served)
+        require(
+            not missing,
+            f"judge {judge_id} did not judge {len(missing)} sampled run(s): "
+            + ", ".join(missing[:3]),
+        )
+    return len(recorded), len(judged), len(excluded)
 
 
 def g8(ctx: Context) -> str:
-    """Mechanisms (E2) and judges (E3) ran and are reported, including null results."""
+    """Mechanisms (E2) and judges (E3) ran and are reported, including null results; E3
+    judged its whole recorded sample (:func:`check_e3_sample`)."""
     root = ctx.clone
     contradicted = set()
-    for run in _e1_runs(root):
+    e1_rows = _e1_runs(root)
+    for run in e1_rows:
         claims = run.get("claims")
         if run.get("included") is True and isinstance(claims, list):
             contradicted |= {
@@ -2892,9 +3219,8 @@ def g8(ctx: Context) -> str:
     require(not repeated, f"E2 classifies {repeated} claim(s) more than once")
     require(set(keys) == contradicted, "E2 does not classify exactly the E1 contradicted claims")
     require(all(m.get("class") in MECHANISM_CLASSES for m in rows), "E2 has unknown classes")
-    judges_rel = "artifacts/e3/judges.json"
-    judges = load_json(root, judges_rel)
-    require_provenance(judges_rel, judges)
+    judges = load_json(root, E3_JUDGES)
+    require_provenance(E3_JUDGES, judges)
     configs = judges.get("judges")
     require(
         isinstance(configs, list) and all(isinstance(j, dict) for j in configs),
@@ -2922,20 +3248,26 @@ def g8(ctx: Context) -> str:
             )
             total += sum(int(counts[k]) for k in ("tp", "fp", "fn")) + int(counts.get("tn") or 0)
         require(total > 0, f"judge {name} judged no claims (every count is 0)")
+    sampled, judged, excluded = check_e3_sample(root, judges, e1_rows, [str(i) for i in ids])
     report = root / "docs" / "REPORT.md"
     require(report.is_file(), "docs/REPORT.md missing")
     text = report.read_text(encoding="utf-8")
     require(has_section(text, E2_HEADING), "REPORT.md has no E2 section")
     require(has_section(text, E3_HEADING), "REPORT.md has no E3 section")
     mix = Counter(str(m.get("class")) for m in rows)
-    return f"E2 classified {len(rows)} claims {dict(mix)}; E3 {len(configs)} judges; reported"
+    return (
+        f"E2 classified {len(rows)} claims {dict(mix)}; E3 {len(configs)} judges, sample of "
+        f"{sampled} runs, {judged} judged by every judge, {excluded} excluded; reported"
+    )
 
 
 # ---------------------------------------------------------------- G9
 
 E4_RESULTS = "artifacts/e4/results.json"
+E4_RUNS = "artifacts/e4/runs.jsonl"
 E4_PLAN = "artifacts/studies/e4/plan.json"
 E4_PREREG = "prereg/0002-e4-mitigation.md"
+PLANNED_PER_CELL = re.compile(r"planned_runs_per_cell:[ \t]*(\d+)\b")
 HOOK_TRANSCRIPT = "artifacts/hook/demo_transcript.txt"
 INSTALL_HEADING = re.compile(r"\binstall(?:ation|ing)?\b")
 ENTRY_POINT = re.compile(r"([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*):([A-Za-z_]\w*)(?:\.[A-Za-z_]\w*)*")
@@ -2977,6 +3309,103 @@ def e1_task_ids(root: Path) -> set[str]:
     return tasks
 
 
+def held_out_lists(root: Path) -> tuple[set[str], set[str]]:
+    """``(E1 task ids, held-out split)``: every task E1 used or planned
+    (:func:`e1_task_ids`) and the ``e4_tasks`` list the E1 plan records in its notes
+    (prereg 0002 section 3). Both must be known and non-empty, or the checks that the
+    E4 tasks are held out would compare nothing."""
+    path = root / E1_PLAN
+    require(path.is_file(), f"{E1_PLAN} missing, so the held-out E4 split it records is unknown")
+    try:
+        plan = json.loads(path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise GateError(f"{E1_PLAN} is not valid JSON") from exc
+    split = plan_notes(plan, "e4_tasks")
+    require(
+        bool(split),
+        f"{E1_PLAN} records no held-out E4 split (a non-empty e4_tasks list in its notes)",
+    )
+    e1 = e1_task_ids(root)
+    require(
+        bool(e1),
+        "E1's task ids are unknown or empty (no E1 row, planned E1 run, or e1_tasks list), "
+        "so the E4 tasks are not shown to be disjoint from them",
+    )
+    return e1, set(split or [])
+
+
+#: The E4 design of prereg 0002 section 3: these two configurations, each with every
+#: mitigation (``receipts.study.results_e4.CONFIGURATIONS`` and
+#: ``receipts.study.spec.MITIGATIONS``).
+E4_CONFIGURATIONS = ("ma-qwen7b", "ma-granite8b")
+E4_MITIGATIONS = ("none", "honesty", "evidence", "hook")
+
+
+def check_e4_cells(
+    prereg: str, text: str, planned: Mapping[str, Mapping[str, Any]], arms: Iterable[str]
+) -> int:
+    """The E4 plan is the design of prereg 0002 section 3: its arms are
+    :data:`E4_CONFIGURATIONS`, its (configuration, mitigation) cells are exactly those
+    arms times :data:`E4_MITIGATIONS`, and every cell has the ``planned_runs_per_cell``
+    runs that the first such line of ``prereg`` states, on the identical list of (task,
+    conditions, seed) triples (the conditions differ only in M1). Returns that number."""
+    stated = PLANNED_PER_CELL.search(text)
+    require(stated is not None, f"{prereg} does not state planned_runs_per_cell as a number")
+    assert stated is not None
+    want = int(stated.group(1))
+    require(
+        sorted(arms) == sorted(E4_CONFIGURATIONS),
+        f"{E4_PLAN} plans the arms {', '.join(sorted(arms))}, not the configurations of "
+        f"{prereg} section 3 ({', '.join(E4_CONFIGURATIONS)})",
+    )
+    cells: dict[str, list[str]] = {}
+    for spec in planned.values():
+        cell = f"{spec.get('config_id')}/{spec.get('mitigation', 'none')}"
+        work = [spec.get("task_id"), spec.get("conditions"), spec.get("seed")]
+        cells.setdefault(cell, []).append(json.dumps(work, sort_keys=True))
+    design = {f"{c}/{m}" for c in E4_CONFIGURATIONS for m in E4_MITIGATIONS}
+    absent, extra = sorted(design - set(cells)), sorted(set(cells) - design)
+    require(
+        not absent and not extra,
+        f"{E4_PLAN} is not the 2 x 4 design of {prereg} section 3: "
+        + "; ".join(
+            part
+            for part in (
+                "no runs in cell(s) " + ", ".join(absent) if absent else "",
+                "cell(s) outside it " + ", ".join(extra) if extra else "",
+            )
+            if part
+        ),
+    )
+    off = [f"{cell}={len(work)}" for cell, work in sorted(cells.items()) if len(work) != want]
+    require(
+        not off, f"{E4_PLAN} cells differ from planned_runs_per_cell = {want}: " + ", ".join(off)
+    )
+    lists = {cell: sorted(work) for cell, work in cells.items()}
+    first = min(lists)
+    differ = sorted(cell for cell, work in lists.items() if work != lists[first])
+    require(
+        not differ,
+        f"{E4_PLAN} cells do not share one identical list of (task, M1, seed) triples: "
+        + ", ".join(differ[:3])
+        + f" differ from {first}",
+    )
+    return want
+
+
+def check_e4_rows_file(root: Path, rows: Sequence[Mapping[str, Any]], evaluated: Evaluated) -> None:
+    """The banked rows (artifacts/e4/runs.jsonl) are the rows of exactly the runs the E4
+    results hold, and each comes from the evaluated instrument (:func:`check_instruments`)."""
+    banked = load_jsonl(root, E4_RUNS)
+    require(all(isinstance(r, dict) for r in banked), f"{E4_RUNS} has rows that are not objects")
+    ids = [str(r.get("run_id")) for r in banked]
+    require(
+        len(set(ids)) == len(ids) and sorted(ids) == sorted(str(r.get("run_id")) for r in rows),
+        f"the E4 results' rows are not the runs of {E4_RUNS}",
+    )
+    check_instruments(root, E4_RUNS, banked, evaluated)
+
+
 def check_e4_rate(
     e4: Mapping[str, Any], mitigation: str, rows: Sequence[Mapping[str, Any]]
 ) -> None:
@@ -2996,12 +3425,29 @@ def check_e4_rate(
 
 
 def check_e4(root: Path, e4: Mapping[str, Any]) -> tuple[int, int]:
-    """E4 ran on held-out tasks: its rows are distinct, planned E4 runs, each banked and
-    made by its planned arm's agent; its task list is their tasks, each a benchmark task
-    that is no pilot, never used or planned by E1, and in the planned held-out set; the
-    plan compares at least one mitigation with the no-mitigation arm (``none``), and
-    every planned mitigation ran; the Z1 rates recompute; and a frozen E4
-    preregistration is cited by confirmatory results. Returns ``(tasks, runs)``."""
+    """E4 ran as preregistered on held-out tasks (prereg 0002 sections 3, 4, and 7).
+
+    The results are confirmatory and cite a frozen preregistration (with its locked
+    SHA-256) whose first ``plan_sha256:`` line is the SHA-256 of the E4 plan's bytes
+    and whose first ``planned_runs_per_cell:`` line gives every (configuration,
+    mitigation) cell of the plan that many runs on one identical list of triples
+    (:func:`check_e4_cells`), which also requires the plan to be the 2 x 4 design of
+    prereg 0002 section 3. The plan compares at least one mitigation with the
+    no-mitigation arm (``none``), and every planned mitigation ran. The rows are
+    distinct, planned E4 runs, each banked and made by its planned arm's agent, with the
+    report it was rescored from. The task list is their tasks, each a benchmark task
+    that is no pilot; the banked and the planned tasks are outside every task E1 used or
+    planned and inside the held-out split the E1 plan records, both lists known and
+    non-empty (:func:`held_out_lists`). The Z1 rates recompute. Every row comes from
+    the evaluated instrument: the results' rows carry the evaluated git trees and are
+    not ``instrument_dirty``, the banked rows of artifacts/e4/runs.jsonl are the same
+    runs and pass :func:`check_instruments`, and the results were computed from those
+    rows and the held-out evaluation. Returns ``(tasks, runs)``."""
+    require(
+        e4.get("confirmatory") is True and bool(e4.get("prereg")),
+        f"the E4 results are not marked confirmatory with a frozen preregistration ({E4_PREREG})",
+    )
+    prereg, text, _ = frozen_prereg(root, e4.get("prereg"), e4.get("prereg_sha256"))
     tasks = e4.get("tasks")
     require(
         isinstance(tasks, list) and bool(tasks) and all(isinstance(t, str) for t in tasks),
@@ -3015,7 +3461,14 @@ def check_e4(root: Path, e4: Mapping[str, Any]) -> tuple[int, int]:
     )
     assert isinstance(rows, list)
     require(all(r.get("synthetic") is False for r in rows), "E4 contains synthetic runs")
-    plan = load_json(root, E4_PLAN)
+    path = root / E4_PLAN
+    require(path.is_file(), f"{E4_PLAN} missing")
+    raw = path.read_bytes()
+    try:
+        plan = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise GateError(f"{E4_PLAN} is not valid JSON") from exc
+    check_plan_digest(prereg, text, E4_PLAN, raw)
     specs = dig(plan, "runs")
     planned = {
         str(s.get("run_id")): s
@@ -3032,6 +3485,8 @@ def check_e4(root: Path, e4: Mapping[str, Any]) -> tuple[int, int]:
         f"{E4_PLAN} compares no mitigation with the no-mitigation arm (none): it plans "
         + ", ".join(mitigations),
     )
+    check_e4_cells(prereg, text, planned, arms)
+    evaluated = evaluated_trees(root)
     counts = Counter(str(r.get("run_id")) for r in rows)
     repeated = sorted(rid for rid, n in counts.items() if n > 1)
     require(not repeated, f"{len(repeated)} E4 run id(s) repeat: " + ", ".join(repeated[:3]))
@@ -3050,6 +3505,12 @@ def check_e4(root: Path, e4: Mapping[str, Any]) -> tuple[int, int]:
             isinstance(row.get("has_report"), bool) and isinstance(row.get("z1_false_claim"), bool),
             f"{rid} lacks has_report or z1_false_claim",
         )
+        require(
+            dig(row, "instrument", "trees") == evaluated[1]
+            and row.get("instrument_dirty") is False,
+            f"{rid} does not come from the evaluated instrument (its instrument.trees differ "
+            "from those of the held-out G5 evaluation, or it is instrument_dirty)",
+        )
         run = banked_run(root, "e4", row)
         check_planned_agent(run, arms, str(spec.get("config_id")))
         drift = [k for k in ("config_id", "seed", "conditions") if run.record.get(k) != row.get(k)]
@@ -3057,6 +3518,8 @@ def check_e4(root: Path, e4: Mapping[str, Any]) -> tuple[int, int]:
             drift.append("mitigation")
         if bool(run.report.strip()) is not row.get("has_report"):
             drift.append("has_report")
+        if row.get("report_sha256") != text_sha256(run.report):
+            drift.append("report_sha256")
         require(not drift, f"{rid} differs from its banked run.json in " + ", ".join(drift))
     ran = {str(r["task_id"]) for r in rows}
     require(set(tasks) == ran, "E4 tasks differ from the tasks of its runs")
@@ -3068,35 +3531,26 @@ def check_e4(root: Path, e4: Mapping[str, Any]) -> tuple[int, int]:
         or not (root / "bench" / "tasks" / t / "task.toml").is_file()
     )
     require(not bad, "E4 tasks are not held-out benchmark tasks: " + ", ".join(bad[:3]))
-    overlap = sorted(ran & e1_task_ids(root))
+    e1_tasks, split = held_out_lists(root)
+    used = ran | {str(s.get("task_id")) for s in planned.values()}
+    overlap = sorted(used & e1_tasks)
     require(not overlap, "E4 tasks overlap E1 tasks (not held out): " + ", ".join(overlap[:3]))
     listed = plan_notes(plan, "e4_tasks")
     held_out = (
         set(listed) if listed is not None else {str(s.get("task_id")) for s in planned.values()}
     )
     require(ran <= held_out, "E4 ran tasks outside its planned held-out set")
-    e1_plan_path = root / E1_PLAN
-    if e1_plan_path.is_file():
-        split = plan_notes(json.loads(e1_plan_path.read_text(encoding="utf-8")), "e4_tasks")
-        require(
-            split is None or ran <= set(split),
-            "E4 tasks are not in the held-out split the E1 plan records",
-        )
+    outside = sorted(used - split)
+    require(
+        not outside,
+        "E4 tasks are not in the held-out split the E1 plan records: " + ", ".join(outside[:3]),
+    )
     empty = [m for m in mitigations if not any(r.get("mitigation") == m for r in rows)]
     require(not empty, "E4 has no runs for mitigation(s): " + ", ".join(empty))
     for mitigation in mitigations:
         check_e4_rate(e4, mitigation, rows)
-    frozen = frozen_preregs(root)
-    if E4_PREREG in frozen:
-        cited = e4.get("prereg")
-        require(
-            e4.get("confirmatory") is True
-            and isinstance(cited, str)
-            and cited in frozen
-            and e4.get("prereg_sha256") == frozen[cited],
-            f"{E4_PREREG} is frozen, but the E4 results are not marked confirmatory with a "
-            "frozen preregistration",
-        )
+    check_e4_rows_file(root, rows, evaluated)
+    check_inputs(root, E4_RESULTS, e4, (E4_RUNS, E0_EVAL))
     return len(ran), len(rows)
 
 
@@ -3195,8 +3649,9 @@ def check_demo_transcript(ctx: Context) -> tuple[str, float]:
 
 
 def g9(ctx: Context) -> str:
-    """Mitigation: E4 ran on held-out tasks; receipts-hook is packaged with install
-    instructions, measured latency, and a scripted 30-second demo transcript."""
+    """Mitigation: E4 ran as preregistered on held-out tasks with rows from the evaluated
+    instrument (:func:`check_e4`); receipts-hook is packaged with install instructions,
+    measured latency, and a scripted 30-second demo transcript."""
     root = ctx.clone
     e4 = load_json(root, E4_RESULTS)
     require_provenance(E4_RESULTS, e4)
@@ -3220,8 +3675,9 @@ def g9(ctx: Context) -> str:
     require(median < HOOK_MEDIAN_MAX_S, f"median hook latency {median:.2f}s >= 5s")
     script, seconds = check_demo_transcript(ctx)
     return (
-        f"E4 on {n_tasks} held-out tasks ({n_runs} runs); hook packaged; median latency "
-        f"{median:.2f}s; demo transcript reproduces ({script}, {seconds:.1f}s offline)"
+        f"E4 on {n_tasks} held-out tasks ({n_runs} runs) as preregistered, rows from the "
+        f"evaluated instrument; hook packaged; median latency {median:.2f}s; demo "
+        f"transcript reproduces ({script}, {seconds:.1f}s offline)"
     )
 
 

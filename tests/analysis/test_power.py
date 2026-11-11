@@ -497,6 +497,28 @@ def test_search_checks_every_manipulation_by_default_and_can_fail() -> None:
     assert [r["n_tasks"] for r in out["results"]] == [4, 8]
 
 
+def test_search_default_checks_the_manipulations_and_not_the_arms() -> None:
+    # SYNTHETIC design: a strong M1 effect and two arms with no effect, as in the E1
+    # power rule. A null arm effect is rejected only at about alpha, so a default check
+    # that also covered the arm columns could never reach the target.
+    design = SEARCH_DESIGN | {
+        "effects": {"M1": 2.5},
+        "arm_effects": {"b": 0.0, "c": 0.0},
+        "alpha": 0.05,
+        "n_sim": 10,
+    }
+    search = smallest_sufficient("replicates", [4, 8], 0.5, **design)
+    assert search.check == ("M1",)
+    assert search.chosen is not None and search.chosen == search.candidates[-1]
+    chosen = search.results[-1]
+    assert chosen.power_of("M1").power >= 0.5
+    # Checking the arms too, as the old default did, would have rejected this candidate.
+    assert chosen.power_of("arm[T.b]").power < 0.5 and chosen.power_of("arm[T.c]").power < 0.5
+    # Arm effects are still checked when named explicitly.
+    named = smallest_sufficient("replicates", [4], 0.5, check=["M1", "arm[T.b]"], **design)
+    assert named.check == ("M1", "arm[T.b]") and named.chosen is None
+
+
 def test_search_over_runs_per_cell() -> None:
     design = SEARCH_DESIGN | {"effects": {"M1": 2.5}, "n_sim": 10}
     search = smallest_sufficient("runs_per_task_per_cell", [1, 3], 0.5, **design)

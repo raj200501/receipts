@@ -517,9 +517,32 @@ pinned 1.5B model returned strict JSON with the inner quotes escaped. Prereg 000
 section 3 states the new settings. The remaining smoke runs use them too (their plan is
 regenerated); each run's provenance records the agent configuration it ran with.
 
-**D47. The public README leads with the exploratory smoke outcomes, labeled as such.**
+**D47. A banked row binds exactly the code that re-verification runs; reports compare as
+the ledger stores text.** Recorded before the code change and before any freeze (rule
+10); it interprets D42 item 1 and keeps D36. (1) Each row's `instrument` record covers
+`src/receipts/claims`, `src/receipts/verify`, and `src/receipts/ledger`
+(`INSTRUMENT_RECORD_PATHS` in `receipts.study.rescore`), the only packages that
+re-extraction and re-verification load. The E1, E2, E3, and E4 analyses and gates G7 and
+G9 compare a row's trees, and an E4 run commit's trees, with the held-out evaluation's
+trees of those same paths (`bound_trees`). Reason: the record covered all of
+`src/receipts/evaluation` before, so an E2 or E3 code fix after the held-out evaluation
+would have cost every study its confirmatory status, against D36 ("Not bound: E2 and E3
+code") and prereg 0003 section 8. A change to code under `src/receipts/evaluation` or
+`src/receipts/bench` after the freeze is a deviation of the analysis or banking code that
+runs it, and G5 still binds the files of its own scoring step. (2) The ledger stores
+each lone UTF-16 surrogate as U+FFFD, and `run.json` keeps the raw report, so banking,
+the analyses, and the gates compare a `run.json` report with the ledger's after that
+replacement (`stored_text` in `receipts.ledger.events`) and hash the ledger's text.
+Reason: before, one such report made `tools/bank_study.py` refuse the whole study, with
+no rule that could exclude the run. (3) Banking also refuses a run whose ledger
+`run_start` names another configuration, model, or conditions than its `run.json`.
+Reason: the verifier reads the M1 level from `run_start`, while the row takes its arm
+and cell from `run.json`, so the two must agree.
+
+**D48. The public README leads with the exploratory smoke outcomes, labeled as such.**
 Recorded 2026-11-11, after the README commit a7067e9 that acted on it (a late record;
-rule 10 asks for it before acting). Section 11 asks for a first screen with "a
+rule 10 asks for it before acting). First committed as D47 in a228c13; renumbered D48
+when the pre-freeze work, which cites its own D47, was integrated. Section 11 asks for a first screen with "a
 one-sentence finding with its confidence interval" once real results exist. No
 confirmatory result exists yet, and the only banked outcomes are the G6 smoke runs. So
 the README's finding is the smoke outcome, introduced as "First signal (exploratory,

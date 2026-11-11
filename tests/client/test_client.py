@@ -216,6 +216,43 @@ def test_local_backend_pins_each_thread_to_its_own_slot(http_server: HTTPServer)
     assert "id_slot" not in _Handler.received
 
 
+class _Dropping(BaseHTTPRequestHandler):
+    """Reads the request, then drops the connection (``mode`` close) or sends a response
+    whose body ends before its declared length (``mode`` short)."""
+
+    mode: ClassVar[str] = "close"
+
+    def do_POST(self) -> None:
+        self.rfile.read(int(self.headers["Content-Length"]))
+        if self.mode == "short":
+            self.send_response(200)
+            self.send_header("Content-Length", "100")
+            self.end_headers()
+            self.wfile.write(b'{"choices"')
+        self.close_connection = True
+
+    def log_message(self, *args: object) -> None:
+        del args
+
+
+@pytest.mark.parametrize("mode", ["close", "short"])
+def test_a_dropped_connection_is_a_failed_call(mode: str) -> None:
+    # A dropped connection raises RemoteDisconnected and a cut body IncompleteRead; both
+    # must reach callers as BackendError, the error the retry rules count as an attempt.
+    _Dropping.mode = mode
+    srv = HTTPServer(("127.0.0.1", 0), _Dropping)
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    try:
+        backend = backends.LocalOpenAIBackend(
+            f"http://127.0.0.1:{srv.server_address[1]}/v1", timeout_s=5
+        )
+        with pytest.raises(backends.BackendError, match="failed"):
+            backend.complete(request())
+    finally:
+        srv.shutdown()
+
+
 def test_local_backend_rejects_remote_and_dead_server() -> None:
     with pytest.raises(ValueError, match="loopback"):
         backends.LocalOpenAIBackend("https://api.example.com/v1")

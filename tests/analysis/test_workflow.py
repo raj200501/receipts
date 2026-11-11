@@ -36,6 +36,7 @@ from receipts.analysis import (
 )
 from receipts.study.aggregate import e1_rows, write_jsonl
 from receipts.study.plan import half_fraction_cells
+from receipts.study.rescore import INSTRUMENT_RECORD_PATHS, Rescored
 from receipts.study.spec import CONDITION_LEVELS
 
 ARMS = ("ma-qwen7b", "ma-qwen1.5b", "ma-granite8b", "ma-granite2b")
@@ -46,6 +47,14 @@ MANIPULATION_EFFECT = {"M1": 1.0, "M2": 0.6, "M3": 0.0, "M4": -0.5, "M5": 0.3}
 ARM_EFFECT = {"ma-qwen7b": 0.0, "ma-qwen1.5b": 0.5, "ma-granite8b": -0.3, "ma-granite2b": 0.8}
 #: Every NO_REPORT-th run ends without a final report (SYNTHETIC), so it is excluded.
 NO_REPORT = 29
+#: A SYNTHETIC banking instrument record (the shape of ``rescore.instrument_record``).
+INSTRUMENT: dict[str, Any] = {
+    "commit": "0" * 40,
+    "paths": list(INSTRUMENT_RECORD_PATHS),
+    "trees": {path: "1" * 40 for path in INSTRUMENT_RECORD_PATHS},
+    "dirty": False,
+    "uncommitted": [],
+}
 
 
 def synthetic_run_records(seed: int, n_tasks: int, replicates: int) -> list[dict[str, Any]]:
@@ -84,6 +93,7 @@ def synthetic_run_records(seed: int, n_tasks: int, replicates: int) -> list[dict
                     "seed": i,
                     "report": "SYNTHETIC report: all tests pass." if reported else "",
                     "stop_reason": "finished" if reported else "turn_cap",
+                    "turns": 3,
                     "success_reported": reported and (false_success or ground_truth),
                     "ground_truth_success": ground_truth,
                     "false_success": false_success,
@@ -97,13 +107,41 @@ def synthetic_run_records(seed: int, n_tasks: int, replicates: int) -> list[dict
     return records
 
 
+def synthetic_rescoring(record: dict[str, Any]) -> Rescored:
+    """The SYNTHETIC rescoring of a SYNTHETIC record: its own report, claims, and
+    outcomes, as re-verification at banking gives them for a ledger that agrees."""
+    return Rescored(
+        run_id=record["run_id"],
+        report=record["report"],
+        stop_reason=record["stop_reason"],
+        turns=record["turns"],
+        claims=[
+            {
+                "claim_id": c["claim_id"],
+                "claim_type": c["type"],
+                "text": record["report"],
+                "verdict": c["verdict"],
+                "evidence": [],
+            }
+            for c in record["claims"]
+        ],
+        success_reported=record["success_reported"],
+        ground_truth_success=record["ground_truth_success"],
+        false_success=record["false_success"],
+        omissions=record["omissions"],
+        runtime_agrees=True,
+    )
+
+
 def synthetic_e1(seed: int, n_tasks: int, replicates: int) -> list[dict[str, Any]]:
-    """SYNTHETIC rows in the shape of ``artifacts/e1/runs.jsonl``, built by ``e1_rows``.
+    """SYNTHETIC rows in the shape of ``artifacts/e1/runs.jsonl``, built by ``e1_rows``
+    from each record and its rescoring.
 
     ``e1_rows`` copies each run record's ``synthetic`` flag, so every row says it is
     synthetic (the test checks this after the JSONL round trip).
     """
-    return e1_rows(synthetic_run_records(seed, n_tasks, replicates))
+    records = synthetic_run_records(seed, n_tasks, replicates)
+    return e1_rows([(r, synthetic_rescoring(r)) for r in records], INSTRUMENT)
 
 
 def test_package_exports_resolve() -> None:

@@ -227,6 +227,16 @@ def canonical_json(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
+def stored_text(text: str) -> str:
+    """``text`` as the ledger stores it: each lone surrogate replaced by U+FFFD.
+
+    :meth:`LedgerWriter.append` applies this to every string of a payload, so a text
+    taken from elsewhere (such as the report in ``run.json``) compares equal to the
+    ledger's copy only after this normalization.
+    """
+    return _LONE_SURROGATE.sub("\ufffd", text)
+
+
 def sha256_text(text: str) -> str:
     """Return the hex SHA-256 of UTF-8 text."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -329,7 +339,7 @@ class LedgerWriter:
         stamp = float(self._clock() if ts is None else ts)
         # Normalize to plain JSON types, and replace lone surrogates (agent text decoded
         # from model JSON can carry one) so the event can be hashed and written as UTF-8.
-        payload = json.loads(_LONE_SURROGATE.sub("\ufffd", canonical_json(dict(data))))
+        payload = json.loads(stored_text(canonical_json(dict(data))))
         event = Event(
             seq, stamp, kind, payload, prev, Event.compute_hash(seq, stamp, kind, payload, prev)
         )

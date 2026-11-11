@@ -20,6 +20,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from http.client import HTTPException
 from typing import Any
 
 from receipts.client.wrapper import ModelRequest, ModelResponse
@@ -99,8 +100,18 @@ class LocalOpenAIBackend:
         try:
             with opener.open(http, timeout=self.timeout_s) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-            raise BackendError(f"local backend call failed: {exc}") from exc
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            # A connection the server dropped or reset (RemoteDisconnected is one), and a
+            # response cut short or malformed (IncompleteRead, BadStatusLine): failed calls
+            # like any other, so the retry rules count them as attempts.
+            ConnectionError,
+            HTTPException,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+        ) as exc:
+            raise BackendError(f"local backend call failed: {exc!r}") from exc
         wall = time.monotonic() - start
         try:
             choice = payload["choices"][0]

@@ -417,7 +417,9 @@ def smallest_sufficient(
         candidates: Strictly increasing values to try.
         target: Required power, in ``(0, 1)``.
         check: Effect names to check (manipulations, or ``arm[T.<arm>]``); default
-            every manipulation in ``design["effects"]``.
+            every manipulation in ``design["effects"]`` and no arm effect (a null arm
+            effect is rejected only at about ``alpha``, so it can never reach a target
+            power and must be named explicitly to be checked).
         **design: The other arguments of :func:`simulate_power`.
 
     Raises:
@@ -436,9 +438,12 @@ def smallest_sufficient(
         raise ValueError(f"candidate sizes must be strictly increasing, got {sizes}")
     if not 0.0 < target < 1.0:
         raise ValueError(f"target must be in (0, 1), got {target}")
-    known = [str(name) for name in design.get("effects") or {}]
-    known += [f"arm[T.{arm}]" for arm in design.get("arm_effects") or {}]
-    names = [check] if isinstance(check, str) else list(known if check is None else check)
+    manipulations = [str(name) for name in design.get("effects") or {}]
+    known = [*manipulations, *(f"arm[T.{arm}]" for arm in design.get("arm_effects") or {})]
+    if check is None:
+        names = manipulations
+    else:
+        names = [check] if isinstance(check, str) else [str(name) for name in check]
     if not names:
         raise ValueError("check must name at least one effect")
     unknown = [name for name in names if name not in known]
