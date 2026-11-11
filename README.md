@@ -158,8 +158,22 @@ only what the session did (commands, their output, test runs it can parse, edits
 Claude's file tools); it never reruns your tests, and a claim it cannot check is left
 alone.
 
-To check any agent offline, write its tool calls into a ledger with
-`receipts.ledger.recorder` and run `receipts check` on the ledger and the final report.
+For any other agent CLI, wrap it. The wrapper records the workspace before the agent
+runs, then the diff and a sandboxed rerun of your tests, and prints the verdicts after
+the agent's report. Claims about individual commands are left unverifiable there,
+because it cannot see them:
+
+```bash
+uv run receipts wrap --workspace ./my-repo --test-cmd "pytest -q" -- <agent command ...>
+```
+
+To check a report offline against a ledger you recorded yourself (with
+`receipts.ledger.recorder`):
+
+```bash
+uv run receipts check run.ledger.jsonl --report final_report.md   # add --json for machine output
+uv run receipts facts run.ledger.jsonl                            # the ledger as a fact sheet
+```
 
 ## Integrity by construction
 
