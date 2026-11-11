@@ -15,10 +15,12 @@ done, Wilson 95% interval <!--n:smoke.task_success.ci-->[0.00, 0.16]<!--/n-->), 
 (<!--n:smoke.success_claimed.ci-->[0.30, 0.70]<!--/n-->). In
 <!--n:smoke.false_success_without_contradicted_claim.k-->7<!--/n--> of those
 <!--n:smoke.false_success_without_contradicted_claim.n-->10<!--/n--> false successes,
-receipts found no false sentence at all: statements like "all tests pass" held for the
-visible tests, while the hidden checks of the requested behavior failed and the report
-never mentioned them. A report can be accurate sentence by sentence and still wrong about
-the outcome; that gap is what receipts measures.
+no claim that receipts extracted was contradicted: statements like "all tests pass" held
+for the visible tests, while the hidden checks of the requested behavior failed and the
+report never mentioned them. A report can check out claim by claim and still be wrong
+about the outcome; that gap is what receipts measures. These counts are the unvalidated
+instrument's own, and reading the reports by hand shows it erring in both directions
+(see Limitations).
 
 ![Exploratory smoke runs: task success versus claimed success](docs/figures/smoke_outcomes.svg)
 
@@ -92,17 +94,17 @@ They are banked in
 [`artifacts/exploratory/smoke_outcomes.json`](artifacts/exploratory/smoke_outcomes.json),
 and each item names the preregistration that will test the same outcome.
 
-- **False success is frequent, and often has no false sentence.** The report claimed
+- **False success is frequent, and often has no contradicted claim.** The report claimed
   success while a hidden check failed in <!--n:smoke.false_success.k-->10<!--/n--> of
   <!--n:smoke.false_success.n-->20<!--/n--> runs (Wilson 95% interval
   <!--n:smoke.false_success.ci-->[0.30, 0.70]<!--/n-->). In
   <!--n:smoke.false_success_without_contradicted_claim.k-->7<!--/n--> of those
-  <!--n:smoke.false_success_without_contradicted_claim.n-->10<!--/n--> reports, no claim
-  was contradicted (interval
+  <!--n:smoke.false_success_without_contradicted_claim.n-->10<!--/n--> reports, no extracted
+  claim was contradicted (interval
   <!--n:smoke.false_success_without_contradicted_claim.ci-->[0.40, 0.89]<!--/n-->).
   Confirmatory test: E1, outcome Y1, in
   [`prereg/0001-e1-main-study.md`](prereg/0001-e1-main-study.md) (a draft, not frozen).
-- **Sentence by sentence, most reports check out.** Of the
+- **Claim by claim, most extracted claims check out.** Of the
   <!--n:smoke.claims-->29<!--/n--> claims receipts extracted from the final reports,
   <!--n:smoke.claims.supported-->26<!--/n--> were supported,
   <!--n:smoke.claims.contradicted-->3<!--/n--> contradicted, and
@@ -246,6 +248,16 @@ make ship-check   # all gates on a fresh clone
 - **Claim verdicts are not yet validated.** The extractor and verifiers are checked by
   unit tests and a development corpus, but their held-out precision and recall (G5) are
   not measured yet.
+- **Known instrument errors in these runs.** Reading the banked reports by hand finds
+  errors in both directions. Completion statements were not extracted from reports whose
+  hidden checks failed (md-toc, bizdays); with better extraction those runs would likely
+  have a contradicted claim, so the count of false successes without one is, if
+  anything, too high. One report whose only statements are of that kind yields no claim
+  at all, so its run does not count as claiming success (py-ci-workflow). One report
+  says its tests are failing, yet receipts recorded that sentence as a supported
+  tests-pass claim and the run counts as claiming success (py-cli-json).
+  [docs/REPORT.md](docs/REPORT.md) section 7 lists them; measuring such errors is what
+  the blind E0 validation is for.
 - **No Claude subjects yet.** This environment's billing guard keeps headless Claude runs
   from starting (DECISIONS D4), so the study arms are local open-weight models through
   minimal-agent. Nothing here is a statement about Claude models; the Claude arms in the

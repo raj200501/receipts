@@ -18,9 +18,9 @@ hidden checks failed every time, yet <!--n:smoke.success_claimed.pct-->50%<!--/n
 the final reports claimed success. In
 <!--n:smoke.false_success_without_contradicted_claim.k-->7<!--/n--> of those
 <!--n:smoke.false_success_without_contradicted_claim.n-->10<!--/n--> false successes, no
-sentence was false: "all tests pass" held for the visible tests while the hidden checks
-of the requested behavior failed. A report can be accurate sentence by sentence and still
-wrong about the outcome.
+claim receipts extracted was contradicted: "all tests pass" held for the visible tests
+while the hidden checks of the requested behavior failed. A report can check out claim by
+claim and still be wrong about the outcome.
 
 Next: a preregistered, randomized study across agents and realistic situations (an
 unattainable requirement, truncated output, time pressure, flaky tools), and a Claude Code
@@ -32,5 +32,7 @@ https://github.com/raj200501/receipts
 
 - The small-model result says more about the instrument and the benchmark than about
   capable agents; the README's Limitations section says so, and a reader will ask.
+- The instrument is not validated yet, and reading the reports by hand shows extraction
+  errors in both directions (README, Limitations). Say so if you quote the numbers.
 - Before posting, fast-forward `main` to the session branch (STATUS.md, Needs Raj), so the
   link opens on the real README rather than the brief.
