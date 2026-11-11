@@ -6,9 +6,11 @@ actually happened in its sandbox (commands, exit codes, test runs, diffs, hidden
 and labels it supported, contradicted, or unverifiable with the evidence attached. It also
 ships a Claude Code Stop hook that asks Claude to correct a report its record contradicts.
 
-**First signal (exploratory, not yet the preregistered study):** in
-<!--n:smoke.runs-->20<!--/n--> unmanipulated smoke runs of a local Qwen2.5-Coder-7B-Instruct
-agent on receipts-bench, no run passed all of its hidden checks
+**There is no study result yet. What follows is an interim observation from an unfinished
+validation run.** While checking the benchmark, receipts banked smoke runs of a local
+Qwen2.5-Coder-7B-Instruct agent, one unmanipulated run per task; the TypeScript catalog
+tasks have not run yet. In the <!--n:smoke.runs-->20<!--/n--> runs banked so far, no run
+passed all of its hidden checks
 (<!--n:smoke.task_success.k-->0<!--/n--> of <!--n:smoke.task_success.n-->20<!--/n--> tasks
 done, Wilson 95% interval <!--n:smoke.task_success.ci-->[0.00, 0.16]<!--/n-->), yet
 <!--n:smoke.success_claimed.pct-->50%<!--/n--> of final reports claimed success
@@ -23,7 +25,7 @@ validation of the instrument (E0) has to pass before any of these numbers is a f
 
 ![Exploratory smoke runs: task success versus claimed success](docs/figures/smoke_outcomes.svg)
 
-| Smoke runs (exploratory) | Value | Wilson 95% interval |
+| Smoke runs banked so far (interim, exploratory) | Value | Wilson 95% interval |
 | --- | --- | --- |
 | Tasks done (every hidden check passes) | <!--n:smoke.task_success.pct-->0%<!--/n--> | <!--n:smoke.task_success.ci-->[0.00, 0.16]<!--/n--> |
 | Reports that claim success | <!--n:smoke.success_claimed.pct-->50%<!--/n--> | <!--n:smoke.success_claimed.ci-->[0.30, 0.70]<!--/n--> |
@@ -86,11 +88,12 @@ It is not an LLM judge. No verdict comes from a model reading a transcript: verd
 from the ledger, and a claim the ledger cannot settle is reported as unverifiable, never
 guessed. (Whether LLM judges can match the ledger is one of the study's questions, E3.)
 
-## Key results
+## Results so far (interim and exploratory)
 
-Every result so far is exploratory. All of them come from the G6 smoke runs, which are
-unmanipulated, use one local model and one seed, and were not preregistered as a test.
-They are banked in
+There is no study result yet: E0 to E4 have not run, and no manipulation effect, model
+comparison, or mitigation effect has been measured. What exists are interim observations
+from the unfinished G6 smoke study, which is unmanipulated, uses one local model and one
+seed, and was not preregistered as a test. They are banked in
 [`artifacts/exploratory/smoke_outcomes.json`](artifacts/exploratory/smoke_outcomes.json),
 and each item names the preregistration that will test the same outcome.
 
@@ -219,27 +222,35 @@ The repository enforces its own honesty rules in code ([CLAUDE.md](CLAUDE.md) li
 
 ## Status
 
-Built and tested: the ledger, sandboxes, parsers, claim extractor, verifiers,
-minimal-agent, the analysis library, receipts-hook, receipts-bench with reference
-validation for every task, the E0 tooling (packets, blindness scan, merge, held-out split,
-scoring, completeness), the analysis scripts for the draft preregistrations, and the
-ship-check gates.
+Gates, from `python tools/ship_check.py --fast` on a fresh clone of the current head (the
+fast check skips slow steps and does not count as the final check):
+
+- **Passing:** G4 offline demo (matches its golden output, with no network and no model
+  calls), G10 claim integrity (every number in this README and docs/REPORT.md is bound to
+  an artifact and re-derived), G13 documentation, and G14 hygiene (secrets scan clean, no
+  cash spent, nothing private tracked).
+- **Failing, and why:** G1 only on coverage: the `receipts wrap` wrapper has no tests yet,
+  which keeps the hook package below the floor, though every test passes. G2 stops at
+  `type: ignore` comments inside benchmark task repositories that lack reasons; adding
+  them changes task hashes that the banked runs cite. G3 fails in the fast check only
+  because it requires G1 and G2; `make ci` itself passes on Python 3.11 and 3.12. G5 to
+  G9 and G11: the instrument validation (E0) and the studies (E1 to E4) have not run.
+  G12: no independent review has approved the current code.
+- **Built and checked:** the ledger, sandboxes, parsers, claim extractor, verifiers,
+  minimal-agent, the analysis library, receipts-hook, the E0 tooling, and the gates, with
+  unit tests (`make test`); receipts-bench, where every task's reference solution passes
+  its hidden checks
+  ([`artifacts/bench/reference_validation.json`](artifacts/bench/reference_validation.json),
+  current for the task trees at the head).
+- **Not validated yet:** the claim extractor and verifiers on held-out data (E0, gate G5).
+  Until then, every claim verdict in this README is the instrument's own.
+- **In progress** ([STATUS.md](STATUS.md)): the rest of the smoke study (the TypeScript
+  catalog tasks), E0, the pilot and power run, freezing the preregistration drafts, and
+  then E1 to E4.
+
 Before a push, `tools/prepush.sh` runs `make ci` (lint, mypy --strict, tests, offline
-demo) on a fresh clone for each of Python 3.11 and 3.12 (one run per version, chosen
-with `PY`), and
+demo) on a fresh clone for each of Python 3.11 and 3.12, and
 [.github/workflows/ci.yml](.github/workflows/ci.yml) runs the same target on both versions.
-
-In progress (see [STATUS.md](STATUS.md)): the G6 smoke study (one run per task; the runs
-banked so far are the first signal above), the blind E0 validation of the instrument
-(G5), the pilot and power run, the freeze of the preregistrations (E1 main study,
-E3 judges, E4 mitigation), and then the confirmatory runs. Until G5 passes, every claim
-verdict here is the instrument's own, unvalidated.
-
-Building the agent scaffold for local models surfaced failure modes worth knowing about;
-each fix holds for every arm alike and is recorded before use: a turn cap with one
-final-report request (D39), per-run server slots (D44), tolerant JSON parsing with
-specific error messages (D45), and grammar-constrained actions (D46). Before them, some
-runs repeated one malformed action for hours.
 
 ## Reproduce
 
