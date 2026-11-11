@@ -1,0 +1,118 @@
+{
+  "schema": "receipts.review/1",
+  "reviewed_commit": "e4230ccb8a2b6e96bb655ea45ff58cb03c82d644",
+  "previous_review": null,
+  "created": "2026-11-11T22:28:07Z",
+  "reviewer": "reviewer subagent",
+  "blocking": [
+    {
+      "id": "B1",
+      "title": "G10 (make freshness) and make reproduce never re-derive the exploratory numbers from the banked runs; a stale or hand-typed summary artifact passes",
+      "category": "gate",
+      "evidence": "tools/freshness.py:29-45 rebuilds only the registry (tools/report.py --numbers-only), whose derivations read artifacts/exploratory/smoke_outcomes.json (src/receipts/report/spec.py:24); src/receipts/report/build.py:82-95 (reproduce) does the same; nothing reruns tools/smoke_outcomes.py or compares its provenance.inputs with artifacts/studies/smoke/runs/*/run.json, and tools/ship_check.py:3693-3702 (g10) only runs make claimcheck and make freshness. Shown on an isolated git copy of e4230cc: (a) committing a 21st smoke run leaves README.md:12 'In the 20 runs banked so far' while claimcheck, freshness, and reproduce all PASS; (b) typing k = 6 into summary.false_success_without_contradicted_claim, running tools/report.py, and editing the markers also passes all three, with the shown interval still the one for 7 of 10. The smoke study is banking new runs now, so (a) is the next bank commit. README.md:201-203 and 255-257 and docs/REPORT.md:501-509 and 586 say every live number is re-derived from the banked artifacts. At e4230cc the numbers themselves are correct (recomputed, see review text)."
+    },
+    {
+      "id": "B2",
+      "title": "G7 can pass on a stale or edited E1 row set: banked runs without a row count as missing, and row outcomes are never re-derived",
+      "category": "gate",
+      "evidence": "tools/ship_check.py:2762-2796 (check_e1_banked) ties a row to its banked run only by config_id, seed, conditions, family, included, report_sha256, and provenance.git_sha; tools/ship_check.py:2967-2974 compute missing runs as planned minus rows, so a run banked under artifacts/studies/e1/runs/ with no row in artifacts/e1/runs.jsonl (for example one banked after the rows and results were written) is accepted as 'missing', although prereg/0001-e1-main-study.md section 11 defines runs.jsonl as one row per banked run; check_inputs at tools/ship_check.py:2965 binds results.json to runs.jsonl, not to the run directories, so such a run never makes the results stale. tools/ship_check.py:2991-3014 recompute the rates only from row fields (ground_truth_success, false_success, claims[].verdict) that are never compared with the banked ledger's hidden_check event or a rescoring. No test in tests/repo_tools/test_ship_check_g7.py covers a banked run without a row; STATUS.md Next action 1 lists 'g7 re-deriving verdicts' as open. G7 can therefore print PASS while E1 was not analyzed as preregistered."
+    },
+    {
+      "id": "B3",
+      "title": "G8's 'reported' requirement passes vacuously on the design sections of docs/REPORT.md",
+      "category": "gate",
+      "evidence": "tools/ship_check.py:3264-3265 require only a REPORT.md heading matching E2_HEADING (\\be2\\b|mechanism) and E3_HEADING (\\be3\\b|judge) with any content. At e4230cc, before any E2 or E3 data exist, docs/REPORT.md '6.3 E2: mechanism analysis' and '6.4 E3: judge validity' (design text) already satisfy both (ship_check's own has_section returns True for each). Once artifacts/e2/mechanism.json and artifacts/e3/judges.json are banked, G8 passes even if REPORT.md reports none of their results, nulls included, against section 6 G8 ('E2 and E3 ran and are reported, including null results')."
+    },
+    {
+      "id": "B4",
+      "title": "Rule 3: the public canary claim was changed without a CORRECTIONS.md entry, and the new wording is not exact",
+      "category": "rule",
+      "evidence": "The public README at 229a14f (merged to main in bd88faa), line 330, said 'receipts-bench has no canary string yet; one goes into every task file before the benchmark is released as a dataset'. 85f9b92 replaced it with README.md:328-331 'Every receipts-bench task definition and answer-key file (hidden checks, reference solution) carries a canary string ... the files an agent sees carry none', withdrawing the every-task-file commitment (D52); CORRECTIONS.md has no entry for it, although its 2026-11-11 entries log comparable changes (the wrapper, the pending runs). The new wording, repeated in docs/REPORT.md:576-578 and STATUS.md:59-60, is false for four answer-key files with no comment syntax: bench/tasks/pilot-ts-feedsync/reference/feeds.json, bench/tasks/py-inventory-refactor/hidden/golden.json, bench/tasks/ts-cli-docs/reference/package.json, bench/tasks/ts-cli-docs/reference/tsconfig.json (docs/DATA.md and D52 state the exception correctly)."
+    }
+  ],
+  "nonblocking": [
+    {
+      "id": "N1",
+      "title": "The py-cli-json error is explained with the wrong cause and effect",
+      "evidence": "README.md:294-296, CORRECTIONS.md:37-39, docs/REPORT.md:487-492 attribute the run counting as claiming success to the R5 (preserve) mapping; success_reported is any non-negated success-type claim (src/receipts/verify/verifier.py:256-264, 290), independent of mapping. The mapping only made c0 supported (verification.json: 'all 4 hidden checks for R5 passed'), which keeps the run among the 7 false successes without a contradicted claim; mapped correctly that count would likely be 6 of 10."
+    },
+    {
+      "id": "N2",
+      "title": "STATUS.md is internally stale",
+      "evidence": "The gate table 'at 229a14f' (G1, G2, G3 FAIL), the paragraph under it (wrap.py 'has no tests'), and Next action 1 (fix and test the wrapper) predate D50 and D51 and contradict 'Now' and README Status."
+    },
+    {
+      "id": "N3",
+      "title": "The pre-push claim overstates tools/prepush.sh",
+      "evidence": "README.md:249-251 says it runs make ci for each of Python 3.11 and 3.12; the script runs make setup and make ci once, on 3.11 unless the caller sets PY."
+    },
+    {
+      "id": "N4",
+      "title": "Provenance does not match the documented contract",
+      "evidence": "artifacts/README.md:4-6 and docs/REPORT.md:599 promise environment, config hash, models, seeds, usage on every artifact; artifacts/exploratory/smoke_outcomes.json has only git_sha, command, created, inputs; artifacts/report/numbers.json, manifest.json, artifacts/citecheck.json, artifacts/studies/*/plan.json have no provenance block."
+    },
+    {
+      "id": "N5",
+      "title": "G5 ledger completeness trusts the artifact's transcript side",
+      "evidence": "tools/ship_check.py:2452-2472 never derives transcript_commands from the banked transcript.json (already loaded at 2067-2075) and ignores unparsed_actions (src/receipts/evaluation/e0.py run_completeness). Recomputed on the 20 banked smoke runs: 14 transcript commands, 0 missing, 0 silently unparsed, so no gap today."
+    },
+    {
+      "id": "N6",
+      "title": "G9 does not check the E4 runs' own code commits or row coverage",
+      "evidence": "check_e4 (tools/ship_check.py:3436-3563) drops the freeze commit (3459) and never examines an E4 run's code commit, although DECISIONS D47 says G9 compares 'an E4 run commit's trees'; check_e4_rows_file (3405-3415) never compares rows with banked run directories; relies on the analysis's confirmatory flag. Non-blocking because G9's property is 'E4 ran' and G11 covers commit order; fix with B2."
+    },
+    {
+      "id": "N7",
+      "title": "G2 scope (D51) accepted, but the documents disagree",
+      "evidence": "G2 went FAIL to PASS by narrowing its scan (state it under rule 13); README.md:229-230 and D51 call task repositories third-party code while docs/REPORT.md section 4 says all task code is written for the benchmark, not taken from third parties; the docs/PLAN.md G2 contract row still says tracked *.py."
+    },
+    {
+      "id": "N8",
+      "title": "Answer-key details are published without the canary",
+      "evidence": "Banked ledgers record hidden-check names and assertion output (e.g. artifacts/studies/smoke/runs/smoke-py-md-toc-ma-qwen7b/ledger.jsonl, hidden-check stdout) and verification.json lists them; none carries the canary string."
+    },
+    {
+      "id": "N9",
+      "title": "README does not label the benchmark repositories synthetic",
+      "evidence": "README.md:74-75 'small, realistic Python and TypeScript repositories'; docs/REPORT.md section 4 and docs/BENCH.md say they are synthetic, hand-written (rule 4)."
+    },
+    {
+      "id": "N10",
+      "title": "README intervals lack their caveat",
+      "evidence": "README.md:14-17, 28-33, 102-108 Wilson intervals treat the runs as independent, but they are one run per task on a non-random, Python-heavy subset (17 of 20 Python, 4 pilot tasks); docs/REPORT.md 7.1 and 7.4 say so, README Limitations does not."
+    },
+    {
+      "id": "N11",
+      "title": "The outbound draft is stale",
+      "evidence": "outbound/launch-post-draft.md asks to fast-forward main '(STATUS.md, Needs Raj)'; origin/main is at e4230cc and STATUS.md has no such item."
+    },
+    {
+      "id": "N12",
+      "title": "Chen and Liu cited less precisely in the README",
+      "evidence": "README.md:340 'a NeurIPS poster'; artifacts/citecheck.json and docs/REPORT.md: a NeurIPS 2026 workshop poster."
+    },
+    {
+      "id": "N13",
+      "title": "The review files drift by design",
+      "evidence": "docs/REVIEW_LOG.md is not in tools/review.py ALLOWED_DRIFT (expected under D10); docs/REPORT.md:522-524 says artifacts/review/latest.json does not exist, false once this review is committed, and editing REPORT.md invalidates a review. Land both before the final review."
+    },
+    {
+      "id": "N14",
+      "title": "The quickstart is not a 60-second offline quickstart",
+      "evidence": "README.md:52-57 includes make ci (full suite with coverage) and make setup (network); G13 checks only that the block runs make demo."
+    },
+    {
+      "id": "N15",
+      "title": "Small document inconsistencies",
+      "evidence": "tools/bank_study.py smoke-branch comment says claim-type counts re-extract smoke reports with the extractor (contradicts D34, D43); docs/HOOK.md:11-12 says edits are recorded as hashes while the recorder keeps a before-copy and the tool input."
+    },
+    {
+      "id": "N16",
+      "title": "G13 checks links for the results section, not for each key result",
+      "evidence": "tools/ship_check.py:3901-3909 require one artifacts/ and one prereg/ link anywhere in the results section; section 11 asks for each key result; two of four bullets under 'Results so far' link neither."
+    }
+  ],
+  "resolved": [],
+  "text": "# Independent review of e4230ccb8a2b (gate G12)\n\nReviewer: reviewer subagent, 2026-11-11T22:28:07Z. Reviewed commit: e4230ccb8a2b6e96bb655ea45ff58cb03c82d644 (HEAD of claude/sweet-newton-r3x6t3 and of origin/main). Previous review: none (docs/REVIEW_LOG.md listed no reviews and no artifacts/review/latest.json exists in history), so every issue below is new.\n\n## Scope and method\n\n- Read docs/BUILD_BRIEF.md sections 4 to 11 (hash matches docs/BUILD_BRIEF.sha256), CLAUDE.md, STATUS.md, DECISIONS.md (D1 to D53), CORRECTIONS.md, docs/PLAN.md, README.md, docs/REPORT.md, docs/DATA.md, docs/HOOK.md, and the gate code in tools/ship_check.py (G1 to G14) with the tools it calls (claimcheck, freshness, report, review, bank_study, smoke_outcomes, bench_canary).\n- Focus: 01f40e9..e4230cc (canary D52, restart D53, e4230cc test fix), df7cf57..01f40e9 (wrap fixes D50, G2 scope D51), and 83926a4 (D42 re-verification, D47 instrument binding, g7, g8, g9).\n- Only the committed state counts: I worked on a git archive of e4230cc in a scratch directory; the smoke run directories that appeared after e4230cc were ignored.\n- Ran: make claimcheck, make freshness, make citecheck, make prereg-verify, make budget, make secrets-scan (all PASS); pytest on tests/bench/test_canary.py and tests/repo_tools/test_bank_study.py (26 passed); tests/hook and tests/test_cli.py with coverage of receipts.hook (29 passed, 98%). The full suite, make ci, and ship-check were not run (CPU is shared with the running study).\n\n## What holds\n\n- Every bound number in README.md and docs/REPORT.md recomputes from the 20 committed run.json files with my own Wilson code: 20 runs, all with a report and hidden-check results; 0 of 20 tasks done [0.00, 0.16]; 10 of 20 reports claim success [0.30, 0.70]; 10 of 20 false successes [0.30, 0.70]; 10 of 10 success claims false [0.72, 1.00]; 7 of 10 false successes with no contradicted claim [0.40, 0.89]; 29 claims (26 supported, 3 contradicted, 0 unverifiable); 10 runs at the turn cap; 17 Python and 3 TypeScript. Each run.json's SHA-256 equals smoke_outcomes.json provenance.inputs, and no other run.json is committed.\n- Rescoring all 20 banked runs with the instrument at e4230cc (receipts.study.rescore) reproduces the run-time claim types, verdicts, success_reported, ground truth, and false_success exactly, so instrument changes since the runs (D47, D50) do not move these numbers.\n- All 20 runs are unmanipulated (conditions empty), seed 0, ma-qwen7b, mitigation none, with no snapshot problems. Hand checks hold: the three contradicted claims are feature claims refuted by hidden checks; every tests_pass claim is labeled supported; in slugify-tests pytest never collects tests/slugify_tests.py (22 tests before and after); the demo run's 7 failing hidden checks are exactly its change requirements (R4 preserve checks pass); the pending runs are three Python tasks and seventeen TypeScript tasks, as CORRECTIONS.md says.\n- artifacts/bench/reference_validation.json was banked from 85f9b92 with bench_dirty false; all 40 tasks are valid and every tree_sha256 equals the task tree at e4230cc. No agent-visible file (repo/, variants/, prior_work.json) contains the canary GUID. D53 holds: src/receipts/drivers and src/receipts/study/runner.py are unchanged since 4ae76bb.\n- Section 9 checks: no em dashes or hype words in tracked files; no secret-like strings in committed artifacts; cash_usd = 0 and caps respected; nothing is frozen and no confirmatory artifact exists, so no preregistration violation is possible yet; pilot tasks appear only in the pilot plan; E3 judges are shown transcripts and claim text only; outbound/ holds drafts only.\n- D50 and D51 are sound as implemented: wrapped command claims become unverifiable through run_start.records_agent_commands, and the start state is staged exactly as the post-run diff stages the workspace.\n\n## Blocking issues (summary)\n\n- B1 (gate): G10 freshness and make reproduce trust artifacts/exploratory/smoke_outcomes.json and never re-derive it from the banked runs; shown passing with a 21st banked run and with a hand-typed count.\n- B2 (gate): G7 accepts a banked E1 run with no row as a missing run and never re-derives row outcomes from the banked ledgers.\n- B3 (gate): G8's reporting check passes on the design sections of docs/REPORT.md.\n- B4 (rule 3): the public canary claim changed without a CORRECTIONS.md entry, and the new wording is false for four JSON answer-key files.\n\n## Non-blocking issues (details in docs/REVIEW_LOG.md)\n\n- N1 py-cli-json explanation has the wrong cause and effect (README.md:294-296, CORRECTIONS.md:37-39).\n- N2 STATUS.md gate table, its paragraph, and Next action 1 are stale.\n- N3 tools/prepush.sh runs one Python version, not both (README.md:249-251).\n- N4 provenance of several artifacts falls short of artifacts/README.md and REPORT section 11.\n- N5 G5 completeness takes transcript_commands from the artifact (no gap today, recomputed).\n- N6 G9 never checks E4 run commits (despite D47) or banked-run coverage.\n- N7 G2 scope accepted; D51, README, REPORT section 4, and PLAN disagree on what task code is.\n- N8 banked ledgers publish hidden-check details without the canary.\n- N9 README never labels the benchmark repositories synthetic.\n- N10 README intervals lack the independence and non-random-subset caveat.\n- N11 outbound draft asks for a main fast-forward that already happened.\n- N12 README calls a workshop poster a NeurIPS poster.\n- N13 REVIEW_LOG.md drift and the REPORT section 8 sentence about latest.json.\n- N14 quickstart is not a 60-second offline one.\n- N15 bank_study comment and HOOK.md recorder wording.\n- N16 G13 checks results-section links, not each key result.\n\n## Verdict\n\n1. B1 (gate). G10 and make reproduce can pass while a live README number is stale or typed by hand. Evidence: tools/freshness.py:29-45 and src/receipts/report/build.py:82-95 rebuild only the registry from artifacts/exploratory/smoke_outcomes.json (src/receipts/report/spec.py:24); nothing reruns tools/smoke_outcomes.py or checks provenance.inputs against artifacts/studies/smoke/runs/*/run.json; tools/ship_check.py:3693-3702 only runs make claimcheck and make freshness. On an isolated copy of e4230cc, committing a 21st smoke run left README.md:12 at 20 runs and typing k = 6 into the summary passed claimcheck, freshness, and reproduce, contrary to README.md:201-203 and 255-257 and docs/REPORT.md:501-509 and 586.\n2. B2 (gate). G7 can pass while E1 was not analyzed as preregistered. Evidence: tools/ship_check.py:2762-2796 and 2967-2974 never require a row for every banked run under artifacts/studies/e1/runs/ (a banked run without a row is counted as missing; prereg/0001-e1-main-study.md section 11 says one row per banked run), 2965 binds results.json to runs.jsonl and the seeded evaluation, not to the run directories, and 2991-3014 recompute rates from row fields never compared with the banked ledgers; no test covers it; STATUS.md lists the verdict re-derivation as open.\n3. B3 (gate). G8 can pass while E2 and E3 results are not reported. Evidence: tools/ship_check.py:3264-3265 accept any REPORT.md heading matching e2 or mechanism and e3 or judge; docs/REPORT.md sections 6.3 and 6.4 (design text) already satisfy both at e4230cc.\n4. B4 (rule 3). Changed claim without a CORRECTIONS.md entry. Evidence: README at 229a14f line 330 ('one goes into every task file before the benchmark is released') was replaced in 85f9b92 by README.md:328-331, which withdraws that commitment; CORRECTIONS.md has no entry; the new wording (also docs/REPORT.md:576-578, STATUS.md:59-60) is false for bench/tasks/pilot-ts-feedsync/reference/feeds.json, bench/tasks/py-inventory-refactor/hidden/golden.json, bench/tasks/ts-cli-docs/reference/package.json, and bench/tasks/ts-cli-docs/reference/tsconfig.json.\nREVIEW: BLOCK",
+  "verdict": "BLOCK"
+}
