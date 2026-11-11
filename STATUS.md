@@ -58,7 +58,11 @@ freeze and runs, E2 to E4, then an independent review. CAP_SHARE stays 0.2.
   and the branch both point at it (D49).
 - **Canary (rule 9, D52).** Every task's `task.toml` and every answer-key file carries the
   canary string; no file the agent sees does, so the banked smoke runs stay valid runs of
-  the same task. The reference validation is banked again from the canary commit.
+  the same task. The reference validation, banked again from the canary commit 85f9b92 with
+  a clean `bench/` tree, finds every task valid.
+- **Smoke study restart (D53).** The remaining runs (the TypeScript catalog tasks) run from
+  a snapshot of the commit that banks the validation, with the earlier arm and server
+  settings; nothing in the agent scaffold changed since the earlier runs.
 
 ## Next three actions
 

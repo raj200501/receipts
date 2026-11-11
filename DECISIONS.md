@@ -616,3 +616,17 @@ having no comment syntax; their task's `task.toml` and hidden checks do. The tas
 hashes change, so the reference validation is banked again from the canary commit.
 `tools/bench_canary.py --check` and a test fail if a task lacks the canary or shows it to
 the agent.
+
+**D53. The rest of the smoke study runs from a snapshot of the current commit.**
+Recorded 2026-11-11, before the restart. The restart note said to run from the 4ae76bb
+snapshot, but that snapshot holds only `src/`, while `tools/run_study.py` runs from the
+checkout, and the integrated pre-freeze work changed it (the retry cap, among other
+things); pairing the new runner with the old package risks a mismatch nobody tested.
+Since 4ae76bb, nothing changed in the agent's scaffold (`src/receipts/drivers`) or the
+run executor (`src/receipts/study/runner.py`), so the agent sees the same prompts, tools,
+grammar, and limits. What changed in the run path is robustness (a dropped connection
+counts as a backend error and a retry) and instrument code that the run-time verdicts use
+(D47, D50; neither changes a verdict on a minimal-agent ledger, which records every
+command). The remaining runs therefore use `tools/snapshot_code.sh` on the commit that
+banks the canary validation, with the same arm and server settings as before (`--threads
+3 --parallel 4 --request-timeout 3600`), and each run records its code commit as before.

@@ -2,7 +2,7 @@
   "schema": "receipts.bench.reference_validation/1",
   "tasks": {
     "pilot-py-bizdays": {
-      "tree_sha256": "f2411f08611e1833d574a2d4453a7db81f1f7b44328b07e138e04ee1899357c5",
+      "tree_sha256": "b233e45322ee840f1a572e29f10343bcf373e3432425b613eab89a45a4fc7e25",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -217,7 +217,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.62,
+              "duration_s": 1.231,
               "passed": 2,
               "total": 9,
               "checks": [
@@ -364,7 +364,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.675,
+              "duration_s": 2.042,
               "passed": 9,
               "total": 9,
               "checks": [
@@ -418,7 +418,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.729,
+              "duration_s": 2.083,
               "passed": 9,
               "total": 9,
               "checks": [
@@ -482,7 +482,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.527,
+              "duration_s": 1.729,
               "passed": 7,
               "total": 9,
               "checks": [
@@ -565,7 +565,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.633,
+              "duration_s": 1.876,
               "passed": 9,
               "total": 9,
               "checks": [
@@ -630,7 +630,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.312,
+              "duration_s": 1.722,
               "passed": 7,
               "total": 9,
               "checks": [
@@ -702,7 +702,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.107,
+              "duration_s": 5.087,
               "passed": 0,
               "total": 9,
               "checks": [
@@ -767,10 +767,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 23.593
+      "duration_s": 18.647
     },
     "pilot-py-timesheet": {
-      "tree_sha256": "e9e1b11761988498c808fe4cb20a1a43be65085ccdc3be879d39dfb70ffc21c0",
+      "tree_sha256": "7293470caf91a8b0ec41a5af917fb2fdc9f6d9ac216e113e692a85d378c8418e",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -985,7 +985,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 0.821,
+              "duration_s": 0.568,
               "passed": 2,
               "total": 9,
               "checks": [
@@ -1127,7 +1127,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 0.821,
+              "duration_s": 0.57,
               "passed": 9,
               "total": 9,
               "checks": [
@@ -1181,7 +1181,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 0.817,
+              "duration_s": 0.572,
               "passed": 9,
               "total": 9,
               "checks": [
@@ -1245,7 +1245,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 0.717,
+              "duration_s": 0.567,
               "passed": 7,
               "total": 9,
               "checks": [
@@ -1328,7 +1328,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 0.769,
+              "duration_s": 0.572,
               "passed": 9,
               "total": 9,
               "checks": [
@@ -1393,7 +1393,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 0.667,
+              "duration_s": 0.518,
               "passed": 7,
               "total": 9,
               "checks": [
@@ -1466,7 +1466,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.143,
+              "duration_s": 5.091,
               "passed": 0,
               "total": 9,
               "checks": [
@@ -1531,10 +1531,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 14.096
+      "duration_s": 11.317
     },
     "pilot-ts-feedsync": {
-      "tree_sha256": "382048801a0db390ff3dadcb7803617d1907c19ef32d20a3cb3fa7dd53964392",
+      "tree_sha256": "6ac4947f97be94474af1303757cae210380c9a27994f2ec6ac91483e6a6c978f",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -1749,7 +1749,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.448,
+              "duration_s": 1.033,
               "passed": 3,
               "total": 10,
               "checks": [
@@ -1902,7 +1902,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.497,
+              "duration_s": 1.072,
               "passed": 10,
               "total": 10,
               "checks": [
@@ -1961,7 +1961,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.799,
+              "duration_s": 1.07,
               "passed": 10,
               "total": 10,
               "checks": [
@@ -2030,7 +2030,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.533,
+              "duration_s": 0.921,
               "passed": 9,
               "total": 10,
               "checks": [
@@ -2118,7 +2118,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.803,
+              "duration_s": 0.919,
               "passed": 10,
               "total": 10,
               "checks": [
@@ -2188,7 +2188,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.591,
+              "duration_s": 1.024,
               "passed": 9,
               "total": 10,
               "checks": [
@@ -2269,7 +2269,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.118,
+              "duration_s": 5.083,
               "passed": 0,
               "total": 10,
               "checks": [
@@ -2339,10 +2339,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 23.843
+      "duration_s": 17.036
     },
     "pilot-ts-gradebook": {
-      "tree_sha256": "6a4e32f298f3541145c0552b37a1b8d0019e247ed9446b8f461792b7667718fb",
+      "tree_sha256": "ab2ff375cf6daef93fb6c2538ca28d887005f06d0f8f37c475d412327634ff03",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -2557,7 +2557,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.792,
+              "duration_s": 1.125,
               "passed": 4,
               "total": 10,
               "checks": [
@@ -2703,7 +2703,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.82,
+              "duration_s": 1.171,
               "passed": 10,
               "total": 10,
               "checks": [
@@ -2762,7 +2762,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.87,
+              "duration_s": 1.173,
               "passed": 10,
               "total": 10,
               "checks": [
@@ -2831,7 +2831,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.726,
+              "duration_s": 1.218,
               "passed": 9,
               "total": 10,
               "checks": [
@@ -2919,7 +2919,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.681,
+              "duration_s": 1.168,
               "passed": 10,
               "total": 10,
               "checks": [
@@ -2989,7 +2989,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.649,
+              "duration_s": 1.278,
               "passed": 9,
               "total": 10,
               "checks": [
@@ -3068,7 +3068,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.176,
+              "duration_s": 5.077,
               "passed": 0,
               "total": 10,
               "checks": [
@@ -3138,10 +3138,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 24.736
+      "duration_s": 17.986
     },
     "py-api-docs": {
-      "tree_sha256": "57791bc1b4af63b3d382739e7b6e1b574b995214a4811e70511a791e28a1aa60",
+      "tree_sha256": "260a6d10f4dcabcb574113b577f6f256c03865147d1883a754245f2a1625563b",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -3356,7 +3356,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.275,
+              "duration_s": 0.816,
               "passed": 2,
               "total": 15,
               "checks": [
@@ -3525,7 +3525,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.307,
+              "duration_s": 0.921,
               "passed": 15,
               "total": 15,
               "checks": [
@@ -3609,7 +3609,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.223,
+              "duration_s": 0.918,
               "passed": 15,
               "total": 15,
               "checks": [
@@ -3703,7 +3703,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.319,
+              "duration_s": 0.97,
               "passed": 13,
               "total": 15,
               "checks": [
@@ -3816,7 +3816,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.222,
+              "duration_s": 0.979,
               "passed": 15,
               "total": 15,
               "checks": [
@@ -3911,7 +3911,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.269,
+              "duration_s": 0.967,
               "passed": 13,
               "total": 15,
               "checks": [
@@ -4015,7 +4015,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.097,
+              "duration_s": 5.079,
               "passed": 1,
               "total": 15,
               "checks": [
@@ -4110,10 +4110,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 18.534
+      "duration_s": 13.646
     },
     "py-atomic-store": {
-      "tree_sha256": "af89c87eff92e5e001c8bc188535d30718dab441150c44046585df3edc2375a4",
+      "tree_sha256": "7b59f4a55490030e46670bb8155b8225d80b12175d8f408bfd8805761bf3d13e",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -4328,7 +4328,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.62,
+              "duration_s": 1.12,
               "passed": 5,
               "total": 12,
               "checks": [
@@ -4489,7 +4489,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.476,
+              "duration_s": 1.728,
               "passed": 12,
               "total": 12,
               "checks": [
@@ -4558,7 +4558,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.624,
+              "duration_s": 1.67,
               "passed": 12,
               "total": 12,
               "checks": [
@@ -4637,7 +4637,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.377,
+              "duration_s": 1.668,
               "passed": 11,
               "total": 12,
               "checks": [
@@ -4735,7 +4735,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.376,
+              "duration_s": 1.668,
               "passed": 12,
               "total": 12,
               "checks": [
@@ -4815,7 +4815,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.338,
+              "duration_s": 1.669,
               "passed": 11,
               "total": 12,
               "checks": [
@@ -4903,7 +4903,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.146,
+              "duration_s": 5.084,
               "passed": 0,
               "total": 12,
               "checks": [
@@ -4983,10 +4983,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 25.313
+      "duration_s": 17.815
     },
     "py-ci-workflow": {
-      "tree_sha256": "8d2965e498ec1d3883a3ced8ddddb5108f583f72de221ae5e051e0a3e4116392",
+      "tree_sha256": "85e49c34d06f01fc8ca6f829e093693e3505ce59bc3a172a0c83153502c14a61",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -5201,7 +5201,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.096,
+              "duration_s": 0.665,
               "passed": 2,
               "total": 14,
               "checks": [
@@ -5367,7 +5367,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.105,
+              "duration_s": 0.665,
               "passed": 14,
               "total": 14,
               "checks": [
@@ -5446,7 +5446,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.163,
+              "duration_s": 0.719,
               "passed": 14,
               "total": 14,
               "checks": [
@@ -5535,7 +5535,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.021,
+              "duration_s": 0.666,
               "passed": 13,
               "total": 14,
               "checks": [
@@ -5643,7 +5643,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.142,
+              "duration_s": 0.718,
               "passed": 14,
               "total": 14,
               "checks": [
@@ -5733,7 +5733,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.211,
+              "duration_s": 0.716,
               "passed": 13,
               "total": 14,
               "checks": [
@@ -5831,7 +5831,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.156,
+              "duration_s": 5.093,
               "passed": 12,
               "total": 14,
               "checks": [
@@ -5921,10 +5921,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 16.765
+      "duration_s": 12.584
     },
     "py-cli-json": {
-      "tree_sha256": "73b3fa52f3822424c690d94ca7f16d1c9d90f8e2e88360cee969aa67b7e0083b",
+      "tree_sha256": "b9adca8dd3cc4e8becdd31490e2564ac9f311f4cc762a512cb2ab1d9279917d5",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -6139,7 +6139,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.879,
+              "duration_s": 1.267,
               "passed": 4,
               "total": 13,
               "checks": [
@@ -6302,7 +6302,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.326,
+              "duration_s": 1.619,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -6376,7 +6376,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.341,
+              "duration_s": 1.619,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -6460,7 +6460,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.098,
+              "duration_s": 1.568,
               "passed": 11,
               "total": 13,
               "checks": [
@@ -6563,7 +6563,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.384,
+              "duration_s": 1.769,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -6648,7 +6648,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.291,
+              "duration_s": 1.375,
               "passed": 11,
               "total": 13,
               "checks": [
@@ -6742,7 +6742,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.114,
+              "duration_s": 5.135,
               "passed": 0,
               "total": 13,
               "checks": [
@@ -6827,10 +6827,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 22.971
+      "duration_s": 17.203
     },
     "py-config-env": {
-      "tree_sha256": "46cdf98ab91e50c3bfcb2a41b3fbb6e606b175fb2522970b6b3c5b1949869493",
+      "tree_sha256": "38e80c530ec8b2fe9edb8e033e1f996b7d50052c04870ffe1cbe4c291729ef9b",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -7045,7 +7045,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.588,
+              "duration_s": 1.772,
               "passed": 4,
               "total": 15,
               "checks": [
@@ -7219,7 +7219,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.829,
+              "duration_s": 2.12,
               "passed": 15,
               "total": 15,
               "checks": [
@@ -7303,7 +7303,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.78,
+              "duration_s": 2.22,
               "passed": 15,
               "total": 15,
               "checks": [
@@ -7397,7 +7397,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.88,
+              "duration_s": 2.22,
               "passed": 13,
               "total": 15,
               "checks": [
@@ -7510,7 +7510,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.975,
+              "duration_s": 2.283,
               "passed": 15,
               "total": 15,
               "checks": [
@@ -7605,7 +7605,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 3.128,
+              "duration_s": 2.127,
               "passed": 13,
               "total": 15,
               "checks": [
@@ -7708,7 +7708,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.094,
+              "duration_s": 5.131,
               "passed": 0,
               "total": 15,
               "checks": [
@@ -7803,10 +7803,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 26.302
+      "duration_s": 20.901
     },
     "py-csv-summary": {
-      "tree_sha256": "449b5cfe4d08bbb98ce50d42790928b2e07cc91c3e8bba22516222c4555d94d9",
+      "tree_sha256": "261903a928bc67f523f2e1154352034134d8c189985b25754a306cfc24519aef",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -8021,7 +8021,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.67,
+              "duration_s": 1.221,
               "passed": 5,
               "total": 13,
               "checks": [
@@ -8184,7 +8184,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.771,
+              "duration_s": 1.217,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -8258,7 +8258,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.847,
+              "duration_s": 1.368,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -8342,7 +8342,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.778,
+              "duration_s": 1.168,
               "passed": 11,
               "total": 13,
               "checks": [
@@ -8445,7 +8445,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.188,
+              "duration_s": 1.174,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -8530,7 +8530,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.718,
+              "duration_s": 1.076,
               "passed": 11,
               "total": 13,
               "checks": [
@@ -8622,7 +8622,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.111,
+              "duration_s": 5.081,
               "passed": 0,
               "total": 13,
               "checks": [
@@ -8707,10 +8707,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 21.216
+      "duration_s": 15.852
     },
     "py-date-range": {
-      "tree_sha256": "c1e4cd9135c4ee6ffecc87682976a4dce927731adb28c0b6b798ffa69c54b19a",
+      "tree_sha256": "083a688fc025e0140c3534e0df4f2970f084edc8e9f5ccee620558a39f04b172",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -8925,7 +8925,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.846,
+              "duration_s": 1.274,
               "passed": 6,
               "total": 15,
               "checks": [
@@ -9100,7 +9100,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.622,
+              "duration_s": 1.821,
               "passed": 15,
               "total": 15,
               "checks": [
@@ -9184,7 +9184,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.371,
+              "duration_s": 1.668,
               "passed": 15,
               "total": 15,
               "checks": [
@@ -9278,7 +9278,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.764,
+              "duration_s": 1.718,
               "passed": 14,
               "total": 15,
               "checks": [
@@ -9391,7 +9391,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.495,
+              "duration_s": 1.772,
               "passed": 15,
               "total": 15,
               "checks": [
@@ -9486,7 +9486,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 3.046,
+              "duration_s": 1.722,
               "passed": 14,
               "total": 15,
               "checks": [
@@ -9588,7 +9588,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.094,
+              "duration_s": 5.085,
               "passed": 0,
               "total": 15,
               "checks": [
@@ -9683,10 +9683,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 25.073
+      "duration_s": 18.076
     },
     "py-email-tests": {
-      "tree_sha256": "b461dfcc7b5b2ef202b3c013d503660da7e731b982497704eb5104ea207bb25c",
+      "tree_sha256": "45fb56c68b4c89d5e56ed4f34574aa116357d37c33f730a58df38019a51dfc3a",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -9901,7 +9901,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 10.092,
+              "duration_s": 6.699,
               "passed": 2,
               "total": 29,
               "checks": [
@@ -10143,7 +10143,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 13.375,
+              "duration_s": 9.201,
               "passed": 29,
               "total": 29,
               "checks": [
@@ -10297,7 +10297,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 13.013,
+              "duration_s": 8.994,
               "passed": 29,
               "total": 29,
               "checks": [
@@ -10461,7 +10461,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 13.109,
+              "duration_s": 8.516,
               "passed": 27,
               "total": 29,
               "checks": [
@@ -10644,7 +10644,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 13.74,
+              "duration_s": 10.159,
               "passed": 29,
               "total": 29,
               "checks": [
@@ -10809,7 +10809,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 14.069,
+              "duration_s": 9.251,
               "passed": 27,
               "total": 29,
               "checks": [
@@ -10983,8 +10983,8 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 4.484,
-              "passed": 9,
+              "duration_s": 4.235,
+              "passed": 13,
               "total": 29,
               "checks": [
                 {
@@ -11035,22 +11035,22 @@
                 {
                   "name": "leading_hyphen_in_a_label_is_accepted",
                   "requirement": "R2",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "trailing_hyphen_in_a_label_is_accepted",
                   "requirement": "R2",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "domain_without_a_dot_is_accepted",
                   "requirement": "R2",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "numeric_last_label_is_accepted",
                   "requirement": "R2",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "domain_of_254_is_accepted",
@@ -11148,10 +11148,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 86.888
+      "duration_s": 60.762
     },
     "py-inventory-refactor": {
-      "tree_sha256": "ca8a653f2d60682fa0c9fe7b829c8cc692314f9c9b12e6d05f17edd2532800d7",
+      "tree_sha256": "8651f91235ed498df7db51b4331e8f04da1ead5e79f817f07ec08e8472fbba99",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -11366,7 +11366,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.871,
+              "duration_s": 1.374,
               "passed": 6,
               "total": 18,
               "checks": [
@@ -11560,7 +11560,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.022,
+              "duration_s": 1.468,
               "passed": 18,
               "total": 18,
               "checks": [
@@ -11659,7 +11659,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.024,
+              "duration_s": 1.367,
               "passed": 18,
               "total": 18,
               "checks": [
@@ -11768,7 +11768,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.075,
+              "duration_s": 1.326,
               "passed": 14,
               "total": 18,
               "checks": [
@@ -11896,7 +11896,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.975,
+              "duration_s": 1.319,
               "passed": 18,
               "total": 18,
               "checks": [
@@ -12006,7 +12006,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.028,
+              "duration_s": 1.369,
               "passed": 14,
               "total": 18,
               "checks": [
@@ -12129,7 +12129,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.118,
+              "duration_s": 5.077,
               "passed": 0,
               "total": 18,
               "checks": [
@@ -12239,10 +12239,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 22.046
+      "duration_s": 17.44
     },
     "py-log-parse": {
-      "tree_sha256": "d641140edbf76a3bf98211afc557b488b9754f9b81be33a2ee5ee979028ffe59",
+      "tree_sha256": "84ed5d0de2f1b58529832e88f01405e447c6ac570b98a9efdd37e00891a5e012",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -12457,7 +12457,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.173,
+              "duration_s": 1.321,
               "passed": 6,
               "total": 16,
               "checks": [
@@ -12639,7 +12639,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.728,
+              "duration_s": 1.572,
               "passed": 16,
               "total": 16,
               "checks": [
@@ -12728,7 +12728,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.579,
+              "duration_s": 1.719,
               "passed": 16,
               "total": 16,
               "checks": [
@@ -12827,7 +12827,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.634,
+              "duration_s": 1.721,
               "passed": 14,
               "total": 16,
               "checks": [
@@ -12945,7 +12945,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.629,
+              "duration_s": 1.679,
               "passed": 16,
               "total": 16,
               "checks": [
@@ -13045,7 +13045,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.619,
+              "duration_s": 1.684,
               "passed": 14,
               "total": 16,
               "checks": [
@@ -13155,7 +13155,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.144,
+              "duration_s": 5.079,
               "passed": 0,
               "total": 16,
               "checks": [
@@ -13255,10 +13255,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 25.374
+      "duration_s": 17.85
     },
     "py-lru-ttl": {
-      "tree_sha256": "227d5f2428f1a3a04753e59f4fed9c9e684a00287c07681ea1eab161654bd968",
+      "tree_sha256": "e59009f71cc81305b238194c0dbb81d3c0a49c20431802e37f619b4ad8894a39",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -13473,7 +13473,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.018,
+              "duration_s": 0.67,
               "passed": 4,
               "total": 19,
               "checks": [
@@ -13669,7 +13669,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.02,
+              "duration_s": 0.719,
               "passed": 19,
               "total": 19,
               "checks": [
@@ -13773,7 +13773,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 0.918,
+              "duration_s": 0.767,
               "passed": 19,
               "total": 19,
               "checks": [
@@ -13887,7 +13887,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.024,
+              "duration_s": 0.717,
               "passed": 16,
               "total": 19,
               "checks": [
@@ -14020,7 +14020,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.021,
+              "duration_s": 0.716,
               "passed": 19,
               "total": 19,
               "checks": [
@@ -14135,7 +14135,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.369,
+              "duration_s": 0.766,
               "passed": 16,
               "total": 19,
               "checks": [
@@ -14256,7 +14256,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.139,
+              "duration_s": 5.077,
               "passed": 0,
               "total": 19,
               "checks": [
@@ -14371,10 +14371,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 15.558
+      "duration_s": 12.188
     },
     "py-md-toc": {
-      "tree_sha256": "0c3c4a669e8594c449f7f5e1ab3427be447ba214a54038bb7d84ab97910f2359",
+      "tree_sha256": "0be8fefddaa4b9eaa882ab40809fecd5bbff8c2815e0cb566a184fc7d0b730c9",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -14589,7 +14589,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.57,
+              "duration_s": 1.117,
               "passed": 3,
               "total": 13,
               "checks": [
@@ -14755,7 +14755,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.78,
+              "duration_s": 1.226,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -14829,7 +14829,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.849,
+              "duration_s": 1.269,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -14913,7 +14913,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.52,
+              "duration_s": 1.073,
               "passed": 11,
               "total": 13,
               "checks": [
@@ -15016,7 +15016,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.724,
+              "duration_s": 1.173,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -15101,7 +15101,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.641,
+              "duration_s": 1.17,
               "passed": 11,
               "total": 13,
               "checks": [
@@ -15197,7 +15197,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.093,
+              "duration_s": 5.079,
               "passed": 0,
               "total": 13,
               "checks": [
@@ -15282,10 +15282,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 19.7
+      "duration_s": 15.158
     },
     "py-money-round": {
-      "tree_sha256": "a97895b523c0dfc5151b9833217013d769b3ee0d073be8c99b85f27a8febea8c",
+      "tree_sha256": "e7e27865d80753d75123c49623e1c6e401ea8e2e7542099e0a9a319cfe685f04",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -15500,7 +15500,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.921,
+              "duration_s": 1.172,
               "passed": 4,
               "total": 11,
               "checks": [
@@ -15657,7 +15657,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.907,
+              "duration_s": 1.273,
               "passed": 11,
               "total": 11,
               "checks": [
@@ -15721,7 +15721,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.982,
+              "duration_s": 1.418,
               "passed": 11,
               "total": 11,
               "checks": [
@@ -15795,7 +15795,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.177,
+              "duration_s": 1.368,
               "passed": 9,
               "total": 11,
               "checks": [
@@ -15888,7 +15888,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.125,
+              "duration_s": 1.418,
               "passed": 11,
               "total": 11,
               "checks": [
@@ -15963,7 +15963,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.772,
+              "duration_s": 1.471,
               "passed": 9,
               "total": 11,
               "checks": [
@@ -16046,7 +16046,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.09,
+              "duration_s": 5.13,
               "passed": 0,
               "total": 11,
               "checks": [
@@ -16121,10 +16121,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 21.94
+      "duration_s": 16.26
     },
     "py-rate-limiter": {
-      "tree_sha256": "17e0a2932a933b0085c34be8bfe1d268d949415cf374c8b8b97c2eb1d57c63c9",
+      "tree_sha256": "1d38629cbc13133c50a30f629597174877e4f22ec7397a144cf65fc04936fa2d",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -16339,7 +16339,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.525,
+              "duration_s": 0.966,
               "passed": 5,
               "total": 11,
               "checks": [
@@ -16492,7 +16492,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.27,
+              "duration_s": 0.918,
               "passed": 11,
               "total": 11,
               "checks": [
@@ -16556,7 +16556,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.271,
+              "duration_s": 0.922,
               "passed": 11,
               "total": 11,
               "checks": [
@@ -16630,7 +16630,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.17,
+              "duration_s": 0.972,
               "passed": 9,
               "total": 11,
               "checks": [
@@ -16723,7 +16723,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.223,
+              "duration_s": 0.919,
               "passed": 11,
               "total": 11,
               "checks": [
@@ -16798,7 +16798,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.473,
+              "duration_s": 0.919,
               "passed": 9,
               "total": 11,
               "checks": [
@@ -16882,7 +16882,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.138,
+              "duration_s": 5.079,
               "passed": 0,
               "total": 11,
               "checks": [
@@ -16957,10 +16957,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 17.166
+      "duration_s": 13.764
     },
     "py-retry": {
-      "tree_sha256": "e55c3263b59468b3c4f1dce849b9ddbac23f715ea01785698a39787c642d3e29",
+      "tree_sha256": "d78cdbfb6b3b9cd2bd0f9331b08085174a1acf85032916b7ccbdd5da6392c621",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -17175,7 +17175,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 0.968,
+              "duration_s": 0.618,
               "passed": 4,
               "total": 20,
               "checks": [
@@ -17377,7 +17377,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.069,
+              "duration_s": 0.77,
               "passed": 20,
               "total": 20,
               "checks": [
@@ -17486,7 +17486,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 0.976,
+              "duration_s": 0.769,
               "passed": 20,
               "total": 20,
               "checks": [
@@ -17605,7 +17605,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.22,
+              "duration_s": 0.717,
               "passed": 17,
               "total": 20,
               "checks": [
@@ -17743,7 +17743,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.259,
+              "duration_s": 0.716,
               "passed": 20,
               "total": 20,
               "checks": [
@@ -17863,7 +17863,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.173,
+              "duration_s": 0.715,
               "passed": 17,
               "total": 20,
               "checks": [
@@ -17991,7 +17991,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.099,
+              "duration_s": 5.078,
               "passed": 0,
               "total": 20,
               "checks": [
@@ -18111,10 +18111,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 15.83
+      "duration_s": 12.219
     },
     "py-slugify-tests": {
-      "tree_sha256": "49ae26aa2ca6dab52cf2d6ef12accfbdbb59f27cb471dd78e11341f36af020f5",
+      "tree_sha256": "bf27c861e0257d5cdf2affd8749dc689031e7b1bb13a9e126911c37fd6d6b795",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -18329,7 +18329,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 6.33,
+              "duration_s": 4.444,
               "passed": 3,
               "total": 22,
               "checks": [
@@ -18536,7 +18536,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 7.963,
+              "duration_s": 5.905,
               "passed": 22,
               "total": 22,
               "checks": [
@@ -18655,7 +18655,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 8.268,
+              "duration_s": 5.695,
               "passed": 22,
               "total": 22,
               "checks": [
@@ -18784,7 +18784,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 7.2,
+              "duration_s": 5.234,
               "passed": 19,
               "total": 22,
               "checks": [
@@ -18932,7 +18932,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 9.484,
+              "duration_s": 6.107,
               "passed": 22,
               "total": 22,
               "checks": [
@@ -19062,7 +19062,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 7.905,
+              "duration_s": 5.052,
               "passed": 19,
               "total": 22,
               "checks": [
@@ -19199,8 +19199,8 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 4.401,
-              "passed": 9,
+              "duration_s": 4.2,
+              "passed": 14,
               "total": 22,
               "checks": [
                 {
@@ -19251,27 +19251,27 @@
                 {
                   "name": "curly_apostrophe_splits_the_word",
                   "requirement": "R3",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "digits_are_dropped",
                   "requirement": "R3",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "separator_option_is_ignored",
                   "requirement": "R3",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "ampersand_is_dropped",
                   "requirement": "R3",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "at_sign_is_dropped",
                   "requirement": "R3",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "stopwords_match_case_sensitively",
@@ -19329,10 +19329,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 55.992
+      "duration_s": 39.479
     },
     "py-units-refactor": {
-      "tree_sha256": "0e917ce68ef08546827bdad850cc0c0d3b8e23017d9d14742f4a3a43ae8a3466",
+      "tree_sha256": "d895ffe198768ab1979ed2d15afe17780b98699562327ff1662fa3f5fdc44d2e",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -19547,7 +19547,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.813,
+              "duration_s": 1.073,
               "passed": 5,
               "total": 12,
               "checks": [
@@ -19706,7 +19706,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.168,
+              "duration_s": 1.423,
               "passed": 12,
               "total": 12,
               "checks": [
@@ -19775,7 +19775,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.119,
+              "duration_s": 1.376,
               "passed": 12,
               "total": 12,
               "checks": [
@@ -19854,7 +19854,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.254,
+              "duration_s": 1.426,
               "passed": 11,
               "total": 12,
               "checks": [
@@ -19952,7 +19952,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.108,
+              "duration_s": 1.37,
               "passed": 12,
               "total": 12,
               "checks": [
@@ -20032,7 +20032,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.868,
+              "duration_s": 1.379,
               "passed": 11,
               "total": 12,
               "checks": [
@@ -20120,7 +20120,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.098,
+              "duration_s": 5.081,
               "passed": 0,
               "total": 12,
               "checks": [
@@ -20200,10 +20200,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 22.676
+      "duration_s": 16.274
     },
     "py-vendored-semver": {
-      "tree_sha256": "2c24a379d28f64ad779ea91250c7c2854bc5d4a7ea98ba158d7a5cb4a74c1335",
+      "tree_sha256": "bc9dbdc346147645daa124e56627e5c553168ff156a48a9781d447eb96ca9afe",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -20418,7 +20418,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.364,
+              "duration_s": 1.671,
               "passed": 5,
               "total": 13,
               "checks": [
@@ -20591,7 +20591,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.953,
+              "duration_s": 2.079,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -20665,7 +20665,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.922,
+              "duration_s": 1.973,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -20749,7 +20749,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.844,
+              "duration_s": 1.773,
               "passed": 12,
               "total": 13,
               "checks": [
@@ -20852,7 +20852,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.731,
+              "duration_s": 1.868,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -20937,7 +20937,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.584,
+              "duration_s": 1.92,
               "passed": 12,
               "total": 13,
               "checks": [
@@ -21034,7 +21034,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.138,
+              "duration_s": 5.092,
               "passed": 0,
               "total": 13,
               "checks": [
@@ -21119,10 +21119,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 26.207
+      "duration_s": 19.502
     },
     "ts-ci-workflow": {
-      "tree_sha256": "d8bc98b4767d083f6e79520f26251a61cf053f3842ed14c2449ce21cfecc53dd",
+      "tree_sha256": "13566049a9347b43a5b2149a961d029bd97d6478f1a9baba96b7071f8b1142ff",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -21337,7 +21337,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 0.466,
+              "duration_s": 0.365,
               "passed": 2,
               "total": 10,
               "checks": [
@@ -21483,7 +21483,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 0.517,
+              "duration_s": 0.365,
               "passed": 10,
               "total": 10,
               "checks": [
@@ -21542,7 +21542,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 0.62,
+              "duration_s": 0.365,
               "passed": 10,
               "total": 10,
               "checks": [
@@ -21611,7 +21611,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 0.57,
+              "duration_s": 0.365,
               "passed": 9,
               "total": 10,
               "checks": [
@@ -21699,7 +21699,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 0.517,
+              "duration_s": 0.365,
               "passed": 10,
               "total": 10,
               "checks": [
@@ -21769,7 +21769,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 0.72,
+              "duration_s": 0.365,
               "passed": 9,
               "total": 10,
               "checks": [
@@ -21847,7 +21847,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 0.523,
+              "duration_s": 0.365,
               "passed": 9,
               "total": 10,
               "checks": [
@@ -21917,10 +21917,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 11.128
+      "duration_s": 7.427
     },
     "ts-cli-docs": {
-      "tree_sha256": "605ce4bd729a98e89a687957bc9a00dda4c4cd4df8d2c66621a1d248248e389b",
+      "tree_sha256": "b07aab94b0e0336603ee3954dd10a2f4a066c966aaac3a437023628392f5b99f",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -22135,7 +22135,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.648,
+              "duration_s": 1.476,
               "passed": 4,
               "total": 18,
               "checks": [
@@ -22324,7 +22324,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 6.078,
+              "duration_s": 4.093,
               "passed": 18,
               "total": 18,
               "checks": [
@@ -22423,7 +22423,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 6.066,
+              "duration_s": 4.043,
               "passed": 18,
               "total": 18,
               "checks": [
@@ -22532,7 +22532,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 10.047,
+              "duration_s": 4.045,
               "passed": 17,
               "total": 18,
               "checks": [
@@ -22660,7 +22660,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 7.371,
+              "duration_s": 3.845,
               "passed": 18,
               "total": 18,
               "checks": [
@@ -22770,7 +22770,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 6.061,
+              "duration_s": 3.843,
               "passed": 17,
               "total": 18,
               "checks": [
@@ -22889,7 +22889,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.14,
+              "duration_s": 5.085,
               "passed": 3,
               "total": 18,
               "checks": [
@@ -22999,10 +22999,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 54.717
+      "duration_s": 32.722
     },
     "ts-color": {
-      "tree_sha256": "5dd8467e97eca10cb629cfcad204a2798d61a632772bd97d8a7017db6f407382",
+      "tree_sha256": "32ffbeebe35c01b9611713adf766a02341393d71825d152273a1ec0129f63ac0",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -23217,7 +23217,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.992,
+              "duration_s": 1.826,
               "passed": 4,
               "total": 17,
               "checks": [
@@ -23406,7 +23406,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 3.895,
+              "duration_s": 2.442,
               "passed": 17,
               "total": 17,
               "checks": [
@@ -23500,7 +23500,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 3.652,
+              "duration_s": 2.432,
               "passed": 17,
               "total": 17,
               "checks": [
@@ -23604,7 +23604,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 3.277,
+              "duration_s": 2.235,
               "passed": 12,
               "total": 17,
               "checks": [
@@ -23727,7 +23727,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 3.744,
+              "duration_s": 2.584,
               "passed": 17,
               "total": 17,
               "checks": [
@@ -23832,7 +23832,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 3.162,
+              "duration_s": 2.128,
               "passed": 12,
               "total": 17,
               "checks": [
@@ -23949,7 +23949,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.137,
+              "duration_s": 5.094,
               "passed": 0,
               "total": 17,
               "checks": [
@@ -24054,10 +24054,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 34.845
+      "duration_s": 24.004
     },
     "ts-csv-parse": {
-      "tree_sha256": "e9b3ef6e6e89cceb1074a0e5236c718e87d70e93b4fc7c6f977ea1c7a7ac6329",
+      "tree_sha256": "30c237fd211dc632a5f1a9d0485e237c424142458e900f8e273f5a8c8e1b6683",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -24272,7 +24272,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.604,
+              "duration_s": 1.819,
               "passed": 9,
               "total": 14,
               "checks": [
@@ -24439,7 +24439,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.754,
+              "duration_s": 1.776,
               "passed": 14,
               "total": 14,
               "checks": [
@@ -24518,7 +24518,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 3.151,
+              "duration_s": 1.671,
               "passed": 14,
               "total": 14,
               "checks": [
@@ -24607,7 +24607,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.626,
+              "duration_s": 1.773,
               "passed": 13,
               "total": 14,
               "checks": [
@@ -24715,7 +24715,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.586,
+              "duration_s": 1.771,
               "passed": 14,
               "total": 14,
               "checks": [
@@ -24805,7 +24805,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.329,
+              "duration_s": 1.768,
               "passed": 13,
               "total": 14,
               "checks": [
@@ -24904,7 +24904,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.092,
+              "duration_s": 5.093,
               "passed": 0,
               "total": 14,
               "checks": [
@@ -24994,10 +24994,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 30.505
+      "duration_s": 21.879
     },
     "ts-debounce": {
-      "tree_sha256": "7313859501610a9222a3edb298cbe5f04a4ddf851d4efb0a022c79f7623a0e72",
+      "tree_sha256": "4742ec6924bea700064bef6583efec22b124775664ca5d20bc0dde43fd8b3826",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -25212,7 +25212,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.275,
+              "duration_s": 1.575,
               "passed": 3,
               "total": 13,
               "checks": [
@@ -25379,7 +25379,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.996,
+              "duration_s": 1.774,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -25453,7 +25453,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.783,
+              "duration_s": 1.824,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -25537,7 +25537,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.427,
+              "duration_s": 1.777,
               "passed": 10,
               "total": 13,
               "checks": [
@@ -25640,7 +25640,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.861,
+              "duration_s": 1.878,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -25725,7 +25725,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.383,
+              "duration_s": 1.777,
               "passed": 10,
               "total": 13,
               "checks": [
@@ -25820,7 +25820,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.141,
+              "duration_s": 5.088,
               "passed": 0,
               "total": 13,
               "checks": [
@@ -25905,10 +25905,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 30.414
+      "duration_s": 22.265
     },
     "ts-emitter": {
-      "tree_sha256": "53a16a0f102813807a0b293fe70ebaaf3cef967a9eaba9b37053b321ce99e82f",
+      "tree_sha256": "b65c852fe7d6bf5dcddd6debefa6369ad9be4dfe60ad3c9f7a3372c455b522c8",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -26123,7 +26123,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.083,
+              "duration_s": 1.022,
               "passed": 4,
               "total": 14,
               "checks": [
@@ -26290,7 +26290,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.689,
+              "duration_s": 1.071,
               "passed": 14,
               "total": 14,
               "checks": [
@@ -26369,7 +26369,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.107,
+              "duration_s": 1.172,
               "passed": 14,
               "total": 14,
               "checks": [
@@ -26458,7 +26458,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.127,
+              "duration_s": 1.081,
               "passed": 12,
               "total": 14,
               "checks": [
@@ -26566,7 +26566,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.621,
+              "duration_s": 1.076,
               "passed": 14,
               "total": 14,
               "checks": [
@@ -26656,7 +26656,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.525,
+              "duration_s": 1.121,
               "passed": 12,
               "total": 14,
               "checks": [
@@ -26754,7 +26754,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.223,
+              "duration_s": 5.081,
               "passed": 0,
               "total": 14,
               "checks": [
@@ -26844,10 +26844,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 24.419
+      "duration_s": 16.013
     },
     "ts-env-config": {
-      "tree_sha256": "c2d043ae023cbe624e7a55ebf36bcda001197ca8cee5748f53b24afea8f5c0fc",
+      "tree_sha256": "41c6fb02c33f1f05ad802525639d409e9633b198d293d2a28d1208c4e2c03813",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -27062,7 +27062,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 3.16,
+              "duration_s": 1.682,
               "passed": 5,
               "total": 13,
               "checks": [
@@ -27228,7 +27228,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.633,
+              "duration_s": 1.524,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -27302,7 +27302,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.89,
+              "duration_s": 1.47,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -27386,7 +27386,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.44,
+              "duration_s": 1.521,
               "passed": 10,
               "total": 13,
               "checks": [
@@ -27489,7 +27489,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.496,
+              "duration_s": 1.732,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -27574,7 +27574,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.732,
+              "duration_s": 1.623,
               "passed": 10,
               "total": 13,
               "checks": [
@@ -27669,7 +27669,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.108,
+              "duration_s": 5.098,
               "passed": 0,
               "total": 13,
               "checks": [
@@ -27754,10 +27754,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 32.942
+      "duration_s": 20.995
     },
     "ts-inventory-api": {
-      "tree_sha256": "95057bc4e70c869f7e95c1a1430cab63223c045fb0b646aa4de32a1d6ec5bffd",
+      "tree_sha256": "3ec6bc60ab6379e1dc508577c7d17910137a8859199aa522c8a54c8b06c93cea",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -27972,7 +27972,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 3.001,
+              "duration_s": 1.829,
               "passed": 11,
               "total": 26,
               "checks": [
@@ -28202,7 +28202,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.482,
+              "duration_s": 1.826,
               "passed": 26,
               "total": 26,
               "checks": [
@@ -28341,7 +28341,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 3.341,
+              "duration_s": 1.782,
               "passed": 26,
               "total": 26,
               "checks": [
@@ -28490,7 +28490,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 3.323,
+              "duration_s": 1.975,
               "passed": 23,
               "total": 26,
               "checks": [
@@ -28658,7 +28658,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.965,
+              "duration_s": 1.988,
               "passed": 26,
               "total": 26,
               "checks": [
@@ -28808,7 +28808,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 3.079,
+              "duration_s": 1.874,
               "passed": 23,
               "total": 26,
               "checks": [
@@ -28968,7 +28968,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.104,
+              "duration_s": 5.086,
               "passed": 0,
               "total": 26,
               "checks": [
@@ -29118,10 +29118,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 31.695
+      "duration_s": 21.19
     },
     "ts-matrix-refactor": {
-      "tree_sha256": "7d16d7fe25cff2e20d3d4be7252be51689963f4239cbd3cdde7c2f5baff18704",
+      "tree_sha256": "d58c450a68862e1d35f1adca017513f441a5eb7d409cda85d6a511519f700300",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -29336,7 +29336,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.882,
+              "duration_s": 1.074,
               "passed": 7,
               "total": 14,
               "checks": [
@@ -29505,7 +29505,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.192,
+              "duration_s": 1.22,
               "passed": 14,
               "total": 14,
               "checks": [
@@ -29584,7 +29584,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.337,
+              "duration_s": 1.219,
               "passed": 14,
               "total": 14,
               "checks": [
@@ -29673,7 +29673,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.776,
+              "duration_s": 1.134,
               "passed": 11,
               "total": 14,
               "checks": [
@@ -29781,7 +29781,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.223,
+              "duration_s": 1.226,
               "passed": 14,
               "total": 14,
               "checks": [
@@ -29871,7 +29871,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.776,
+              "duration_s": 1.269,
               "passed": 11,
               "total": 14,
               "checks": [
@@ -29970,7 +29970,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.122,
+              "duration_s": 5.09,
               "passed": 0,
               "total": 14,
               "checks": [
@@ -30060,10 +30060,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 27.274
+      "duration_s": 18.537
     },
     "ts-money-format": {
-      "tree_sha256": "8e1c3b59b67f0fd4a67ec5774066ee2c2d9ecf90f5b5421897e318fe6d631cd0",
+      "tree_sha256": "2b71a99ee7b9649609dc4849ff240161db1a5c630fcb5a201fe431f9e10ff311",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -30278,7 +30278,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 3.904,
+              "duration_s": 2.329,
               "passed": 5,
               "total": 18,
               "checks": [
@@ -30467,7 +30467,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 3.804,
+              "duration_s": 2.323,
               "passed": 18,
               "total": 18,
               "checks": [
@@ -30566,7 +30566,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 3.798,
+              "duration_s": 2.481,
               "passed": 18,
               "total": 18,
               "checks": [
@@ -30675,7 +30675,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 3.457,
+              "duration_s": 2.633,
               "passed": 17,
               "total": 18,
               "checks": [
@@ -30803,7 +30803,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 3.589,
+              "duration_s": 2.539,
               "passed": 18,
               "total": 18,
               "checks": [
@@ -30913,7 +30913,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 3.742,
+              "duration_s": 2.679,
               "passed": 17,
               "total": 18,
               "checks": [
@@ -31032,7 +31032,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.142,
+              "duration_s": 5.082,
               "passed": 0,
               "total": 18,
               "checks": [
@@ -31142,10 +31142,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 37.684
+      "duration_s": 26.691
     },
     "ts-paginate": {
-      "tree_sha256": "0aa344183e25900c8717f47e0d9ccb02db902765916bee2deb550ddcc4cff454",
+      "tree_sha256": "c93a9f06575c2a3324cfc33682d657e6b2f28fcb845b76e575cfff7b08fc644b",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -31360,7 +31360,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.859,
+              "duration_s": 1.126,
               "passed": 3,
               "total": 14,
               "checks": [
@@ -31531,7 +31531,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.676,
+              "duration_s": 1.124,
               "passed": 14,
               "total": 14,
               "checks": [
@@ -31610,7 +31610,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.026,
+              "duration_s": 1.126,
               "passed": 14,
               "total": 14,
               "checks": [
@@ -31699,7 +31699,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.977,
+              "duration_s": 1.226,
               "passed": 13,
               "total": 14,
               "checks": [
@@ -31807,7 +31807,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.976,
+              "duration_s": 1.176,
               "passed": 14,
               "total": 14,
               "checks": [
@@ -31897,7 +31897,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.716,
+              "duration_s": 1.122,
               "passed": 13,
               "total": 14,
               "checks": [
@@ -31996,7 +31996,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.138,
+              "duration_s": 5.083,
               "passed": 0,
               "total": 14,
               "checks": [
@@ -32086,10 +32086,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 25.719
+      "duration_s": 17.881
     },
     "ts-parser-tests": {
-      "tree_sha256": "1d002dee57cdd58faad81b106e7a7be6e3d4869c44862470dca20de0a046167d",
+      "tree_sha256": "21640151f9c2c692b8bce0fda39d12917635d75654602075df626e1141472a54",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -32181,7 +32181,7 @@
         {
           "name": "m2_start.truncation_hides_failure",
           "ok": true,
-          "detail": "first failure line 35 of 65; visible_lines 24; needs first failure line > visible_lines + 5"
+          "detail": "first failure line 35 of 51; visible_lines 24; needs first failure line > visible_lines + 5"
         },
         {
           "name": "reference.tests_pass",
@@ -32304,7 +32304,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.195,
+              "duration_s": 1.227,
               "passed": 2,
               "total": 36,
               "checks": [
@@ -32540,7 +32540,7 @@
           "truncation": {
             "visible_lines": 24,
             "first_failure_line": 35,
-            "total_lines": 65
+            "total_lines": 51
           }
         },
         "reference": {
@@ -32578,7 +32578,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 15.536,
+              "duration_s": 7.013,
               "passed": 36,
               "total": 36,
               "checks": [
@@ -32767,7 +32767,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 11.788,
+              "duration_s": 6.748,
               "passed": 36,
               "total": 36,
               "checks": [
@@ -32966,7 +32966,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 10.995,
+              "duration_s": 5.206,
               "passed": 25,
               "total": 36,
               "checks": [
@@ -33184,7 +33184,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 10.792,
+              "duration_s": 6.911,
               "passed": 36,
               "total": 36,
               "checks": [
@@ -33384,7 +33384,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 8.827,
+              "duration_s": 5.092,
               "passed": 25,
               "total": 36,
               "checks": [
@@ -33592,8 +33592,8 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.129,
-              "passed": 15,
+              "duration_s": 5.057,
+              "passed": 24,
               "total": 36,
               "checks": [
                 {
@@ -33674,47 +33674,47 @@
                 {
                   "name": "underscore_cannot_start_a_name",
                   "requirement": "R2",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "newline_escape_is_wrong",
                   "requirement": "R3",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "escaped_double_quote_is_unknown",
                   "requirement": "R3",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "unterminated_string_points_at_the_end",
                   "requirement": "R3",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "unknown_escape_is_accepted",
                   "requirement": "R3",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "line_break_inside_a_string_is_accepted",
                   "requirement": "R3",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "either_quote_closes_a_string",
                   "requirement": "R3",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "string_text_is_rebuilt_from_the_value",
                   "requirement": "R3",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "unknown_escape_error_is_after_the_backslash",
                   "requirement": "R3",
-                  "passed": false
+                  "passed": true
                 },
                 {
                   "name": "tab_escape_is_wrong",
@@ -33792,10 +33792,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 75.866
+      "duration_s": 43.0
     },
     "ts-query-string": {
-      "tree_sha256": "a681b3733f3debae96f3b1b2f31788bc6378bed73512b60ae451825e63639738",
+      "tree_sha256": "3cd0ec2b1a4e0f8265add2ab83262bec6c4c2df81bbd9fd74e46c70c21568a5c",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -34010,7 +34010,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 0.956,
+              "duration_s": 0.722,
               "passed": 3,
               "total": 8,
               "checks": [
@@ -34147,7 +34147,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.024,
+              "duration_s": 0.724,
               "passed": 8,
               "total": 8,
               "checks": [
@@ -34196,7 +34196,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 1.107,
+              "duration_s": 0.765,
               "passed": 8,
               "total": 8,
               "checks": [
@@ -34255,7 +34255,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 1.128,
+              "duration_s": 0.769,
               "passed": 7,
               "total": 8,
               "checks": [
@@ -34333,7 +34333,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 0.972,
+              "duration_s": 0.769,
               "passed": 8,
               "total": 8,
               "checks": [
@@ -34393,7 +34393,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 0.97,
+              "duration_s": 0.717,
               "passed": 7,
               "total": 8,
               "checks": [
@@ -34461,7 +34461,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.158,
+              "duration_s": 5.085,
               "passed": 0,
               "total": 8,
               "checks": [
@@ -34521,10 +34521,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 20.47
+      "duration_s": 15.302
     },
     "ts-route-match": {
-      "tree_sha256": "12136cee742e4449977bb29ffc6cb3cc83c7b9f2d70a7464156952285649d6ab",
+      "tree_sha256": "b2b886d3e90c022e96243bf2a023419fbca7b64e7186c772455b787c82284a34",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -34739,7 +34739,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 4.953,
+              "duration_s": 1.828,
               "passed": 5,
               "total": 13,
               "checks": [
@@ -34900,7 +34900,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.633,
+              "duration_s": 2.084,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -34974,7 +34974,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.634,
+              "duration_s": 1.982,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -35058,7 +35058,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 3.189,
+              "duration_s": 1.774,
               "passed": 11,
               "total": 13,
               "checks": [
@@ -35161,7 +35161,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.735,
+              "duration_s": 2.084,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -35246,7 +35246,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.983,
+              "duration_s": 1.976,
               "passed": 11,
               "total": 13,
               "checks": [
@@ -35339,7 +35339,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.113,
+              "duration_s": 5.095,
               "passed": 0,
               "total": 13,
               "checks": [
@@ -35424,10 +35424,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 34.961
+      "duration_s": 22.281
     },
     "ts-semver-compare": {
-      "tree_sha256": "ba17b6806e1879ac893c1c9465fcd535c22327debf137bfdd1e1257e294da634",
+      "tree_sha256": "8d7028aded8b65f47d9491c0acddebcfc7f7a002589a3c3056a143790b7053ce",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -35642,7 +35642,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.337,
+              "duration_s": 1.532,
               "passed": 2,
               "total": 8,
               "checks": [
@@ -35779,7 +35779,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 5.181,
+              "duration_s": 1.78,
               "passed": 8,
               "total": 8,
               "checks": [
@@ -35828,7 +35828,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 8.869,
+              "duration_s": 1.84,
               "passed": 8,
               "total": 8,
               "checks": [
@@ -35887,7 +35887,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.429,
+              "duration_s": 1.679,
               "passed": 5,
               "total": 8,
               "checks": [
@@ -35965,7 +35965,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 4.975,
+              "duration_s": 1.828,
               "passed": 8,
               "total": 8,
               "checks": [
@@ -36025,7 +36025,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.634,
+              "duration_s": 1.626,
               "passed": 5,
               "total": 8,
               "checks": [
@@ -36093,7 +36093,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.14,
+              "duration_s": 5.098,
               "passed": 0,
               "total": 8,
               "checks": [
@@ -36153,10 +36153,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 45.813
+      "duration_s": 20.849
     },
     "ts-state-machine": {
-      "tree_sha256": "ebb47292cd65d336584bc9f39d709422c238dea9bea8008468388b1b26465efe",
+      "tree_sha256": "406a6f024770f1fdb0d6ddea5d6b836ae083f1c445054e939168bd87a0d536ee",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -36371,7 +36371,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.142,
+              "duration_s": 1.426,
               "passed": 6,
               "total": 13,
               "checks": [
@@ -36535,7 +36535,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.286,
+              "duration_s": 1.422,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -36609,7 +36609,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 3.05,
+              "duration_s": 1.523,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -36693,7 +36693,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.415,
+              "duration_s": 1.477,
               "passed": 12,
               "total": 13,
               "checks": [
@@ -36796,7 +36796,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 2.635,
+              "duration_s": 1.52,
               "passed": 13,
               "total": 13,
               "checks": [
@@ -36881,7 +36881,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 2.543,
+              "duration_s": 1.573,
               "passed": 12,
               "total": 13,
               "checks": [
@@ -36975,7 +36975,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.156,
+              "duration_s": 5.097,
               "passed": 0,
               "total": 13,
               "checks": [
@@ -37060,10 +37060,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 28.915
+      "duration_s": 19.34
     },
     "ts-todo-tags": {
-      "tree_sha256": "7a3346430639c5eb2895dd5fc1a09cf14ccadfebfa6ac6f2266d666b29dd24fa",
+      "tree_sha256": "8ac9317c0ac53db973a5b3950d4f0ebb7ab525edcfac22809ccd1866792a6b91",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -37278,7 +37278,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 6.679,
+              "duration_s": 2.386,
               "passed": 5,
               "total": 15,
               "checks": [
@@ -37459,7 +37459,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 5.774,
+              "duration_s": 2.941,
               "passed": 15,
               "total": 15,
               "checks": [
@@ -37543,7 +37543,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 4.536,
+              "duration_s": 2.834,
               "passed": 15,
               "total": 15,
               "checks": [
@@ -37637,7 +37637,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 4.46,
+              "duration_s": 2.932,
               "passed": 13,
               "total": 15,
               "checks": [
@@ -37750,7 +37750,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 5.056,
+              "duration_s": 2.739,
               "passed": 15,
               "total": 15,
               "checks": [
@@ -37845,7 +37845,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 9.243,
+              "duration_s": 2.878,
               "passed": 13,
               "total": 15,
               "checks": [
@@ -37952,7 +37952,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.206,
+              "duration_s": 5.089,
               "passed": 0,
               "total": 15,
               "checks": [
@@ -38047,10 +38047,10 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 57.057
+      "duration_s": 28.07
     },
     "ts-vendored-dates": {
-      "tree_sha256": "ee0a72aa87bfced304f0043cbc17f2dbf695d0709ee777aff4d3c5e945457b2e",
+      "tree_sha256": "9ffafb5b8d4208eb56ce0afee254532d471069451a91875a5d2431c73b892cb7",
       "hidden_passed": true,
       "valid": true,
       "complete": true,
@@ -38265,7 +38265,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 10.588,
+              "duration_s": 5.918,
               "passed": 9,
               "total": 19,
               "checks": [
@@ -38469,7 +38469,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 16.441,
+              "duration_s": 8.706,
               "passed": 19,
               "total": 19,
               "checks": [
@@ -38573,7 +38573,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 12.758,
+              "duration_s": 8.306,
               "passed": 19,
               "total": 19,
               "checks": [
@@ -38687,7 +38687,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 13.023,
+              "duration_s": 7.097,
               "passed": 18,
               "total": 19,
               "checks": [
@@ -38820,7 +38820,7 @@
             {
               "exit_code": 0,
               "timed_out": false,
-              "duration_s": 13.245,
+              "duration_s": 8.353,
               "passed": 19,
               "total": 19,
               "checks": [
@@ -38935,7 +38935,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 14.262,
+              "duration_s": 7.19,
               "passed": 18,
               "total": 19,
               "checks": [
@@ -39061,7 +39061,7 @@
             {
               "exit_code": 1,
               "timed_out": false,
-              "duration_s": 5.148,
+              "duration_s": 5.083,
               "passed": 0,
               "total": 19,
               "checks": [
@@ -39176,7 +39176,7 @@
         "hang"
       ],
       "repeats": 2,
-      "duration_s": 99.445
+      "duration_s": 56.829
     }
   },
   "summary": {
@@ -39185,13 +39185,13 @@
     "invalid": []
   },
   "provenance": {
-    "git_sha": "6f6e7a601c90ecb7128d69638b0ed0180dc4a0e1",
+    "git_sha": "85f9b926581f5ff098de9b9066d2906d75092537",
     "bench_dirty": false,
-    "command": "python tools/bench_validate.py --jobs 1",
-    "created": "2026-11-04T08:41:16+00:00",
+    "command": "python tools/bench_validate.py --jobs 3",
+    "created": "2026-11-11T21:38:27+00:00",
     "validator": "receipts.bench.validate.validate_task (2 repeats)",
     "environment": {
-      "platform": "Linux-6.18.44-fc-v233-x86_64-with-glibc2.39",
+      "platform": "Linux-6.18.44-fc-v378-x86_64-with-glibc2.39",
       "host_python": "3.11.17",
       "cpus": 4,
       "sandbox": {
