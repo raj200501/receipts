@@ -54,6 +54,11 @@ freeze and runs, E2 to E4, then an independent review. CAP_SHARE stays 0.2.
   `bench/tasks/` and nothing else (D51; a test pins the scope from both sides). The
   narrower scan then found two bare ignores in project code (`tests/evaluation/test_e3.py`),
   hidden before because the gate prints only its first findings; both now carry reasons.
+- **RELEASE-READY 01f40e9**: G1, G2, G3, G4, G10, G13, G14 pass in the fast check; `main`
+  and the branch both point at it (D49).
+- **Canary (rule 9, D52).** Every task's `task.toml` and every answer-key file carries the
+  canary string; no file the agent sees does, so the banked smoke runs stay valid runs of
+  the same task. The reference validation is banked again from the canary commit.
 
 ## Next three actions
 

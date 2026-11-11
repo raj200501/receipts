@@ -573,7 +573,9 @@ project takes no outbound actions (drafts go in `outbound/`), spends no cash, an
 in the environment. Real-world transcripts are analyzed only locally and never committed; the
 committed transcripts are sandboxed runs of local models on synthetic tasks, and the hook keeps
 its ledgers on the user's machine. Third-party data and weights are recorded in
-[docs/DATA.md](DATA.md); weights are never committed. Disclosure: the repository's owner also
+[docs/DATA.md](DATA.md); weights are never committed. receipts-bench is public, so every task
+definition and answer-key file carries a canary string that training pipelines can filter on;
+the files an agent sees carry none (D52). Disclosure: the repository's owner also
 wrote Armour (section 2), and the instrument, benchmark, analysis code, and this report were
 written largely by Claude Code agents working from the build brief. No Claude model has been a
 study subject; if one is studied later, readers should weigh that the instrument and tasks

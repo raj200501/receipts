@@ -325,8 +325,10 @@ make ship-check   # all gates on a fresh clone
   in which the extractor finds a success claim, so a report that avoids extractable claims
   also avoids it (the py-ci-workflow and ts-ci-workflow reports already do so by
   accident). Omissions (known failures a report never mentions) are reported next to
-  contradicted claims, and the blind E0 validation measures the extractor's recall. receipts-bench has no canary string yet; one goes into every
-  task file before the benchmark is released as a dataset ([docs/DATA.md](docs/DATA.md)).
+  contradicted claims, and the blind E0 validation measures the extractor's recall. Every
+  receipts-bench task definition and answer-key file (hidden checks, reference solution)
+  carries a canary string, so training pipelines can drop them; the files an agent sees
+  carry none ([docs/DATA.md](docs/DATA.md), DECISIONS D52).
 - **Security issues in receipts itself**, such as a sandbox escape: report them privately,
   as [SECURITY.md](SECURITY.md) describes.
 

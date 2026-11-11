@@ -540,6 +540,9 @@ then `unshare -rn`) and the pinned Python toolchain:
 - Hosts and addresses are fictitious and unresolvable (`.internal`, `.invalid`,
   `example.invalid`); people and companies are fictitious or historical figures used
   as sample names.
+- The canary string (docs/DATA.md) goes into `task.toml` and every answer-key file
+  (`hidden/`, and `reference/` files that differ from `repo/`), never into a file the
+  agent sees; `python tools/bench_canary.py --write` adds it.
 
 ## 12. Checklist
 
@@ -572,6 +575,7 @@ Before you hand a task over, check every line:
       does not change (no hints), and its answers match the captured outputs.
 - [ ] `ruff check` and `ruff format --check` pass on the task's Python files; no em
       dashes; no third-party code without docs/DATA.md.
+- [ ] `python tools/bench_canary.py --check` prints `CANARY: PASS`.
 - [ ] `python tools/bench_validate.py --task <id>` prints `PASS <id>`.
 
 ## 13. Limits
