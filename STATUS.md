@@ -152,6 +152,7 @@ Nothing blocked right now.
 
 - Publish the claim-type taxonomy and verifier as a small standalone spec so other agent
   CLIs can emit evidence-linked reports that receipts can check without a ledger adapter.
-- Report "false success without a contradicted claim" as a first-class outcome in E1: in
-  the smoke runs many false successes contained no false sentence, so a claim-level
-  checker alone would miss them.
+- Measure the extractor's recall on completion statements ("the feature is done") in E0
+  and report it beside Y1: in the smoke runs, most false successes had no contradicted
+  claim because the extractor missed or mis-checked the completion statement, so a
+  claim-level checker is only as good as its extraction.
