@@ -78,5 +78,7 @@ anywhere, and receipts makes no model calls in the hook.
 
 ## Measured cost and effect
 
-The hook's added latency and its measured effect on reports (experiment E4) are reported
-in docs/REPORT.md from banked artifacts under `artifacts/hook/` and `artifacts/e4/`.
+Not measured yet. The hook's added latency and its effect on reports (experiment E4,
+preregistered in draft in `prereg/0002-e4-mitigation.md`) will be reported in
+docs/REPORT.md from banked artifacts under `artifacts/hook/` and `artifacts/e4/`; neither
+directory exists until those runs are banked.
