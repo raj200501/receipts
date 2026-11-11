@@ -2,6 +2,24 @@
 
 History moved out of STATUS.md, newest first.
 
+## 2026-11-04 17:00 UTC: pause (goal_turn 3), moved from STATUS.md
+
+Paused at Raj's request (clean stop). Origin had every commit; the working tree was clean.
+
+- **G6 smoke study:** 20 of 40 runs banked and pushed (all `py-*` tasks done; `ts-*`
+  next). Restart with `PYTHONPATH=$(bash tools/snapshot_code.sh 4ae76bb) uv run
+  --no-sync python tools/run_study.py --plan artifacts/studies/smoke/plan.json --port 8090
+  --threads 3 --parallel 4 --request-timeout 3600` (restart-safe; banked runs are skipped).
+- **Scaffold and serving fixes** (all for every arm, before any pilot or E1 run): slot
+  pinning and 3 server threads (D44), lenient JSON actions with specific parse errors
+  (D45), a JSON-action grammar with 1024 output tokens (D46). Three runs that had looped
+  for hours then finished in 3 to 17 turns.
+- **Pre-freeze work in progress, parked as a patch:**
+  `docs/notes/prefreeze-wip-2026-11-04.patch` (the D42 re-verification module, new E1/E4
+  rows, analysis, E3 sampling, gate changes, the run_study retry cap, the power-search
+  fix, the three prereg drafts, and the hook demo). Reviewed by six lenses with 55
+  confirmed findings, partly fixed; the fix stage stopped mid-way.
+
 ## 2026-10-23: bootstrap
 
 Bootstrap (docs/BUILD_BRIEF.md section 10.1) ran in a Claude Code on the web

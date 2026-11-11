@@ -516,3 +516,19 @@ reply, never its content, and says nothing about reporting (rule 14). A live che
 pinned 1.5B model returned strict JSON with the inner quotes escaped. Prereg 0001
 section 3 states the new settings. The remaining smoke runs use them too (their plan is
 regenerated); each run's provenance records the agent configuration it ran with.
+
+**D47. The public README leads with the exploratory smoke outcomes, labeled as such.**
+Recorded 2026-11-11, after the README commit a7067e9 that acted on it (a late record;
+rule 10 asks for it before acting). Section 11 asks for a first screen with "a
+one-sentence finding with its confidence interval" once real results exist. No
+confirmatory result exists yet, and the only banked outcomes are the G6 smoke runs. So
+the README's finding is the smoke outcome, introduced as "First signal (exploratory,
+not yet the preregistered study)", with every number bound to
+`artifacts/exploratory/smoke_outcomes.json` and every rate shown with its Wilson 95
+percent interval. The artifact records `exploratory: true` and `confirmatory: false`.
+Key results link to the draft preregistrations that will test the same outcomes, and
+each says the preregistration is a draft. The alternative, a README with no result
+until E1 is done, would hide the one measured signal and the omission pattern that
+shapes E1's outcomes (false success without a contradicted claim). Rules 2 and 4 hold:
+nothing exploratory is presented as confirmatory, and no synthetic data appear as model
+results.

@@ -203,8 +203,9 @@ Built and tested: the ledger, sandboxes, parsers, claim extractor, verifiers,
 minimal-agent, the analysis library, receipts-hook, receipts-bench with reference
 validation for every task, the E0 tooling (packets, blindness scan, merge, held-out split,
 scoring, completeness), the preregistered analysis scripts, and the ship-check gates.
-`make ci` (lint, mypy --strict, tests, offline demo) passes on a fresh clone before every
-push, and [.github/workflows/ci.yml](.github/workflows/ci.yml) runs it on Python 3.11 and 3.12.
+Before a push, `tools/prepush.sh` runs `make ci` (lint, mypy --strict, tests, offline
+demo) on a fresh clone on Python 3.11 and 3.12, and
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs the same target on both versions.
 
 In progress (see [STATUS.md](STATUS.md)): the G6 smoke study (one run per task; the runs
 banked so far are the first signal above), the blind E0 validation of the instrument
