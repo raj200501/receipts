@@ -1,15 +1,19 @@
 """Gate G9 of tools/ship_check.py on a synthetic E4 study and hook (H18, H28, H29,
-review-1 and review-2 of the harness review round, and the pre-freeze items: the
+review-1 and review-2 of the harness review round, the pre-freeze items: the
 preregistration's plan lines and identical cells, both held-out task lists, and the
-evaluated instrument of DECISIONS D42).
+evaluated instrument of DECISIONS D42, and review B2 and N6 of the e4230cc review: rows
+that cover every banked run, outcomes re-derived from the banked runs, and each run's
+code commit, DECISIONS D57).
 
-Every preregistration, plan, instrument file, held-out evaluation, run row, result,
-latency sample, hook module, and demo transcript here is SYNTHETIC, made up only to
-exercise ``ship_check.g9`` in throwaway git repositories. E4 rows are marked
+Every preregistration, plan, instrument file, held-out evaluation, run row, ledger,
+result, latency sample, hook module, and demo transcript here is SYNTHETIC, made up only
+to exercise ``ship_check.g9`` in throwaway git repositories. E4 rows are marked
 ``synthetic: false`` only so the gate treats them as real runs, the arms' models are
-stand-in names, and the instrument files are stand-ins whose only role is to have git
-trees; nothing here is a model result or a real-world result. The demo script prints
-fixed text.
+stand-in names, the instrument files are stand-ins whose only role is to have git trees,
+and the hidden-check results are made up; nothing here is a model result or a real-world
+result. The demo script prints fixed text. The SYNTHETIC projects hold no study code for
+``tools/bank_study.py e4 --check`` to run, so g9 is given that step's outcome
+(:func:`project`), except in the test that runs a stand-in.
 """
 
 from __future__ import annotations
@@ -104,6 +108,12 @@ def model_of(config_id: str) -> str:
     return f"stand-in-{config_id}"
 
 
+def snapshot_of(sha: str) -> dict[str, Any]:
+    """The code a SYNTHETIC run records: a snapshot of commit ``sha``, in the provenance
+    keys ``tools/run_study.py`` writes."""
+    return {"git_sha": sha, "code": "snapshot", "snapshot_of": sha}
+
+
 # ---------------------------------------------------------------- the SYNTHETIC instrument
 
 
@@ -196,8 +206,9 @@ def e1_plan() -> dict[str, Any]:
     return {"study": "e1", "runs": runs, "notes": notes}
 
 
-def e4_pairs(plan: Mapping[str, Any]) -> list[tuple[dict[str, Any], Rescored]]:
-    """SYNTHETIC ``(run.json record, rescoring)`` pairs, one per planned E4 run."""
+def e4_pairs(plan: Mapping[str, Any], git_sha: str) -> list[tuple[dict[str, Any], Rescored]]:
+    """SYNTHETIC ``(run.json record, rescoring)`` pairs, one per planned E4 run, each run
+    from a code snapshot of ``git_sha``."""
     pairs = []
     for n, spec in enumerate(plan["runs"]):
         has_report, false_claim = n % 7 != 0, n % 3 == 0
@@ -228,7 +239,7 @@ def e4_pairs(plan: Mapping[str, Any]) -> list[tuple[dict[str, Any], Rescored]]:
             "model_wall_s": 50.0,
             "hook_checks": [],
             "drafts": [],
-            "provenance": {"code": "snapshot"},
+            "provenance": snapshot_of(git_sha),
         }
         rescored = Rescored(
             run_id=str(spec["run_id"]),
@@ -315,17 +326,60 @@ def lock(prereg_sha: str) -> dict[str, Any]:
 Records = Callable[[list[dict[str, Any]]], None]
 Starts = Callable[[dict[str, Any]], None]
 Rows = Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
+#: Edits a run's ``(kind, data)`` events, given its run id, before its ledger is written.
+Ledgers = Callable[[str, list[tuple[str, dict[str, Any]]]], None]
+
+
+def hidden_checks(truth: bool | None) -> list[tuple[str, dict[str, Any]]]:
+    """The post-run ``hidden_check`` event of a SYNTHETIC run whose hidden checks gave
+    ``truth`` (no event without a result), with the per-check list and the counts the
+    snapshot records."""
+    if truth is None:
+        return []
+    checks = [
+        {"name": "SYNTHETIC hidden check one", "passed": True, "requirement": "R1"},
+        {"name": "SYNTHETIC hidden check two", "passed": truth, "requirement": "R2"},
+    ]
+    failed = sum(1 for check in checks if check["passed"] is not True)
+    data = {
+        "checks": checks,
+        "failed": failed,
+        "passed": len(checks) - failed,
+        "source": "snapshot",
+        "total": len(checks),
+    }
+    return [("hidden_check", data)]
+
+
+def chained(events: Sequence[tuple[str, Mapping[str, Any]]]) -> list[Event]:
+    """SYNTHETIC ``(kind, data)`` events as a hash-chained ledger."""
+    out: list[Event] = []
+    prev = GENESIS
+    for seq, (kind, data) in enumerate(events):
+        stamp = 1.0 + seq
+        body = dict(data)
+        event = Event(
+            seq, stamp, kind, body, prev, Event.compute_hash(seq, stamp, kind, body, prev)
+        )
+        out.append(event)
+        prev = event.hash
+    return out
 
 
 def bank(
     root: Path,
     rows: list[dict[str, Any]],
+    git_sha: str,
     edit: Records | None = None,
     starts: Starts | None = None,
+    ledgers: Ledgers | None = None,
 ) -> None:
     """Bank a SYNTHETIC run.json and ledger for every E4 row, each recording its arm's
-    stand-in model and the minimal-agent driver (``edit`` changes the records and
-    ``starts`` each ledger's run_start)."""
+    stand-in model, the minimal-agent driver, and a code snapshot of ``git_sha``, with a
+    ``hidden_check`` event of the row's hidden-check result (:func:`hidden_checks`).
+    ``edit`` changes the records, ``starts`` each ledger's run_start, and ``ledgers``
+    each run's events, before they are written."""
+    truths = {str(r["run_id"]): r.get("ground_truth_success") for r in rows}
     records = [
         {
             "run_id": r["run_id"],
@@ -336,6 +390,7 @@ def bank(
             "seed": r["seed"],
             "conditions": dict(r["conditions"]),
             "report": REPORT if r["has_report"] else "",
+            "provenance": snapshot_of(git_sha),
         }
         for r in rows
     ]
@@ -348,12 +403,21 @@ def bank(
         body = {**body, "agent": "minimal-agent", "model": record.get("model"), "source": "harness"}
         if starts is not None:
             starts(body)
-        digest = Event.compute_hash(0, 1.0, "run_start", body, GENESIS)
-        put(
-            root,
-            f"{run}/ledger.jsonl",
-            Event(0, 1.0, "run_start", body, GENESIS, digest).to_json() + "\n",
-        )
+        events = [("run_start", body), *hidden_checks(truths.get(str(record["run_id"])))]
+        if ledgers is not None:
+            ledgers(str(record["run_id"]), events)
+        lines = "".join(event.to_json() + "\n" for event in chained(events))
+        put(root, f"{run}/ledger.jsonl", lines)
+
+
+#: What the re-derivation step (``tools/bank_study.py e4 --check`` after ``make setup``,
+#: DECISIONS D57) prints in a SYNTHETIC project that is given its outcome.
+REDERIVED = "e4: SYNTHETIC: the rows are the ones banking writes from the banked runs\n"
+
+
+def given(name: str, returncode: int = 0, stdout: str = "", stderr: str = "") -> Any:
+    """A sub-command outcome handed to the gate (``ship_check.CmdResult``)."""
+    return ship_check.CmdResult(name, returncode, stdout, stderr, 0.0)
 
 
 def project(
@@ -363,8 +427,11 @@ def project(
     results: Callable[[dict[str, Any]], None] | None = None,
     rows: Rows | None = None,
     banked: Rows | None = None,
+    bank_runs: Rows | None = None,
     records: Records | None = None,
     starts: Starts | None = None,
+    ledgers: Ledgers | None = None,
+    launched: str = "frozen",
     mitigations: tuple[str, ...] = MITIGATIONS,
     plan: dict[str, Any] | None = None,
     split_plan: dict[str, Any] | None = None,
@@ -382,27 +449,27 @@ def project(
 ) -> ship_check.Context:
     """Write and commit a SYNTHETIC G9 project.
 
-    The instrument is committed first and evaluated there; with ``changed_instrument``
-    an instrument file changes in the next commit and the rows are banked there
-    (``instrument`` edits that banking record). ``plan`` replaces the E4 plan (default:
-    the cells of ``mitigations``), ``split_plan`` the E1 plan (an empty dict: none is
-    written), and ``e1_rows`` the E1 rows. ``text`` makes the E4 prereg from the plan
-    file's SHA-256 (default: both lines); it is frozen unless ``frozen`` is false.
-    ``rows`` edits the results' outcome rows, ``banked`` the banked rows of
-    artifacts/e4/runs.jsonl, ``results`` the results, and ``records`` and ``starts``
-    the banked runs before they are written.
+    The instrument is committed first and evaluated there; the tasks, plans, held-out
+    evaluation, and prereg follow; then the freeze, which is the commit the runs record
+    (``launched``: ``frozen``, or ``drafted`` for the commit before it, or ``changed``
+    for a commit after the freeze whose instrument the evaluation never scored, after
+    which the evaluated instrument is restored). With ``changed_instrument`` an
+    instrument file changes in a later commit and the rows are banked there (else at
+    the last commit before the data; ``instrument`` edits that banking record).
+    ``plan`` replaces the E4 plan (default: the cells of ``mitigations``),
+    ``split_plan`` the E1 plan (an empty dict: none is written), and ``e1_rows`` the E1
+    rows. ``text`` makes the E4 prereg from the plan file's SHA-256 (default: both
+    lines); it is frozen unless ``frozen`` is false. ``rows`` edits the results' outcome
+    rows, ``banked`` the banked rows of artifacts/e4/runs.jsonl, ``results`` the
+    results, and ``records``, ``starts``, and ``ledgers`` the banked runs before they are
+    written. The runs of the results' rows are banked, or the runs of the outcome rows
+    ``bank_runs`` picks from every planned run. The context is given a successful
+    re-derivation step (``make setup`` and ``tools/bank_study.py e4 --check``).
     """
     write_instrument(root)
     evaluated = commit(root, "SYNTHETIC instrument")
-    banking = evaluated
-    if changed_instrument:
-        write_instrument(root, "v2")
-        banking = commit(root, "SYNTHETIC instrument changed after the evaluation")
     for task in E1_TASKS + E4_TASKS:
         put(root, f"bench/tasks/{task}/task.toml", f'id = "{task}"\n')
-    if e1_rows is None:
-        e1_rows = [{"run_id": f"e1-{n:03d}", "task_id": t} for n, t in enumerate(E1_TASKS)]
-    put(root, "artifacts/e1/runs.jsonl", "".join(json.dumps(r) + "\n" for r in e1_rows))
     the_split = e1_plan() if split_plan is None else split_plan
     if the_split:
         put(root, E1_PLAN, the_split)
@@ -412,22 +479,40 @@ def project(
     put(
         root, PREREG, prereg_text(plan_sha=digest_of_plan) if text is None else text(digest_of_plan)
     )
+    put(root, SEEDED, seeded_eval(root, evaluated))
+    drafted = commit(root, "SYNTHETIC tasks, plans, held-out evaluation, and preregistration")
     if frozen:
         put(root, "prereg/LOCK.json", lock(sha256(root, PREREG)))
-    put(root, SEEDED, seeded_eval(root, evaluated))
+    freeze = commit(root, "SYNTHETIC freeze")
+    commits = {"frozen": freeze, "drafted": drafted}
+    banking = freeze
+    if launched == "changed":
+        write_instrument(root, "v3")
+        commits["changed"] = commit(root, "SYNTHETIC run code with an unevaluated instrument")
+        write_instrument(root)
+        banking = commit(root, "SYNTHETIC instrument restored to the evaluated one")
+    if changed_instrument:
+        write_instrument(root, "v2")
+        banking = commit(root, "SYNTHETIC instrument changed after the evaluation")
+    run_commit = commits[launched]
+    if e1_rows is None:
+        e1_rows = [{"run_id": f"e1-{n:03d}", "task_id": t} for n, t in enumerate(E1_TASKS)]
+    put(root, "artifacts/e1/runs.jsonl", "".join(json.dumps(r) + "\n" for r in e1_rows))
     record = instrument_record(root, banking)
     if instrument is not None:
         instrument(record)
-    banked_rows = e4_rows(e4_pairs(the_plan), record)
-    data = outcome_rows(banked_rows, VALID)
+    every = e4_rows(e4_pairs(the_plan, run_commit), record, VALID)
+    planned = outcome_rows(every, VALID)
+    data = outcome_rows(every, VALID)
     if rows is not None:
         data = rows(data)
     kept = {str(r["run_id"]) for r in data}
-    banked_rows = [r for r in banked_rows if str(r["run_id"]) in kept]
+    banked_rows = [r for r in every if str(r["run_id"]) in kept]
     if banked is not None:
         banked_rows = banked(banked_rows)
     put(root, RUNS, "".join(json.dumps(r, sort_keys=True) + "\n" for r in banked_rows))
-    bank(root, data, records, starts)
+    runs = data if bank_runs is None else bank_runs(planned)
+    bank(root, runs, run_commit, records, starts, ledgers)
     inputs = {rel: sha256(root, rel) for rel in (RUNS, SEEDED)}
     out = e4_results(data, sha256(root, PREREG), inputs)
     if results is not None:
@@ -452,7 +537,10 @@ def project(
     sha = commit(root, "SYNTHETIC G9 project")
     logs = root.parent / "logs"
     logs.mkdir(exist_ok=True)
-    return ship_check.Context(orig=root, clone=root, logs=logs, fast=False, sha=sha)
+    ctx = ship_check.Context(orig=root, clone=root, logs=logs, fast=False, sha=sha)
+    ctx.results["make-setup"] = given("make-setup")
+    ctx.results["bank-check-e4"] = given("bank-check-e4", stdout=REDERIVED)
+    return ctx
 
 
 def needs_runner() -> None:
@@ -480,6 +568,7 @@ def test_a_complete_mitigation_package_passes(git_repo: Path, commit: Commit) ->
     evidence = ship_check.g9(project(git_repo, commit))
     assert "E4 on 2 held-out tasks" in evidence and "demo transcript reproduces" in evidence
     assert "evaluated instrument" in evidence
+    assert "re-derived from the 32 banked runs" in evidence
 
 
 def test_the_e4_fixture_passes_the_e4_checks(git_repo: Path, commit: Commit) -> None:
@@ -1049,3 +1138,233 @@ def test_a_demo_longer_than_30_seconds_fails(
     monkeypatch.setattr(ship_check, "HOOK_DEMO_LIMIT_S", 0.5)
     with pytest.raises(GateError, match="took"):
         ship_check.g9(project(git_repo, commit, sleep=1.5))
+
+
+# ---------------------------------------------------------------- review B2 and N6 (old code: PASS)
+
+# Planned run e4-001-ma-qwen7b-none has a report, a success claim, and passed hidden
+# checks; e4-003-ma-qwen7b-none has a report, a success claim, and a failed hidden check
+# (a false success and a false claim); see e4_pairs.
+PASSED_RUN = "e4-001-ma-qwen7b-none"
+FAILED_RUN = "e4-003-ma-qwen7b-none"
+
+
+def test_an_e4_run_banked_without_a_row_fails(git_repo: Path, commit: Commit) -> None:
+    # Every planned run is banked, but the rows of artifacts/e4/runs.jsonl and of the
+    # results leave one out, and the Z1 rates recompute from the rows that remain.
+    ctx = project(git_repo, commit, rows=lambda rows: rows[1:], bank_runs=lambda every: every)
+    with pytest.raises(
+        GateError,
+        match=r"1 run\(s\) banked under artifacts/studies/e4/runs/ have no row in "
+        r"artifacts/e4/runs\.jsonl",
+    ):
+        ship_check.g9(ctx)
+
+
+def banked_truth(run_id: str, truth: bool | None) -> Ledgers:
+    """Bank the hidden checks of run ``run_id`` as giving ``truth``."""
+
+    def apply(rid: str, events: list[tuple[str, dict[str, Any]]]) -> None:
+        if rid == run_id:
+            events[:] = [e for e in events if e[0] != "hidden_check"] + hidden_checks(truth)
+
+    return apply
+
+
+def edit_run_row(run_id: str, **change: Any) -> Rows:
+    """Change fields of the row of run ``run_id``."""
+
+    def apply(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        for row in rows:
+            if row["run_id"] == run_id:
+                row.update(change)
+        return rows
+
+    return apply
+
+
+@pytest.mark.parametrize(
+    ("ledgers", "banked", "field"),
+    [
+        pytest.param(
+            banked_truth(PASSED_RUN, False),
+            None,
+            "ground_truth_success",
+            id="passed-row-failed-ledger",
+        ),
+        pytest.param(
+            banked_truth(FAILED_RUN, True),
+            None,
+            "ground_truth_success",
+            id="failed-row-passed-ledger",
+        ),
+        pytest.param(
+            banked_truth(PASSED_RUN, None),
+            None,
+            "ground_truth_success",
+            id="no-result-in-the-ledger",
+        ),
+        pytest.param(
+            None,
+            edit_run_row(FAILED_RUN, false_success=False),
+            "false_success",
+            id="false-success-left-out",
+        ),
+    ],
+)
+def test_e4_rows_must_be_what_the_banked_ledger_shows(
+    git_repo: Path, commit: Commit, ledgers: Ledgers | None, banked: Rows | None, field: str
+) -> None:
+    ctx = project(git_repo, commit, ledgers=ledgers, banked=banked)
+    with pytest.raises(GateError, match=rf"differs from its banked ledger in .*{field}"):
+        ship_check.g9(ctx)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        pytest.param({"z1_false_claim": True}, id="z1"),
+        pytest.param({"success_reported": False}, id="success-claim"),
+        pytest.param({"z2_false_success": True}, id="z2"),
+    ],
+)
+def test_results_rows_must_be_the_outcome_rows_of_the_banked_rows(
+    git_repo: Path, commit: Commit, change: Mapping[str, Any]
+) -> None:
+    # The Z1 rates recompute from the results' own rows, so an edited flag shows only
+    # against the banked row, which banking re-derives.
+    ctx = project(git_repo, commit, rows=edit_run_row(PASSED_RUN, **change))
+    (field,) = change
+    with pytest.raises(GateError, match=rf"is not the outcome row of its banked row in .*{field}"):
+        ship_check.g9(ctx)
+
+
+@pytest.mark.parametrize(
+    ("launched", "match"),
+    [
+        pytest.param(
+            "changed",
+            "ran code whose instrument is not the evaluated one",
+            id="an-unevaluated-instrument",
+        ),
+        pytest.param(
+            "drafted",
+            r"was launched from [0-9a-f]{12}, not from the freeze commit",
+            id="before-the-freeze",
+        ),
+    ],
+)
+def test_an_e4_run_must_run_the_evaluated_instrument_from_the_freeze_on(
+    git_repo: Path, commit: Commit, launched: str, match: str
+) -> None:
+    # The rows are banked from the evaluated instrument either way; only the commit the
+    # runs record differs (DECISIONS D47: G9 compares an E4 run commit's trees).
+    with pytest.raises(GateError, match=match):
+        ship_check.g9(project(git_repo, commit, launched=launched))
+
+
+def recorded_code(**change: Any) -> Records:
+    """Change the code record of the first banked run (a value of None removes a key)."""
+
+    def apply(recs: list[dict[str, Any]]) -> None:
+        prov = recs[0]["provenance"]
+        for key, value in change.items():
+            if value is None:
+                prov.pop(key, None)
+            else:
+                prov[key] = value
+
+    return apply
+
+
+DID_NOT_RUN_IT = "did not run the code of the commit it records"
+
+
+@pytest.mark.parametrize(
+    ("records", "match"),
+    [
+        pytest.param(
+            recorded_code(snapshot_of="0" * 40), DID_NOT_RUN_IT, id="a-snapshot-of-another-commit"
+        ),
+        pytest.param(
+            recorded_code(
+                code="working tree",
+                snapshot_of=None,
+                uncommitted_at_start=["src/receipts/verify/verifier.py"],
+            ),
+            DID_NOT_RUN_IT,
+            id="uncommitted-src",
+        ),
+        pytest.param(
+            recorded_code(
+                code="working tree",
+                snapshot_of=None,
+                uncommitted_at_start=["docs/SYNTHETIC.py -> src/receipts/SYNTHETIC.py"],
+            ),
+            DID_NOT_RUN_IT,
+            id="a-rename-into-src",
+        ),
+        pytest.param(
+            recorded_code(code="working tree", snapshot_of=None),
+            DID_NOT_RUN_IT,
+            id="an-unrecorded-working-tree",
+        ),
+        pytest.param(recorded_code(code=None, snapshot_of=None), DID_NOT_RUN_IT, id="no-code"),
+        pytest.param(
+            recorded_code(git_sha="1" * 40, snapshot_of="1" * 40),
+            "was launched from 111111111111",
+            id="a-commit-outside-the-repository",
+        ),
+        pytest.param(recorded_code(git_sha=None), "was launched from None", id="no-commit"),
+    ],
+)
+def test_an_e4_run_must_record_the_committed_code_it_ran(
+    git_repo: Path, commit: Commit, records: Records, match: str
+) -> None:
+    with pytest.raises(GateError, match=match):
+        check_e4(project(git_repo, commit, records=records))
+
+
+def test_an_e4_run_from_a_clean_working_tree_passes(git_repo: Path, commit: Commit) -> None:
+    # Uncommitted files outside src/ leave the run's code the commit it records.
+    clean = recorded_code(
+        code="working tree", snapshot_of=None, uncommitted_at_start=["README.md", '"docs/a b.md"']
+    )
+    assert check_e4(project(git_repo, commit, records=clean)) == (2, 32)
+
+
+def test_e4_rows_that_banking_does_not_write_fail(git_repo: Path, commit: Commit) -> None:
+    # Claims and verdicts need the extractor and the verifier, so g9 has
+    # tools/bank_study.py re-derive every row in the clone (DECISIONS D57).
+    ctx = project(git_repo, commit)
+    ctx.results["bank-check-e4"] = given(
+        "bank-check-e4",
+        1,
+        stderr="bank_study e4 --check: 1 row(s) differ from the rows banking writes now in "
+        "claims: SYNTHETIC-run\n",
+    )
+    with pytest.raises(
+        GateError, match=r"artifacts/e4/runs\.jsonl is not what banking writes from the banked"
+    ):
+        ship_check.g9(ctx)
+
+
+#: A SYNTHETIC stand-in for tools/bank_study.py that checks the arguments it is given.
+STAND_IN = '''"""SYNTHETIC stand-in for tools/bank_study.py in the gate tests: it checks the
+arguments the gate passes and prints one line; it re-derives nothing."""
+
+import sys
+
+if sys.argv[1:] != [{study!r}, "--check"]:
+    sys.exit(f"SYNTHETIC stand-in: unexpected arguments {{sys.argv[1:]}}")
+print("{study}: SYNTHETIC stand-in re-derivation passed")
+'''
+
+
+def test_the_gate_runs_the_rederivation_in_the_clone(git_repo: Path, commit: Commit) -> None:
+    needs_runner()
+    ctx = project(git_repo, commit, extra={"tools/bank_study.py": STAND_IN.format(study="e4")})
+    del ctx.results["make-setup"], ctx.results["bank-check-e4"]
+    assert "re-derived from the 32 banked runs" in ship_check.g9(ctx)
+    step = ctx.results["bank-check-e4"]
+    assert step.ok and "SYNTHETIC stand-in re-derivation passed" in step.stdout

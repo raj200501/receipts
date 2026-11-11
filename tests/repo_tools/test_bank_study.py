@@ -365,3 +365,131 @@ def test_smoke_and_pilot_keep_their_outputs(checkout: Path) -> None:
     assert not (checkout / "artifacts" / "smoke").exists()
     with pytest.raises(SystemExit):
         bank_study.main(["smoke", "--allow-dirty"])
+
+
+# ---------------------------------------------------------------- --check (DECISIONS D57)
+
+
+def write_rows(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows), encoding="utf-8")
+
+
+def test_check_accepts_the_rows_banking_wrote_and_writes_nothing(
+    checkout: Path, commit: Commit, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for study in ("e1", "e4"):
+        assert bank_study.main([study]) == 0
+    # A later commit: the banking commit the rows record is no longer HEAD.
+    commit(checkout, "SYNTHETIC banked rows")
+    capsys.readouterr()
+    written = [p for study in ("e1", "e4") for p in outputs(checkout, study) if p.exists()]
+    before = {p: p.read_bytes() for p in written}
+    for study in ("e1", "e4"):
+        assert bank_study.main([study, "--check"]) == 0
+    assert {p: p.read_bytes() for p in written} == before
+    out = capsys.readouterr().out
+    assert "e1: the 1 row(s) of artifacts/e1/runs.jsonl are the rows banking writes" in out
+    assert "e4: the 1 row(s) of artifacts/e4/runs.jsonl are the rows banking writes" in out
+
+
+def flip_verdict(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    claim = rows[0]["claims"][0]
+    claim["verdict"] = "supported" if claim["verdict"] == "contradicted" else "contradicted"
+    return rows
+
+
+def flip_truth(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows[0]["ground_truth_success"] = not rows[0]["ground_truth_success"]
+    return rows
+
+
+def flip_false_success(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows[0]["false_success"] = not rows[0]["false_success"]
+    return rows
+
+
+def other_trees(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows[0]["instrument"]["trees"] = {p: "e" * 40 for p in rescore.INSTRUMENT_RECORD_PATHS}
+    return rows
+
+
+def another_run(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [*rows, dict(rows[0], run_id="e1-SYNTHETIC-not-banked")]
+
+
+@pytest.mark.parametrize(
+    ("edit", "found"),
+    [
+        pytest.param(
+            flip_verdict, "differ from the rows banking writes now in claims", id="verdict"
+        ),
+        pytest.param(flip_truth, "ground_truth_success", id="ground-truth"),
+        pytest.param(flip_false_success, "false_success", id="false-success"),
+        pytest.param(other_trees, "instrument.trees", id="instrument"),
+        pytest.param(
+            lambda rows: [], "1 banked run(s) have no row", id="a-banked-run-without-a-row"
+        ),
+        pytest.param(another_run, "1 row(s) have no banked run", id="a-row-without-a-banked-run"),
+        pytest.param(lambda rows: rows + rows, "repeat", id="a-repeated-row"),
+    ],
+)
+def test_check_finds_rows_that_are_not_the_banking(
+    checkout: Path,
+    capsys: pytest.CaptureFixture[str],
+    edit: Callable[[list[dict[str, Any]]], list[dict[str, Any]]],
+    found: str,
+) -> None:
+    assert bank_study.main(["e1"]) == 0
+    path = checkout / "artifacts" / "e1" / "runs.jsonl"
+    rows = read_rows(path)
+    assert rows[0]["claims"], "the REAL run's report has claims to flip"
+    write_rows(path, edit(rows))
+    capsys.readouterr()
+    assert bank_study.main(["e1", "--check"]) == 1
+    err = capsys.readouterr().err
+    assert "bank_study e1 --check:" in err and found in err
+
+
+def test_check_without_banked_rows_fails(
+    checkout: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert bank_study.main(["e4", "--check"]) == 1
+    assert "artifacts/e4/runs.jsonl is missing" in capsys.readouterr().err
+    assert not any(p.exists() for p in outputs(checkout, "e4"))
+
+
+def test_check_of_a_malformed_rows_file_fails(
+    checkout: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert bank_study.main(["e1"]) == 0
+    path = checkout / "artifacts" / "e1" / "runs.jsonl"
+    path.write_text(path.read_text(encoding="utf-8") + "[1]\n{\n", encoding="utf-8")
+    assert bank_study.main(["e1", "--check"]) == 1
+    err = capsys.readouterr().err
+    assert "artifacts/e1/runs.jsonl:2 is not a row" in err
+    assert "artifacts/e1/runs.jsonl:3 is not JSON" in err
+
+
+def test_check_refuses_uncommitted_code(checkout: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert bank_study.main(["e1"]) == 0
+    extra = checkout / "src" / "receipts" / "verify" / "extra.py"
+    extra.parent.mkdir(parents=True)
+    extra.write_text("SYNTHETIC = True\n")
+    assert bank_study.main(["e1", "--check"]) == 2
+    assert "src/receipts/verify/extra.py" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("argv", "said"),
+    [
+        (["e1", "--check", "--allow-dirty"], "--check re-derives the rows from committed code"),
+        (["smoke", "--check"], "--check applies to e1 and e4 only"),
+        (["pilot", "--check"], "--check applies to e1 and e4 only"),
+    ],
+)
+def test_check_takes_only_the_rescored_studies_and_committed_code(
+    argv: list[str], said: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        bank_study.main(argv)
+    assert said in capsys.readouterr().err

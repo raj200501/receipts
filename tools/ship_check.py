@@ -1994,6 +1994,45 @@ def ledger_events(root: Path, rel: str) -> list[dict[str, Any]]:
     return events
 
 
+def payload_count(value: object) -> int:
+    """A count in a ledger payload as the verifier reads it
+    (``receipts.verify.facts.as_int``): a bool, an int, or a float as an int, a text of
+    digits (after stripping white space, with an optional minus sign) as its value, and
+    anything else as 0."""
+    if isinstance(value, bool | int):
+        return int(value)
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if text.lstrip("-").isdigit():
+            return int(text)
+    return 0
+
+
+def ledger_ground_truth(events: Sequence[Mapping[str, Any]]) -> bool | None:
+    """Whether every hidden check of a banked ledger passed, read as the verifier reads it
+    (``receipts.verify.facts.LedgerFacts.ground_truth_success``, which banking copies into
+    a row's ``ground_truth_success``): over the ``hidden_check`` events, oldest first,
+    each listed check counts by its name as text, a later result for a name replacing an
+    earlier one, and only ``passed: true`` is a pass. When no event lists a check, every
+    event must count no failure (``failed``), and the ledger holds no result (None) when
+    no event counts a check (``total``)."""
+    hidden = [event["data"] for event in events if event.get("kind") == "hidden_check"]
+    passed: dict[str, bool] = {}
+    for data in hidden:
+        checks = data.get("checks")
+        for check in checks if isinstance(checks, list) else []:
+            if isinstance(check, dict):
+                name = check.get("name")
+                passed["" if name is None else str(name)] = check.get("passed") is True
+    if passed:
+        return all(passed.values())
+    if not any(payload_count(data.get("total")) for data in hidden):
+        return None
+    return all(payload_count(data.get("failed")) == 0 for data in hidden)
+
+
 @dataclass(frozen=True)
 class BankedRun:
     """A summary row tied to its banked run: ``run.json`` and the verified ledger."""
@@ -2782,8 +2821,8 @@ def check_e1_rows(
     """Every row is a distinct planned run with its planned task, arm, conditions, and
     seed, and the model family of its planned arm. Its hidden-check result
     (``ground_truth_success``) is true, false, or null, never absent, so no run leaves
-    Y1 silently, and ``false_success`` is a boolean that is true only when a hidden
-    check failed."""
+    Y1 silently, ``false_success`` is a boolean that is true only when a hidden check
+    failed, and ``success_reported`` (the report's success claim) is a boolean."""
     for index, row in enumerate(runs, start=1):
         fields = ("run_id", "config_id", "model_family", "task_id")
         require(
@@ -2805,6 +2844,11 @@ def check_e1_rows(
             f"{E1_RUNS} row {index} lacks a ground_truth_success of true, false, or null, or "
             f"a false_success flag that is true only when a hidden check failed "
             f"(ground_truth_success {truth!r}, false_success {row.get('false_success')!r})",
+        )
+        require(
+            isinstance(row.get("success_reported"), bool),
+            f"{E1_RUNS} row {index} lacks a success_reported flag (true or false), which its "
+            "false_success follows from",
         )
     counts = Counter(str(row["run_id"]) for row in runs)
     repeated = sorted(rid for rid, n in counts.items() if n > 1)
@@ -2830,14 +2874,107 @@ def check_e1_rows(
         )
 
 
+def check_coverage(root: Path, study: str, rel: str, ids: Iterable[str]) -> int:
+    """The rows of ``rel`` (their run ids are ``ids``) cover every run banked under
+    artifacts/studies/<study>/runs/ (DECISIONS D57): each directory there that holds a
+    committed file is a banked run, and each has a row. With the checks that no run id
+    repeats and that every row is a banked run, the rows are one row per banked run
+    (prereg 0001 section 11), so a run banked without a row never counts as a missing
+    run. Returns the number of banked runs."""
+    base = f"artifacts/studies/{study}/runs/"
+    banked = {path[len(base) :].split("/", 1)[0] for path in tracked(root, base)}
+    unrowed = sorted(banked - set(ids))
+    require(
+        not unrowed,
+        f"{len(unrowed)} run(s) banked under {base} have no row in {rel}, which holds one row "
+        "per banked run, so the analysis left them out: " + ", ".join(unrowed[:3]),
+    )
+    return len(banked)
+
+
+def check_ledger_outcomes(
+    rel: str, row: Mapping[str, Any], events: Sequence[Mapping[str, Any]]
+) -> None:
+    """A row of ``rel`` shows the outcomes its banked ledger ``events`` show (DECISIONS
+    D57): its ``ground_truth_success`` is the ledger's hidden-check result
+    (:func:`ledger_ground_truth`), and its ``false_success`` is a success claim
+    (``success_reported``) with a failed hidden check, as ``receipts.study.aggregate``
+    takes it from the verifier. The claims and the success claim need the instrument,
+    so :func:`check_rederived` checks those."""
+    rid = str(row.get("run_id"))
+    try:
+        truth = ledger_ground_truth(events)
+    except (ValueError, OverflowError) as exc:
+        raise GateError(f"{rid}: its banked ledger's hidden-check counts are unreadable") from exc
+    differ = []
+    if row.get("ground_truth_success") is not truth:
+        differ.append("ground_truth_success")
+    if row.get("false_success") is not (row.get("success_reported") is True and truth is False):
+        differ.append("false_success")
+    require(
+        not differ,
+        f"{rid} in {rel} differs from its banked ledger in {', '.join(differ)}: the ledger's "
+        f"hidden checks give ground_truth_success {json.dumps(truth)}, and a false success is "
+        "a success claim with a failed hidden check",
+    )
+
+
+def check_launch(root: Path, run: BankedRun, prereg: str, fz: str, seen: dict[str, bool]) -> str:
+    """The commit a banked run was launched from (``provenance.git_sha`` in its run.json:
+    the commit it ran, or the commit of its code snapshot) is a commit of this repository
+    and the freeze commit ``fz`` of ``prereg`` or a later one. ``seen`` caches the
+    answer for each commit. Returns the commit."""
+    sha = dig(run.record, "provenance", "git_sha")
+    if isinstance(sha, str) and sha not in seen:
+        seen[sha] = is_commit(root, sha) and (sha == fz or strictly_before(root, fz, sha))
+    require(
+        isinstance(sha, str) and seen[sha],
+        f"{run.row['run_id']} was launched from {str(sha)[:12]}, not from the freeze commit "
+        f"of {prereg} or a later one",
+    )
+    assert isinstance(sha, str)
+    return sha
+
+
+def check_rederived(ctx: Context, study: str, rel: str) -> None:
+    """The rows of ``rel`` are the rows banking writes now from the banked runs of
+    ``study`` (DECISIONS D57): ``tools/bank_study.py <study> --check``, run in the clone
+    after ``make setup``, re-extracts and re-verifies every banked run as banking does,
+    writes nothing, and requires the committed rows to be exactly those rows, field for
+    field, except the banking commit. Claims, verdicts, and success claims need the
+    extractor and the verifier, which this stdlib-only file cannot run. The instrument
+    trees are compared too, so the clone must hold the instrument the rows were banked
+    with, which :func:`check_instruments` requires to be the evaluated one."""
+    setup = ctx.make("setup", 900)
+    require(
+        setup.ok,
+        f"make setup failed in the clone (exit {setup.returncode}), so the rows of {rel} were "
+        "not re-derived from the banked runs",
+    )
+    check = ctx.python(f"bank-check-{study}", ["tools/bank_study.py", study, "--check"], 1800)
+    # The tool's own first problem, else the last line of stderr (an error's message).
+    said = [line.strip() for line in check.stderr.splitlines() if line.strip()]
+    detail = next(
+        (line for line in said if line.startswith("bank_study ")),
+        said[-1] if said else check.last_line(),
+    )
+    require(
+        check.ok,
+        f"{rel} is not what banking writes from the banked runs (tools/bank_study.py {study} "
+        f"--check, exit {check.returncode}): {detail}",
+    )
+
+
 def check_e1_banked(
     root: Path, runs: Sequence[Mapping[str, Any]], arms: Arms, prereg: str, fz: str
-) -> None:
+) -> int:
     """Every row is a banked E1 run (:func:`banked_run`) made by its planned arm's agent,
     with the row's arm, family, conditions, seed, inclusion (a non-empty final report),
     and ``report_sha256`` (the report the row was rescored from), launched from the
-    freeze commit of ``prereg`` or a later one (``provenance.git_sha``: the commit, or
-    the snapshot, it ran)."""
+    freeze commit of ``prereg`` or a later one (:func:`check_launch`), and showing the
+    ground truth and false success of its banked ledger (:func:`check_ledger_outcomes`);
+    and every banked E1 run has a row (:func:`check_coverage`). Returns the number of
+    banked runs."""
     after: dict[str, bool] = {}
     for row in runs:
         run = banked_run(root, "e1", row)
@@ -2857,14 +2994,9 @@ def check_e1_banked(
         require(
             not diffs, f"{row['run_id']} differs from its banked run.json in " + ", ".join(diffs)
         )
-        sha = dig(record, "provenance", "git_sha")
-        if isinstance(sha, str) and sha not in after:
-            after[sha] = is_commit(root, sha) and (sha == fz or strictly_before(root, fz, sha))
-        require(
-            isinstance(sha, str) and after[sha],
-            f"{row['run_id']} was launched from {str(sha)[:12]}, not from the freeze commit "
-            f"of {prereg} or a later one",
-        )
+        check_launch(root, run, prereg, fz, after)
+        check_ledger_outcomes(E1_RUNS, row, run.events)
+    return check_coverage(root, "e1", E1_RUNS, (str(row["run_id"]) for row in runs))
 
 
 #: A UTF-16 surrogate on its own, which the ledger stores as U+FFFD
@@ -3034,7 +3166,7 @@ def g7(ctx: Context) -> str:
     planned, arms = e1_plan(root, prereg, text)
     runs = _e1_runs(root)
     check_e1_rows(runs, planned, arms)
-    check_e1_banked(root, runs, arms, prereg, fz)
+    n_banked = check_e1_banked(root, runs, arms, prereg, fz)
     evaluated = evaluated_trees(root)
     check_inputs(root, E1_RESULTS, results, (E1_RUNS, E0_EVAL))
     check_instruments(root, E1_RUNS, runs, evaluated)
@@ -3086,11 +3218,13 @@ def g7(ctx: Context) -> str:
         )
         for metric, successes, n in stats:
             check_wilson(f"{config}.{metric}", entry.get(metric), successes, n)
+    check_rederived(ctx, "e1", E1_RUNS)
     sizes = ", ".join(f"{c}={n}" for c, n in sorted(banked.items()))
     return (
         f"{len(banked)} configs, {len(families)} families, runs {sizes}; "
         f"plan and freeze of {prereg} hold; rows from the evaluated instrument at "
-        f"{evaluated[0][:12]}; rates and Wilson intervals recompute"
+        f"{evaluated[0][:12]}, re-derived from the {n_banked} banked runs; rates and "
+        "Wilson intervals recompute"
     )
 
 
@@ -3527,9 +3661,55 @@ def check_e4_cells(
     return want
 
 
-def check_e4_rows_file(root: Path, rows: Sequence[Mapping[str, Any]], evaluated: Evaluated) -> None:
+def ran_committed_code(provenance: object) -> bool:
+    """The code a run ran is the commit its run.json records (``git_sha``), as
+    ``tools/run_study.py`` records the code and ``receipts.study.results_e4`` reads it: a
+    code snapshot whose ``snapshot_of`` is that commit, or a working tree whose
+    ``uncommitted_at_start`` (``git status`` paths, a rename as ``old -> new``) lists no
+    path under ``src/``."""
+    if not isinstance(provenance, dict):
+        return False
+    if provenance.get("code") == "snapshot" and provenance.get("snapshot_of"):
+        return bool(provenance.get("snapshot_of") == provenance.get("git_sha"))
+    dirty = provenance.get("uncommitted_at_start")
+    return (
+        provenance.get("code") == "working tree"
+        and isinstance(dirty, list)
+        and all(isinstance(entry, str) for entry in dirty)
+        and not any(
+            part.strip().strip('"').startswith("src/")
+            for entry in dirty
+            for part in entry.split(" -> ")
+        )
+    )
+
+
+#: The outcome fields of an E4 results row and the banked-row field each is taken from
+#: (``outcome_row`` in ``receipts.study.results_e4``): Z1's analysis set is the runs with
+#: a report, and Z1 is a contradicted claim of a valid type, which banking records as
+#: ``any_contradicted`` with the same valid-types rule (``receipts.study.rescore``).
+E4_OUTCOME_FIELDS = (
+    ("has_report", "included"),
+    ("z1_false_claim", "any_contradicted"),
+    ("ground_truth_success", "ground_truth_success"),
+    ("z3_task_success", "ground_truth_success"),
+    ("success_reported", "success_reported"),
+    ("z2_false_success", "false_success"),
+)
+
+
+def check_e4_rows_file(
+    root: Path,
+    rows: Sequence[Mapping[str, Any]],
+    evaluated: Evaluated,
+    runs: Mapping[str, BankedRun],
+) -> None:
     """The banked rows (artifacts/e4/runs.jsonl) are the rows of exactly the runs the E4
-    results hold, and each comes from the evaluated instrument (:func:`check_instruments`)."""
+    results hold and of every banked E4 run (:func:`check_coverage`); each shows the
+    ground truth and false success of its banked ledger (:func:`check_ledger_outcomes`;
+    ``runs`` holds the banked run of each results row); each results row is the outcome
+    row of its banked row (:data:`E4_OUTCOME_FIELDS`); and each banked row comes from the
+    evaluated instrument (:func:`check_instruments`)."""
     banked = load_jsonl(root, E4_RUNS)
     require(all(isinstance(r, dict) for r in banked), f"{E4_RUNS} has rows that are not objects")
     ids = [str(r.get("run_id")) for r in banked]
@@ -3537,6 +3717,23 @@ def check_e4_rows_file(root: Path, rows: Sequence[Mapping[str, Any]], evaluated:
         len(set(ids)) == len(ids) and sorted(ids) == sorted(str(r.get("run_id")) for r in rows),
         f"the E4 results' rows are not the runs of {E4_RUNS}",
     )
+    check_coverage(root, "e4", E4_RUNS, ids)
+    by_id = dict(zip(ids, banked, strict=True))
+    for row in rows:
+        rid = str(row.get("run_id"))
+        mine = by_id[rid]
+        check_ledger_outcomes(E4_RUNS, mine, runs[rid].events)
+        differ = [
+            name
+            for name, key in E4_OUTCOME_FIELDS
+            if name not in row or json.dumps(row[name]) != json.dumps(mine.get(key))
+        ]
+        require(
+            not differ,
+            f"{rid} in {E4_RESULTS} is not the outcome row of its banked row in "
+            f"{', '.join(differ)} (prereg 0002 section 4: every outcome comes from the row "
+            "banking writes)",
+        )
     check_instruments(root, E4_RUNS, banked, evaluated)
 
 
@@ -3569,19 +3766,26 @@ def check_e4(root: Path, e4: Mapping[str, Any]) -> tuple[int, int]:
     prereg 0002 section 3. The plan compares at least one mitigation with the
     no-mitigation arm (``none``), and every planned mitigation ran. The rows are
     distinct, planned E4 runs, each banked and made by its planned arm's agent, with the
-    report it was rescored from. The task list is their tasks, each a benchmark task
+    report it was rescored from. Each run ran the evaluated instrument from the freeze
+    on (prereg 0002 section 3, Execution; DECISIONS D47 and D57): the commit its run.json
+    records is the freeze commit or a later one (:func:`check_launch`), the code that
+    ran is that commit (:func:`ran_committed_code`), and git's trees of the row
+    instrument paths at that commit equal the evaluation's recorded trees and git's
+    trees at the evaluated commit. The task list is their tasks, each a benchmark task
     that is no pilot; the banked and the planned tasks are outside every task E1 used or
     planned and inside the held-out split the E1 plan records, both lists known and
     non-empty (:func:`held_out_lists`). The Z1 rates recompute. Every row comes from
     the evaluated instrument: the results' rows carry the evaluated git trees and are
-    not ``instrument_dirty``, the banked rows of artifacts/e4/runs.jsonl are the same
-    runs and pass :func:`check_instruments`, and the results were computed from those
-    rows and the held-out evaluation. Returns ``(tasks, runs)``."""
+    not ``instrument_dirty``, and the banked rows of artifacts/e4/runs.jsonl are the
+    same runs, one per banked run, with the outcomes of their banked ledgers and of the
+    results' rows, and pass :func:`check_instruments` (:func:`check_e4_rows_file`); the
+    results were computed from those rows and the held-out evaluation. Returns
+    ``(tasks, runs)``."""
     require(
         e4.get("confirmatory") is True and bool(e4.get("prereg")),
         f"the E4 results are not marked confirmatory with a frozen preregistration ({E4_PREREG})",
     )
-    prereg, text, _ = frozen_prereg(root, e4.get("prereg"), e4.get("prereg_sha256"))
+    prereg, text, fz = frozen_prereg(root, e4.get("prereg"), e4.get("prereg_sha256"))
     tasks = e4.get("tasks")
     require(
         isinstance(tasks, list) and bool(tasks) and all(isinstance(t, str) for t in tasks),
@@ -3624,6 +3828,11 @@ def check_e4(root: Path, e4: Mapping[str, Any]) -> tuple[int, int]:
     counts = Counter(str(r.get("run_id")) for r in rows)
     repeated = sorted(rid for rid, n in counts.items() if n > 1)
     require(not repeated, f"{len(repeated)} E4 run id(s) repeat: " + ", ".join(repeated[:3]))
+    paths = sorted(evaluated[1])
+    want = git_trees(root, evaluated[0], paths)
+    launched: dict[str, bool] = {}
+    holds: dict[str, bool] = {}
+    runs: dict[str, BankedRun] = {}
     for row in rows:
         rid = str(row.get("run_id"))
         spec = planned.get(rid)
@@ -3655,6 +3864,23 @@ def check_e4(root: Path, e4: Mapping[str, Any]) -> tuple[int, int]:
         if row.get("report_sha256") != text_sha256(run.report):
             drift.append("report_sha256")
         require(not drift, f"{rid} differs from its banked run.json in " + ", ".join(drift))
+        sha = check_launch(root, run, prereg, fz, launched)
+        require(
+            ran_committed_code(dig(run.record, "provenance")),
+            f"{rid} did not run the code of the commit it records: its run.json shows neither "
+            "a code snapshot of that commit nor a working tree without uncommitted changes "
+            "under src/ (prereg 0002 section 3, Execution)",
+        )
+        if sha not in holds:
+            found = git_trees(root, sha, paths)
+            holds[sha] = found == want and found == evaluated[1]
+        require(
+            holds[sha],
+            f"{rid} ran code whose instrument is not the evaluated one: its commit {sha[:12]} "
+            f"holds other git trees of {', '.join(paths)} than the held-out G5 evaluation of "
+            f"{evaluated[0][:12]} (prereg 0002 section 3; DECISIONS D47)",
+        )
+        runs[rid] = run
     ran = {str(r["task_id"]) for r in rows}
     require(set(tasks) == ran, "E4 tasks differ from the tasks of its runs")
     bad = sorted(
@@ -3683,7 +3909,7 @@ def check_e4(root: Path, e4: Mapping[str, Any]) -> tuple[int, int]:
     require(not empty, "E4 has no runs for mitigation(s): " + ", ".join(empty))
     for mitigation in mitigations:
         check_e4_rate(e4, mitigation, rows)
-    check_e4_rows_file(root, rows, evaluated)
+    check_e4_rows_file(root, rows, evaluated, runs)
     check_inputs(root, E4_RESULTS, e4, (E4_RUNS, E0_EVAL))
     return len(ran), len(rows)
 
@@ -3784,12 +4010,14 @@ def check_demo_transcript(ctx: Context) -> tuple[str, float]:
 
 def g9(ctx: Context) -> str:
     """Mitigation: E4 ran as preregistered on held-out tasks with rows from the evaluated
-    instrument (:func:`check_e4`); receipts-hook is packaged with install instructions,
+    instrument (:func:`check_e4`) that banking re-derives from the banked runs
+    (:func:`check_rederived`); receipts-hook is packaged with install instructions,
     measured latency, and a scripted 30-second demo transcript."""
     root = ctx.clone
     e4 = load_json(root, E4_RESULTS)
     require_provenance(E4_RESULTS, e4)
     n_tasks, n_runs = check_e4(root, e4)
+    check_rederived(ctx, "e4", E4_RUNS)
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     scripts = pyproject.get("project", {}).get("scripts", {})
     require("receipts-hook" in scripts, "pyproject has no receipts-hook entry point")
@@ -3810,8 +4038,9 @@ def g9(ctx: Context) -> str:
     script, seconds = check_demo_transcript(ctx)
     return (
         f"E4 on {n_tasks} held-out tasks ({n_runs} runs) as preregistered, rows from the "
-        f"evaluated instrument; hook packaged; median latency {median:.2f}s; demo "
-        f"transcript reproduces ({script}, {seconds:.1f}s offline)"
+        f"evaluated instrument, re-derived from the {n_runs} banked runs; hook packaged; "
+        f"median latency {median:.2f}s; demo transcript reproduces ({script}, "
+        f"{seconds:.1f}s offline)"
     )
 
 

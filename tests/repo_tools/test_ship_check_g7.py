@@ -1,21 +1,26 @@
 """Gate G7 of tools/ship_check.py on a synthetic E1 history (H13, H15, H16, H24 to H26,
-review-1 of the harness review round, and the pre-freeze items: Y1 over the runs with a
+review-1 of the harness review round, the pre-freeze items: Y1 over the runs with a
 hidden-check result, the required plan digest, and the evaluated instrument of
-DECISIONS D42).
+DECISIONS D42, and review B2 of the e4230cc review: rows that cover every banked run and
+outcomes re-derived from the banked runs, DECISIONS D57).
 
-Every preregistration, plan, instrument file, held-out evaluation, run row, and result
-here is SYNTHETIC, made up only to exercise ``ship_check.g7`` in throwaway git
+Every preregistration, plan, instrument file, held-out evaluation, run row, ledger, and
+result here is SYNTHETIC, made up only to exercise ``ship_check.g7`` in throwaway git
 repositories. Rows are marked ``synthetic: false`` only so the gate treats them as real
 runs, the arms' models are stand-in names, the instrument files are stand-ins whose only
-role is to have git trees, and the "results" are recomputed from those rows; nothing
-here is a model result or a real-world result.
+role is to have git trees, the hidden-check results are made up, and the "results" are
+recomputed from those rows; nothing here is a model result or a real-world result. The
+SYNTHETIC clones hold no project for ``tools/bank_study.py --check`` to run in, so g7 is
+given that step's outcome (:func:`context`), except in the test that runs a stand-in.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import subprocess
+import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -24,11 +29,12 @@ import pytest
 
 import ship_check
 from receipts.analysis.rates import rate_with_ci
-from receipts.ledger.events import GENESIS, Event, sha256_text
+from receipts.ledger.events import GENESIS, Event, Ledger, sha256_text
 from receipts.study.aggregate import e1_rows
 from receipts.study.plan import Plan, factorial_plan, local_arm
 from receipts.study.rescore import INSTRUMENT_RECORD_PATHS, Rescored
 from receipts.study.spec import StudyText
+from receipts.verify.facts import LedgerFacts
 
 Commit = Callable[[Path, str], str]
 GateError = ship_check.GateError
@@ -305,6 +311,45 @@ def write_rows(root: Path, rows: Sequence[Mapping[str, Any]]) -> None:
 
 Records = Callable[[list[dict[str, Any]]], None]
 Starts = Callable[[dict[str, Any]], None]
+#: Edits a run's ``(kind, data)`` events, given its run id, before its ledger is written.
+Ledgers = Callable[[str, list[tuple[str, dict[str, Any]]]], None]
+Rows = Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
+
+
+def hidden_checks(truth: bool | None) -> list[tuple[str, dict[str, Any]]]:
+    """The post-run ``hidden_check`` event of a SYNTHETIC run whose hidden checks gave
+    ``truth`` (no event without a result), with the per-check list and the counts the
+    snapshot records."""
+    if truth is None:
+        return []
+    checks = [
+        {"name": "SYNTHETIC hidden check one", "passed": True, "requirement": "R1"},
+        {"name": "SYNTHETIC hidden check two", "passed": truth, "requirement": "R2"},
+    ]
+    failed = sum(1 for check in checks if check["passed"] is not True)
+    data = {
+        "checks": checks,
+        "failed": failed,
+        "passed": len(checks) - failed,
+        "source": "snapshot",
+        "total": len(checks),
+    }
+    return [("hidden_check", data)]
+
+
+def chained(events: Sequence[tuple[str, Mapping[str, Any]]]) -> list[Event]:
+    """SYNTHETIC ``(kind, data)`` events as a hash-chained ledger."""
+    out: list[Event] = []
+    prev = GENESIS
+    for seq, (kind, data) in enumerate(events):
+        stamp = 1.0 + seq
+        body = dict(data)
+        event = Event(
+            seq, stamp, kind, body, prev, Event.compute_hash(seq, stamp, kind, body, prev)
+        )
+        out.append(event)
+        prev = event.hash
+    return out
 
 
 def bank(
@@ -313,13 +358,17 @@ def bank(
     git_sha: str,
     edit: Records | None = None,
     starts: Starts | None = None,
+    ledgers: Ledgers | None = None,
 ) -> None:
     """Bank a SYNTHETIC run.json and ledger for every row, launched from ``git_sha``.
 
     Each run records its arm's stand-in model, and its ledger's run_start names the
-    minimal-agent driver and that model, as the study runner writes them. ``edit``
-    changes the records, and ``starts`` each run_start, before they are written.
+    minimal-agent driver and that model, as the study runner writes them; a
+    ``hidden_check`` event follows with the row's hidden-check result
+    (:func:`hidden_checks`). ``edit`` changes the records, ``starts`` each run_start,
+    and ``ledgers`` each run's events, before they are written.
     """
+    truths = {str(r["run_id"]): r.get("ground_truth_success") for r in rows}
     records = [
         {
             "run_id": r["run_id"],
@@ -344,33 +393,49 @@ def bank(
         body["source"] = "harness"
         if starts is not None:
             starts(body)
-        event = Event(
-            0,
-            1.0,
-            "run_start",
-            body,
-            GENESIS,
-            Event.compute_hash(0, 1.0, "run_start", body, GENESIS),
-        )
-        put(root, f"{run}/ledger.jsonl", event.to_json() + "\n")
+        events = [("run_start", body), *hidden_checks(truths.get(str(record["run_id"])))]
+        if ledgers is not None:
+            ledgers(str(record["run_id"]), events)
+        lines = "".join(event.to_json() + "\n" for event in chained(events))
+        put(root, f"{run}/ledger.jsonl", lines)
+
+
+#: What the re-derivation step (``tools/bank_study.py e1 --check`` after ``make setup``,
+#: DECISIONS D57) prints in a SYNTHETIC clone that is given its outcome.
+REDERIVED = "e1: SYNTHETIC: the rows are the ones banking writes from the banked runs\n"
+
+
+def given(name: str, returncode: int = 0, stdout: str = "", stderr: str = "") -> Any:
+    """A sub-command outcome handed to the gate (``ship_check.CmdResult``)."""
+    return ship_check.CmdResult(name, returncode, stdout, stderr, 0.0)
 
 
 def context(root: Path, sha: str) -> ship_check.Context:
-    """A Context that treats ``root`` as the fresh clone at ``sha``."""
+    """A Context that treats ``root`` as the fresh clone at ``sha``.
+
+    The SYNTHETIC clone holds no project for ``make setup`` and ``tools/bank_study.py e1
+    --check`` to run in, so their outcomes are given (as a successful re-derivation);
+    a test replaces or removes them in ``ctx.results`` to exercise the step.
+    """
     logs = root.parent / "logs"
     logs.mkdir(exist_ok=True)
-    return ship_check.Context(orig=root, clone=root, logs=logs, fast=False, sha=sha)
+    ctx = ship_check.Context(orig=root, clone=root, logs=logs, fast=False, sha=sha)
+    ctx.results["make-setup"] = given("make-setup")
+    ctx.results["bank-check-e1"] = given("bank-check-e1", stdout=REDERIVED)
+    return ctx
 
 
 def study(
     root: Path,
     commit: Commit,
     *,
-    rows: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None = None,
+    rows: Rows | None = None,
+    banked: Rows | None = None,
     text: Callable[[str], str] | None = None,
     results: Callable[[dict[str, Any]], None] | None = None,
     records: Records | None = None,
     starts: Starts | None = None,
+    ledgers: Ledgers | None = None,
     launched_early: bool = False,
     seeded: Callable[[dict[str, Any]], None] | None = None,
     instrument: Callable[[dict[str, Any]], None] | None = None,
@@ -387,9 +452,11 @@ def study(
     and the rows are banked there (else at the freeze commit); ``instrument`` edits the
     banking instrument record before the rows are built, and ``reseed`` edits the
     committed evaluation afterwards (given the banking commit). ``rows``, ``results``,
-    ``records``, and ``starts`` edit the generated rows, results, banked run records,
-    and their ledgers' run_start before they are written. The runs are launched from the
-    freeze commit, or from the commit before it when ``launched_early``.
+    ``records``, ``starts``, and ``ledgers`` edit the generated rows, results, banked run
+    records, their ledgers' run_start, and their ledgers' events before they are
+    written. The runs of the rows are banked, or the runs of the rows ``banked`` picks
+    from every generated row. The runs are launched from the freeze commit, or from the
+    commit before it when ``launched_early``.
     """
     write_instrument(root)
     evaluated = commit(root, "SYNTHETIC instrument")
@@ -421,7 +488,8 @@ def study(
     if rows is not None:
         data = rows(data)
     write_rows(root, data)
-    bank(root, data, drafted if launched_early else frozen, records, starts)
+    runs = data if banked is None else banked(rows_for(plan, record))
+    bank(root, runs, drafted if launched_early else frozen, records, starts, ledgers)
     out = results_for(data, plan, digest, input_hashes(root), all_included=all_included)
     if results is not None:
         results(out)
@@ -434,6 +502,7 @@ def test_a_study_run_as_preregistered_passes(git_repo: Path, commit: Commit) -> 
     assert "4 configs, 2 families" in evidence
     assert "ma-granite2b=64" in evidence
     assert "evaluated instrument" in evidence
+    assert "re-derived from the 256 banked runs" in evidence
 
 
 # ---------------------------------------------------------------- H13 (old code: PASS)
@@ -1106,3 +1175,258 @@ def test_a_run_by_another_agent_than_its_arm_fails(
 
     with pytest.raises(GateError, match="not by its planned agent"):
         ship_check.g7(study(git_repo, commit, records=records, starts=starts))
+
+
+# ---------------------------------------------------------------- review B2 (old code: PASS)
+
+
+def planned_run(index: int) -> str:
+    """The run id of the ``index``-th planned SYNTHETIC run (and of its row)."""
+    return str(plan_json()["runs"][index]["run_id"])
+
+
+def test_a_run_banked_without_a_row_fails(git_repo: Path, commit: Commit) -> None:
+    # The run is banked, but runs.jsonl (one row per banked run, prereg 0001 section 11)
+    # leaves it out and the results list it as missing, which the old gate accepted.
+    def unrowed(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return rows[1:]
+
+    ctx = study(git_repo, commit, rows=unrowed, banked=lambda every: every)
+    with pytest.raises(
+        GateError,
+        match=r"1 run\(s\) banked under artifacts/studies/e1/runs/ have no row in "
+        r"artifacts/e1/runs\.jsonl",
+    ):
+        ship_check.g7(ctx)
+
+
+def test_a_run_banked_after_the_rows_and_results_fails(git_repo: Path, commit: Commit) -> None:
+    # The review's case: the run is banked after the rows and the results were written,
+    # so the results are not stale against the rows, and the run counted as missing.
+    late = rows_for(plan_json(), any_instrument())[0]
+    ctx = study(git_repo, commit, rows=lambda rows: rows[1:])
+    bank(git_repo, [late], ctx.sha)
+    sha = commit(git_repo, "SYNTHETIC run banked after the rows and the results")
+    with pytest.raises(
+        GateError, match=rf"have no row in artifacts/e1/runs\.jsonl.*{late['run_id']}"
+    ):
+        ship_check.g7(context(git_repo, sha))
+
+
+def banked_truth(index: int, truth: bool | None) -> Ledgers:
+    """Bank the hidden checks of the ``index``-th planned run as giving ``truth``."""
+    run_id = planned_run(index)
+
+    def apply(rid: str, events: list[tuple[str, dict[str, Any]]]) -> None:
+        if rid == run_id:
+            events[:] = [e for e in events if e[0] != "hidden_check"] + hidden_checks(truth)
+
+    return apply
+
+
+def edit_row(index: int, **change: Any) -> Rows:
+    """Change fields of the ``index``-th row before it is written."""
+
+    def apply(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        rows[index].update(change)
+        return rows
+
+    return apply
+
+
+@pytest.mark.parametrize(
+    ("ledgers", "rows", "field"),
+    [
+        pytest.param(
+            banked_truth(0, True), None, "ground_truth_success", id="failed-row-passed-ledger"
+        ),
+        pytest.param(
+            banked_truth(1, False), None, "ground_truth_success", id="passed-row-failed-ledger"
+        ),
+        pytest.param(
+            banked_truth(1, None), None, "ground_truth_success", id="no-result-in-the-ledger"
+        ),
+        pytest.param(
+            banked_truth(8, False), None, "ground_truth_success", id="a-result-the-row-leaves-out"
+        ),
+        pytest.param(
+            None, edit_row(0, false_success=False), "false_success", id="false-success-left-out"
+        ),
+        pytest.param(
+            None,
+            edit_row(0, success_reported=False),
+            "false_success",
+            id="false-success-without-a-success-claim",
+        ),
+    ],
+)
+def test_row_outcomes_must_be_what_the_banked_ledger_shows(
+    git_repo: Path, commit: Commit, ledgers: Ledgers | None, rows: Rows | None, field: str
+) -> None:
+    # Row 0 records a failed hidden check and a success claim (a false success), row 1 a
+    # passed check, and row 8 no result. The results are recomputed from the rows as
+    # written, so only the banked ledger shows that the row is not the banking of its run.
+    assert [truth_of(i) for i in (0, 1, 8)] == [False, True, None]
+    ctx = study(git_repo, commit, ledgers=ledgers, rows=rows)
+    with pytest.raises(GateError, match=rf"differs from its banked ledger in .*{field}"):
+        ship_check.g7(ctx)
+
+
+@pytest.mark.parametrize(
+    ("step", "outcome", "match"),
+    [
+        pytest.param(
+            "bank-check-e1",
+            given(
+                "bank-check-e1",
+                1,
+                stderr="warning: SYNTHETIC tool notice\nbank_study e1 --check: 1 row(s) differ "
+                "from the rows banking writes now in claims: SYNTHETIC-run\n",
+            ),
+            r"is not what banking writes from the banked runs .*bank_study e1 --check: 1 "
+            r"row\(s\) differ",
+            id="an-edited-verdict",
+        ),
+        pytest.param(
+            "bank-check-e1",
+            given(
+                "bank-check-e1",
+                2,
+                stderr="bank_study e1: refused: SYNTHETIC-run: run.json's report differs\n",
+            ),
+            "refused: SYNTHETIC-run",
+            id="a-run-that-does-not-rescore",
+        ),
+        pytest.param(
+            "make-setup",
+            given("make-setup", 2, stderr="make: *** SYNTHETIC: no rule to make target\n"),
+            "make setup failed",
+            id="no-environment",
+        ),
+    ],
+)
+def test_rows_that_banking_does_not_write_fail(
+    git_repo: Path, commit: Commit, step: str, outcome: Any, match: str
+) -> None:
+    # Claims and verdicts need the extractor and the verifier, so g7 has
+    # tools/bank_study.py re-derive every row in the clone (DECISIONS D57).
+    ctx = study(git_repo, commit)
+    ctx.results[step] = outcome
+    with pytest.raises(GateError, match=match):
+        ship_check.g7(ctx)
+
+
+#: A SYNTHETIC stand-in for tools/bank_study.py that checks the arguments it is given.
+STAND_IN = '''"""SYNTHETIC stand-in for tools/bank_study.py in the gate tests: it checks the
+arguments the gate passes and prints one line; it re-derives nothing."""
+
+import sys
+
+if sys.argv[1:] != [{study!r}, "--check"]:
+    sys.exit(f"SYNTHETIC stand-in: unexpected arguments {{sys.argv[1:]}}")
+print("{study}: SYNTHETIC stand-in re-derivation passed")
+'''
+
+
+def test_the_gate_runs_the_rederivation_in_the_clone(git_repo: Path, commit: Commit) -> None:
+    if not (shutil.which("uv") and shutil.which("make")) or sys.prefix == sys.base_prefix:
+        pytest.skip("needs make, uv, and a virtualenv to link synthetic projects to")
+    study(git_repo, commit)
+    put(git_repo, "Makefile", "# SYNTHETIC test project (not a real project).\nsetup:\n\t@true\n")
+    put(git_repo, "pyproject.toml", '[project]\nname = "synthetic-e1"\nversion = "0"\n')
+    put(git_repo, "tools/bank_study.py", STAND_IN.format(study="e1"))
+    put(git_repo, ".gitignore", ".venv\n")
+    (git_repo / ".venv").symlink_to(sys.prefix, target_is_directory=True)
+    ctx = context(git_repo, commit(git_repo, "SYNTHETIC project around the E1 data"))
+    del ctx.results["make-setup"], ctx.results["bank-check-e1"]
+    assert "re-derived from the 256 banked runs" in ship_check.g7(ctx)
+    step = ctx.results["bank-check-e1"]
+    assert step.ok and "SYNTHETIC stand-in re-derivation passed" in step.stdout
+
+
+#: SYNTHETIC ledgers (``(kind, data)`` events) and the ground truth the verifier reads
+#: from them: a later result for a check replaces an earlier one, and without a check
+#: list the counts decide.
+GROUND_TRUTH_LEDGERS: dict[str, tuple[list[tuple[str, dict[str, Any]]], bool | None]] = {
+    "no-hidden-check": ([("run_start", {"run_id": "SYNTHETIC"})], None),
+    "all-passed": (
+        [
+            (
+                "hidden_check",
+                {"checks": [{"name": "a", "passed": True}, {"name": "b", "passed": True}]},
+            )
+        ],
+        True,
+    ),
+    "one-failed": (
+        [
+            (
+                "hidden_check",
+                {"checks": [{"name": "a", "passed": True}, {"name": "b", "passed": False}]},
+            )
+        ],
+        False,
+    ),
+    "a-later-pass-replaces-a-failure": (
+        [
+            ("hidden_check", {"checks": [{"name": "a", "passed": False}]}),
+            ("hidden_check", {"checks": [{"name": "a", "passed": True}]}),
+        ],
+        True,
+    ),
+    "a-later-failure-replaces-a-pass": (
+        [
+            ("hidden_check", {"checks": [{"name": "a", "passed": True}]}),
+            ("hidden_check", {"checks": [{"name": "a", "passed": False}]}),
+        ],
+        False,
+    ),
+    "counts-that-passed": ([("hidden_check", {"total": 3, "failed": 0})], True),
+    "counts-with-a-failure": ([("hidden_check", {"total": 3, "failed": 1})], False),
+    "counts-of-nothing": ([("hidden_check", {"total": 0, "failed": 0})], None),
+    "counts-as-text-and-fractions": ([("hidden_check", {"total": " 2 ", "failed": 0.5})], True),
+    "a-pass-written-as-text-is-no-pass": (
+        [("hidden_check", {"checks": ["SYNTHETIC", {"name": "a", "passed": "true"}]})],
+        False,
+    ),
+    "empty-check-lists-fall-back-to-counts": (
+        [
+            ("hidden_check", {"checks": [], "total": 2, "failed": 0}),
+            ("hidden_check", {"checks": [], "total": 0}),
+        ],
+        True,
+    ),
+    "names-compare-as-text": (
+        [
+            (
+                "hidden_check",
+                {
+                    "checks": [
+                        {"name": 1, "passed": False},
+                        {"name": "1", "passed": True},
+                        {"passed": True},
+                    ]
+                },
+            )
+        ],
+        True,
+    ),
+    "other-events-do-not-count": (
+        [
+            ("command", {"cmd": "SYNTHETIC", "checks": [{"name": "a", "passed": False}]}),
+            ("hidden_check", {"total": 1, "failed": 0}),
+        ],
+        True,
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(GROUND_TRUTH_LEDGERS))
+def test_the_ground_truth_is_read_as_the_verifier_reads_it(name: str) -> None:
+    # ship_check imports nothing from receipts, so its reading is compared with the
+    # verifier's own (receipts.verify.facts.LedgerFacts.ground_truth_success).
+    events, expected = GROUND_TRUTH_LEDGERS[name]
+    ledger = chained(events)
+    assert LedgerFacts(Ledger(ledger)).ground_truth_success() is expected
+    read = [json.loads(event.to_json()) for event in ledger]
+    assert ship_check.ledger_ground_truth(read) is expected

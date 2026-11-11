@@ -4,6 +4,7 @@
     python tools/bank_study.py pilot                 # artifacts/studies/pilot/summary.json
     python tools/bank_study.py e1 [--allow-dirty]    # artifacts/e1/runs.jsonl (G7, G8)
     python tools/bank_study.py e4 [--allow-dirty]    # artifacts/e4/runs.jsonl (G9)
+    python tools/bank_study.py e1 --check            # compare, write nothing (G7; e4: G9)
 
 smoke and pilot read the banked ``artifacts/studies/<study>/runs/*/run.json`` files.
 
@@ -32,6 +33,15 @@ every key but ``trace``; entries banked earlier stay, so a reset log never drops
 logged failure. ``artifacts/<study>/runs.provenance.json`` records the provenance (git
 SHA, command, time, plan SHA-256, the instrument record, and the SHA-256 of the
 seeded evaluation used for ``any_contradicted``) and what was banked.
+
+``--check`` (e1 and e4; DECISIONS D57) re-derives the rows exactly as banking does, with
+the same refusals and from committed code only, writes nothing, and compares them with
+the committed ``artifacts/<study>/runs.jsonl``: the rows must be those of exactly the
+banked runs, each once, with every field equal as JSON, except the banking commit in
+each row's instrument record (``instrument.commit``), which says where the rows were
+banked and not what they hold. Exit 0 when they are the same rows, 1 when they differ
+(each difference on stderr), 2 when the rows cannot be re-derived. Gates G7 and G9 run
+it in the fresh clone, because claims and verdicts need the instrument.
 """
 
 from __future__ import annotations
@@ -43,7 +53,8 @@ import json
 import subprocess
 import sys
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -197,8 +208,39 @@ def banked_failures(study: str) -> tuple[Path, str, dict[str, Any]] | None:
     return target, text, summary
 
 
-def bank_rescored(study: str, *, allow_dirty: bool) -> int:
-    """Rescore and bank every run of ``study`` (``e1`` or ``e4``); return the exit code."""
+def _listed(items: Sequence[str]) -> str:
+    """The first five of ``items``, comma separated, with ``...`` when there are more."""
+    return ", ".join(items[:5]) + (", ..." if len(items) > 5 else "")
+
+
+@dataclass(frozen=True)
+class Banking:
+    """What banking one study derives before it writes anything.
+
+    Attributes:
+        rows: One row per banked run, sorted by run id.
+        instrument: The checkout's instrument record (``rescore.instrument_record``).
+        dirty: The uncommitted paths of the instrument and the banking code.
+        valid: The held-out evaluation's valid types, or None without one.
+        runs_dir: The directory that holds the banked runs.
+    """
+
+    rows: list[dict[str, Any]]
+    instrument: dict[str, Any]
+    dirty: list[str]
+    valid: rescore.ValidTypes | None
+    runs_dir: Path
+
+
+def derive_rows(study: str, *, allow_dirty: bool, dirty_hint: str) -> Banking:
+    """Rescore every banked run of ``study`` (``e1`` or ``e4``) and build its rows.
+
+    Raises:
+        RefusalError: ``receipts`` is imported from another tree than this checkout's
+            ``src/``; the instrument or the banking code has uncommitted changes and
+            ``allow_dirty`` is false (the message ends with ``dirty_hint``); the
+            held-out evaluation is malformed; or a run cannot be rescored.
+    """
     if imported_src().resolve() != (ROOT / "src").resolve():
         raise RefusalError(
             f"receipts is imported from {imported_src()}, not from {ROOT / 'src'}: the "
@@ -211,10 +253,9 @@ def bank_rescored(study: str, *, allow_dirty: bool) -> int:
         raise RefusalError(str(exc)) from exc
     dirty = sorted({*instrument["uncommitted"], *code})
     if dirty and not allow_dirty:
-        listed = ", ".join(dirty[:5]) + (", ..." if len(dirty) > 5 else "")
         raise RefusalError(
-            f"uncommitted changes in the instrument or the banking code ({listed}); commit "
-            "them, or bank exploratory rows with --allow-dirty"
+            f"uncommitted changes in the instrument or the banking code ({_listed(dirty)}); "
+            + dirty_hint
         )
     valid = seeded_valid_types()
     runs_dir = ROOT / "artifacts" / "studies" / study / "runs"
@@ -226,6 +267,118 @@ def bank_rescored(study: str, *, allow_dirty: bool) -> int:
         )
     except ValueError as exc:
         raise RefusalError(str(exc)) from exc
+    return Banking(rows, instrument, dirty, valid, runs_dir)
+
+
+def comparable(row: Mapping[str, Any]) -> dict[str, str]:
+    """Each field of a row as canonical JSON, so ``1``, ``1.0``, and ``true`` differ.
+
+    The instrument record's fields count one by one, and its ``commit`` is left out: it
+    says where the rows were banked, not what they hold (the gates check separately
+    that it holds the evaluated instrument).
+    """
+    out: dict[str, str] = {}
+    for key, value in row.items():
+        if key == "instrument" and isinstance(value, Mapping):
+            out.update(
+                (f"instrument.{name}", json.dumps(item, sort_keys=True))
+                for name, item in value.items()
+                if name != "commit"
+            )
+        else:
+            out[key] = json.dumps(value, sort_keys=True)
+    return out
+
+
+def row_problems(path: Path, fresh: Sequence[Mapping[str, Any]], runs_dir: Path) -> list[str]:
+    """Every way the committed rows file ``path`` differs from the ``fresh`` rows that
+    banking builds now from the runs under ``runs_dir``: the file is missing; a line is
+    not JSON or not a row with a run id; a run id repeats; a banked run has no row; a
+    row has no banked run; or a row's fields differ from its fresh row's
+    (:func:`comparable`)."""
+    name = rel(path)
+    if not path.is_file():
+        return [f"{name} is missing, so there are no committed rows to compare"]
+    problems: list[str] = []
+    committed: dict[str, Mapping[str, Any]] = {}
+    repeated: set[str] = set()
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            problems.append(f"{name}:{number} is not JSON ({exc.msg})")
+            continue
+        run_id = row.get("run_id") if isinstance(row, dict) else None
+        if not isinstance(run_id, str):
+            problems.append(f"{name}:{number} is not a row with a run_id")
+            continue
+        if run_id in committed:
+            repeated.add(run_id)
+        committed[run_id] = row
+    banked = {str(row["run_id"]): row for row in fresh}
+    if repeated:
+        problems.append(f"{len(repeated)} run id(s) repeat in {name}: {_listed(sorted(repeated))}")
+    unrowed = sorted(set(banked) - set(committed))
+    if unrowed:
+        problems.append(f"{len(unrowed)} banked run(s) have no row in {name}: {_listed(unrowed)}")
+    unbanked = sorted(set(committed) - set(banked))
+    if unbanked:
+        problems.append(
+            f"{len(unbanked)} row(s) have no banked run under {rel(runs_dir)}: " + _listed(unbanked)
+        )
+    differing: dict[str, list[str]] = {}
+    for run_id in sorted(set(committed) & set(banked)):
+        mine, theirs = comparable(committed[run_id]), comparable(banked[run_id])
+        fields = sorted(k for k in mine.keys() | theirs.keys() if mine.get(k) != theirs.get(k))
+        if fields:
+            differing[run_id] = fields
+    if differing:
+        named = sorted({field for fields in differing.values() for field in fields})
+        problems.append(
+            f"{len(differing)} row(s) differ from the rows banking writes now in "
+            f"{', '.join(named)}: {_listed(sorted(differing))}"
+        )
+        if "instrument.trees" in named:
+            problems.append(
+                "the instrument in this checkout is not the one those rows were banked with, "
+                "so this checkout does not re-derive them"
+            )
+    return problems
+
+
+def check_rescored(study: str) -> int:
+    """Re-derive the rows of ``study`` (``e1`` or ``e4``) and compare them with the
+    committed rows file, writing nothing; return 0 when they are the same rows, else 1."""
+    banking = derive_rows(
+        study,
+        allow_dirty=False,
+        dirty_hint="commit them, since a check re-derives the rows from committed code only",
+    )
+    path = ROOT / "artifacts" / study / "runs.jsonl"
+    problems = row_problems(path, banking.rows, banking.runs_dir)
+    for problem in problems:
+        print(f"bank_study {study} --check: {problem}", file=sys.stderr)
+    if problems:
+        return 1
+    print(
+        f"{study}: the {len(banking.rows)} row(s) of {rel(path)} are the rows banking writes "
+        f"now from the banked runs under {rel(banking.runs_dir)} (re-extracted and "
+        "re-verified; only the banking commit may differ)"
+    )
+    return 0
+
+
+def bank_rescored(study: str, *, allow_dirty: bool) -> int:
+    """Rescore and bank every run of ``study`` (``e1`` or ``e4``); return the exit code."""
+    banking = derive_rows(
+        study,
+        allow_dirty=allow_dirty,
+        dirty_hint="commit them, or bank exploratory rows with --allow-dirty",
+    )
+    rows, instrument, dirty = banking.rows, banking.instrument, banking.dirty
+    valid, runs_dir = banking.valid, banking.runs_dir
     failures = banked_failures(study)
     rows_path = ROOT / "artifacts" / study / "runs.jsonl"
     aggregate.write_jsonl(rows_path, rows)
@@ -278,11 +431,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="e1 and e4: bank even though the instrument or the banking code has "
         "uncommitted changes; the rows are then marked instrument_dirty (exploratory)",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="e1 and e4: re-derive the rows from the banked runs and compare them with the "
+        "committed rows file, writing nothing (exit 1 when they differ)",
+    )
     args = parser.parse_args(argv)
     if args.allow_dirty and args.study not in aggregate.ROW_STUDIES:
         parser.error("--allow-dirty applies to e1 and e4 only")
+    if args.check and args.study not in aggregate.ROW_STUDIES:
+        parser.error("--check applies to e1 and e4 only")
+    if args.check and args.allow_dirty:
+        parser.error("--check re-derives the rows from committed code only (no --allow-dirty)")
     if args.study in aggregate.ROW_STUDIES:
         try:
+            if args.check:
+                return check_rescored(args.study)
             return bank_rescored(args.study, allow_dirty=args.allow_dirty)
         except RefusalError as exc:
             print(f"bank_study {args.study}: refused: {exc}", file=sys.stderr)
