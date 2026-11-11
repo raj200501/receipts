@@ -508,8 +508,12 @@ artifacts and which records each value, its source artifact, and the source's ha
 number appears in prose (digits, number words, and counts glued to letters, inline code
 included), unless it is an identifier, a date, a version, a section or list number, a path, or
 a design-parameter phrase listed with a reason in `docs/claimcheck_allow.txt`.
-`make freshness` rebuilds the registry and requires it to match, and `make reproduce` rebuilds
-the registry and figures in a temporary directory and fails on any difference.
+`make freshness` rebuilds the registry and requires it to match. It also reruns the script
+behind each derived artifact (the smoke summary, from the banked run records) and requires
+the committed artifact to equal the fresh one and to record exactly the inputs that exist
+now, so a run banked after the summary, or a value typed into it, fails (D56). `make
+reproduce` makes the same check and rebuilds the registry and figures in a temporary
+directory, failing on any difference.
 
 **The definition of done is code.** `tools/ship_check.py` implements gates G1 to G14 on a fresh
 clone of HEAD, so only committed state counts: tests and per-module coverage, static quality,
@@ -601,8 +605,11 @@ make ship-check   # every gate on a fresh clone of HEAD
 ```
 
 `make claimcheck`, `make freshness`, `make citecheck`, and `make prereg-verify` check the
-properties of section 8, and every artifact carries provenance (commit, command, time, input
-hashes, models, seeds). New agent runs need the pinned model server (`tools/provision.sh`)
+properties of section 8. Each run record carries full provenance (commit, command, time,
+environment, model and server, agent-config hash, seed, task hash, and token usage), and
+the summaries derived from run records carry their commit, command, time, environment, and
+input hashes, with the models, config hashes, seeds, and usage of those runs
+([artifacts/README.md](../artifacts/README.md) lists what each kind of artifact records). New agent runs need the pinned model server (`tools/provision.sh`)
 and `tools/run_study.py` with a committed plan; they are new data, not reproductions, and a
 banked run is never re-run.
 

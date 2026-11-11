@@ -5,6 +5,17 @@ docs/BUILD_BRIEF.md section 9), newest first.
 
 ## 2026-11-11
 
+- **README.md and docs/REPORT.md, what freshness re-derives** (until the commit after
+  8692254): they said `make freshness` re-derives every live number from the banked
+  artifacts, but it rebuilt only the registry, so the smoke summary it reads was never
+  checked against the run records it summarizes (review B1). Freshness now re-derives it
+  (D56), which makes the statement true; the documents say so.
+- **artifacts/README.md and docs/REPORT.md, provenance**: they said every artifact carries
+  provenance with the config hash, models, seeds, environment, and usage. Only the run
+  records did; the smoke summary had its commit, command, time, and input hashes, and the
+  registry, manifest, citation record, review record, and plans have none of those fields
+  (review N4). The summary now carries the models, config hashes, seeds, environment, and
+  usage of its runs, and artifacts/README.md states what each kind of artifact records.
 - **README.md, docs/REPORT.md, and STATUS.md, the canary string** (changed in 85f9b92):
   until then the README said receipts-bench had no canary string yet and that one would go
   into every task file before the benchmark was released as a dataset. D52 put the canary

@@ -9,13 +9,13 @@ History is in docs/LOG.md.
 
 ## Gates
 
-`python tools/ship_check.py --fast` at 229a14f (fresh clone): **4/14** (FAST, does not count).
+`python tools/ship_check.py --fast` at 8692254 (fresh clone): **7/14** (FAST, does not count).
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| G1 Build and tests | FAIL | core coverage below 85%: hook 78.6% |
-| G2 Static quality | FAIL | type: ignore without code and reason at bench/tasks/py-ci-workflow/repo/tests/test_commits.py:65, bench/tasks/py-email-tests/repo/src/addrcheck/validator.py:88, bench/tasks/py-email-tests/repo/tests/test_validator.py:56 |
-| G3 CI parity | FAIL | fast: make ci parts (lint, typecheck, test, demo) do not all pass |
+| G1 Build and tests | PASS | setup ok; tests pass; coverage 99.4%, every core module >= 85% |
+| G2 Static quality | PASS | ruff check, ruff format --check, mypy --strict clean on every package file; every type: ignore in project code has a code and reason (D51) |
+| G3 CI parity | PASS | workflow ok; fast: make ci not re-run, its parts pass in G1, G2, G4 |
 | G4 Offline demo | PASS | make demo 0s offline (unshare -rn); matches golden; no model calls |
 | G5 Instrument validity | FAIL | artifacts/bench/smoke_runs.json missing |
 | G6 Benchmark | FAIL | artifacts/bench/smoke_runs.json missing |
@@ -25,66 +25,51 @@ History is in docs/LOG.md.
 | G10 Claim integrity | PASS | make claimcheck and make freshness pass on README.md and docs/REPORT.md |
 | G11 Prereg integrity | FAIL | no confirmatory artifacts cite a preregistration |
 | G12 Review | FAIL | latest review is not a valid SHIP for HEAD: REVIEW: BLOCK |
-| G13 Documentation | PASS | README follows section 11; REPORT.md 6992 words; figures reproduce; every reference verified |
+| G13 Documentation | PASS | README follows section 11; REPORT.md 7063 words; figures reproduce; every reference verified |
 | G14 Hygiene | PASS | secrets clean; cash_usd = 0, caps respected; private/ untracked; files present; clean |
 
-G1 fails on coverage only: `src/receipts/hook/wrap.py` (the `receipts wrap` command) has no
-tests, which keeps the hook package below the floor; every test passes. G3 fails in fast
-mode only because it requires G1 and G2; `make ci` itself passes on Python 3.11 and 3.12.
-G2 stops at `type: ignore[code]` comments without a reason inside benchmark task
-repositories; adding reasons changes the task hashes that the reference validation and the
-banked smoke runs cite, so that waits for the next benchmark version. G5 to G9, G11, and
-G12 wait on the studies and on a review of the current code.
+G1 to G4, G10, G13, and G14 pass. G5 and G6 wait on the smoke study, whose banked runs
+give `smoke_runs.json`, and then on E0; G7 to G9 and G11 wait on the studies; G12 waits on
+an independent review that approves the current code (the review of e4230cc blocked, B1 to
+B4).
 
 ## Now
 
-Crunch time, 2026-11-11 (goal_turn 6). `main` holds the release commit through Raj's
-merge commit and the repository is public. Raj's order: G1, G2, G3, the canary string
-(before any more smoke runs), the smoke runs and `smoke_runs.json` (G5, G6), E0, the E1
-freeze and runs, E2 to E4, then an independent review. CAP_SHARE stays 0.2.
+Crunch time, 2026-11-11 (goal_turn 6). `main` holds the release commits and the repository
+is public. Raj's order: G1, G2, G3, the canary string, the smoke runs and
+`smoke_runs.json` (G5, G6), E0, the E1 freeze and runs, E2 to E4, then an independent
+review. CAP_SHARE stays 0.2.
 
-- **G1, receipts-hook coverage.** `receipts wrap` and the `receipts` CLI now have real
-  tests (a real git workspace, a real pytest rerun through the test sandbox, real
-  extraction and verification), and the bugs the docs review found are fixed (D50):
-  command claims in a wrapped report are unverifiable, not contradicted, and files
-  untracked before the run are no longer reported as added. Hook coverage measured on
-  the hook and CLI tests alone: 98%.
-- **G2, type-ignore scope.** The brief scopes G2 to the package and calls task
-  repositories third-party code (section 8), so the type-ignore scan now skips
-  `bench/tasks/` and nothing else (D51; a test pins the scope from both sides). The
-  narrower scan then found two bare ignores in project code (`tests/evaluation/test_e3.py`),
-  hidden before because the gate prints only its first findings; both now carry reasons.
-- **RELEASE-READY 01f40e9**: G1, G2, G3, G4, G10, G13, G14 pass in the fast check; `main`
-  and the branch both point at it (D49).
-- **Canary (rule 9, D52).** Every task's `task.toml` and every answer-key file carries the
-  canary string; no file the agent sees does, so the banked smoke runs stay valid runs of
-  the same task. The reference validation, banked again from the canary commit 85f9b92 with
-  a clean `bench/` tree, finds every task valid.
-- **Smoke study restart (D53).** The remaining runs (three Python tasks and the TypeScript
-  catalog tasks other than ts-ci-workflow) run from
-  a snapshot of the commit that banks the validation, with the earlier arm and server
-  settings; nothing in the agent scaffold changed since the earlier runs.
+- **Done:** G1 (real tests for `receipts wrap` and the CLI, D50), G2 (the type-ignore scan
+  skips the synthetic task content under `bench/tasks/`, D51 and D55; the gate passed by
+  that narrowing), G3 on Python 3.11 and 3.12, and the canary string (D52) in every task
+  definition and every answer-key file with a comment syntax (JSON answer-key files carry
+  none; no file the agent sees does). RELEASE-READY 01f40e9; `main` and the branch then
+  moved to e4230cc.
+- **Review of e4230cc: REVIEW: BLOCK** (banked in 2cf2cef). Its documentation findings (B4,
+  N1, N3, N7, N9 to N16) are fixed in e8ee5de, with CORRECTIONS entries. B1 and N4 are
+  fixed next (D56): `make freshness` and `make reproduce` re-derive the smoke summary from
+  the banked run records, and the summary carries the models, config hashes, seeds,
+  environment, and usage of its runs. Still open: B2 (G7 must require a row for every
+  banked E1 run and re-derive outcomes from the ledgers), B3 (G8 must find E2 and E3
+  results bound in the results sections), N5, N6, and G13's per-result links.
+- **E0 verifier mode (D54)**, merged in 8692254: the held-out scoring verifies each seeded
+  report with its task's requirement texts and records `verifier_mode`; `valid_types`,
+  G5, and the G7/G9 instrument check refuse any other evaluation.
+- **Smoke study (D53):** the remaining runs (three Python tasks and the TypeScript catalog
+  tasks other than ts-ci-workflow) run from a snapshot of e4230cc, with the earlier arm
+  and server settings, four at a time.
 
 ## Next three actions
 
-1. Fix what the docs review found in code: `receipts wrap` labels claims about commands
-   contradicted although it records none (they should be unverifiable), and its start
-   state leaves out untracked files; add tests for the wrapper and the `receipts` CLI
-   (this also lifts G1's hook coverage); flag action claims in a Stop-hook session that
-   made no tool call. Then review the integrated pre-freeze work and close its open items:
-   the E0 verifier mode (`e0.predict` passes requirement texts; `seeded_eval.json` records
-   the mode; analyses and g7/g9 check it); DECISIONS entries for the prereg and E1
-   fixers' interpretations; g9 re-deriving Z1 and checking E4 runs against the freeze
-   commit; g7 re-deriving verdicts and checking identical E1 cells; g8 checking K;
-   repeated plan run ids; the trailing word boundary in g7/g9's plan patterns;
-   `prereg.py freeze` refusing unparsable machine-readable lines; E4 banking-code list;
-   the E3 failure log, shared-text stratum, and condition 8; the none and hook arms
-   sharing a response cache key; snapshot contents checked against their commit.
-2. Finish the smoke study (the runs still pending, most of them TypeScript), bank
-   `smoke_runs.json` (G6), run the
-   E0 labelers, writers, and adjudicators (D40, D43), and score the held-out split (G5).
-3. Pilot, power run, E1/E4 plans, fill the TO FIX fields, review, freeze 0001 to 0003, and
-   launch E1 from the freeze-commit snapshot (`runs/launch-study.sh` semantics).
+1. Close the review's remaining gate findings (B2, B3, N5, N6, G13 links), each with
+   tests and an adversarial check, then run `make ci` on fresh clones for both Pythons.
+2. Finish the smoke study, bank its runs and `smoke_runs.json` (G6), update the README
+   numbers from the new `smoke_outcomes.json`, then run the E0 labelers, writers, and
+   adjudicators (D40, D43) and score the held-out split (G5).
+3. Pilot, power run, E1/E4 plans, fill the TO FIX fields, freeze 0001 to 0003, and launch
+   E1 from the freeze-commit snapshot; the next independent review when the daily cap
+   allows.
 
 ## Environment (`make doctor`, 2026-10-23)
 

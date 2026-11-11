@@ -17,6 +17,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import platform
 import subprocess
 import sys
 from collections import Counter
@@ -99,15 +100,44 @@ def summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
-def provenance(paths: Sequence[Path]) -> dict[str, Any]:
-    """Git SHA, command, time, and the SHA-256 of every run record read."""
+def _distinct(values: Sequence[Any]) -> list[Any]:
+    """The distinct values, in a stable order (JSON text order)."""
+    seen = {json.dumps(v, sort_keys=True): v for v in values}
+    return [seen[k] for k in sorted(seen)]
+
+
+def provenance(paths: Sequence[Path], records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Git SHA, command, time, environment, and the SHA-256 of every run record read,
+    with the models, agent-config hashes, seeds, and usage those records give.
+
+    This step makes no model call; ``usage`` sums the token counts the runs recorded.
+    The environment and the first three keys say when and where the file was made, so
+    re-derivation ignores them (``receipts.report.derived.VOLATILE``).
+    """
     sha = subprocess.run(
         ["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
     ).stdout.strip()
+    provs = [r.get("provenance") or {} for r in records]
+    servers = [p.get("model_server") or {} for p in provs]
     return {
         "git_sha": sha,
         "command": " ".join([Path(sys.executable).name, *sys.argv]),
         "created": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
+        "environment": {"python": platform.python_version(), "platform": platform.platform()},
+        "models": _distinct(
+            [
+                {k: s.get(k) for k in ("model", "model_source", "model_sha256", "engine")}
+                for s in servers
+            ]
+        ),
+        "agent_config_sha256": _distinct([p.get("agent_config_sha256") for p in provs]),
+        "seeds": _distinct([(p.get("run_spec") or {}).get("seed") for p in provs]),
+        "usage": {
+            "model_calls": 0,
+            "cash_usd": 0,
+            "runs_input_tokens": sum(int(r.get("input_tokens") or 0) for r in records),
+            "runs_output_tokens": sum(int(r.get("output_tokens") or 0) for r in records),
+        },
         "inputs": {
             (str(p.relative_to(ROOT)) if p.is_relative_to(ROOT) else str(p)): hashlib.sha256(
                 p.read_bytes()
@@ -146,7 +176,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         "summary": totals,
         "runs": rows,
-        "provenance": provenance(paths),
+        "provenance": provenance(paths, records),
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")

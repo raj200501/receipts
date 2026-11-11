@@ -7,7 +7,11 @@ registry from ``artifacts/`` into a temporary file, then requires that:
    (same keys, values, sources, and source hashes), so no committed number is
    stale; and
 2. every marker in each document has a key in the rebuilt registry and shows
-   exactly the rebuilt value.
+   exactly the rebuilt value; and
+3. every derived artifact the registry reads (``receipts.report.derived``, such as
+   the smoke summary built from the banked run records) equals a fresh derivation
+   from its inputs and records exactly the inputs that exist now, so a banked run
+   that the summary leaves out, or a summary value typed by hand, fails here.
 
 A document byte-identical to docs/BUILD_BRIEF.md is exempt, as in claimcheck.
 """
@@ -24,6 +28,7 @@ from pathlib import Path
 
 from claimcheck import BRIEF, REGISTRY, load_registry, markers
 from gitutil import repo_root
+from receipts.report.derived import check as check_derived
 
 
 def rebuild_registry(root: Path, out: Path) -> tuple[bool, str]:
@@ -104,6 +109,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                                 f"{doc}:{line}: {key} shows {shown!r}, rebuilt {value!r}"
                             )
                     print(f"{doc}: {len(markers(text))} live number(s) re-derived")
+        derived = check_derived(root)
+        problems += derived
+        if not derived:
+            print("derived artifacts: each equals a fresh derivation from its inputs")
     for problem in problems:
         print(f"problem: {problem}")
     print("FRESHNESS: " + ("PASS" if not problems else f"FAIL {len(problems)}"))

@@ -673,3 +673,20 @@ and the graders run, receipts never imports it, mypy does not check it, and edit
 in a task's repository changes what the agent sees, so the banked runs would no longer be
 runs of the same task. G2 went from failing to passing by this narrowing, and the README
 says so (rule 13).
+
+**D56. `make freshness` re-derives the artifacts that the registry reads from other
+artifacts.** Recorded 2026-11-11, before the change is committed (review B1). The registry's
+smoke numbers come from `artifacts/exploratory/smoke_outcomes.json`, which
+`tools/smoke_outcomes.py` writes from the banked run records; freshness rebuilt only the
+registry, so a run banked after the summary, or a value typed into the summary, passed G10.
+"Re-derive every live number from artifacts" (section 9 rule 1, G10) is read as re-deriving
+it from the artifacts it is computed from, so `receipts.report.derived` lists each derived
+artifact with its script and input pattern, and freshness and `make reproduce` rerun the
+script into a temporary file. The committed artifact must equal the fresh one except for
+the provenance keys that say when, where, and how it was made (git SHA, command, time,
+environment; a derivation on another commit, Python, or machine gives the same content),
+and its recorded inputs must be exactly the files the pattern matches now, with their
+current hashes. `make report` rewrites a derived artifact only when its content changes,
+so rebuilding does not churn its timestamp. The summary's provenance now also carries the
+models, agent-config hashes, seeds, environment, and token usage of its input runs (review
+N4); artifacts/README.md says what each kind of artifact records.

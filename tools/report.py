@@ -1,10 +1,12 @@
 """``make report`` and ``make reproduce``: numbers, figures, and their manifest.
 
-- ``python tools/report.py`` writes ``artifacts/report/numbers.json``, the SVG figures,
-  and ``artifacts/report/manifest.json`` from banked artifacts only.
+- ``python tools/report.py`` first re-derives each derived artifact that has changed
+  (``receipts.report.derived``: the smoke summary from the banked run records), then
+  writes ``artifacts/report/numbers.json``, the SVG figures, and
+  ``artifacts/report/manifest.json`` from banked artifacts only.
 - ``--numbers-only --out PATH`` rebuilds just the registry into PATH (``make freshness``).
-- ``--reproduce`` rebuilds everything in a temporary directory and fails if any
-  committed output differs.
+- ``--reproduce`` re-derives the derived artifacts and rebuilds everything in a
+  temporary directory, and fails if any committed output differs.
 """
 
 from __future__ import annotations
@@ -15,6 +17,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from receipts.report.build import build, numbers_only, reproduce
+from receipts.report.derived import DerivedError, refresh
+from receipts.report.derived import check as check_derived
 from receipts.report.spec import SPEC
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,11 +39,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"report: {len(numbers)} number(s) rebuilt into {args.out}")
         return 0
     if args.reproduce:
-        problems = reproduce(args.root, SPEC)
+        problems = check_derived(args.root) + reproduce(args.root, SPEC)
         for problem in problems:
             print(f"problem: {problem}")
         print("REPRODUCE: " + ("PASS" if not problems else f"FAIL {len(problems)}"))
         return 0 if not problems else 1
+    try:
+        for path in refresh(args.root):
+            print(f"report: re-derived {path} from its inputs")
+    except DerivedError as exc:
+        print(f"report: {exc}", file=sys.stderr)
+        return 1
     manifest = build(args.root, SPEC)
     figures = manifest["figures"]
     count = len(figures) if isinstance(figures, list) else 0

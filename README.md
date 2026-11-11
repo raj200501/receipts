@@ -208,7 +208,8 @@ The repository enforces its own honesty rules in code ([CLAUDE.md](CLAUDE.md) li
 
 - `make claimcheck`: every result number in this README is bound to a banked artifact
   through the registry in `artifacts/report/numbers.json`, with the artifact's hash;
-  `make freshness` re-derives each one.
+  `make freshness` re-derives each one, and re-derives the smoke summary itself from the
+  banked run records, so a run banked after the summary, or a value typed into it, fails.
 - `make prereg-verify`: preregistrations live in [prereg/](prereg/), and freezing one
   appends its hash to a chain in `prereg/LOCK.json` (none is frozen yet, so that file does
   not exist yet); a confirmatory artifact must cite a preregistration frozen before its
@@ -274,7 +275,7 @@ The parts, run separately:
 ```bash
 make report       # numbers registry, figures, manifest, from banked artifacts only
 make claimcheck   # every number in README.md and docs/REPORT.md is bound to an artifact
-make freshness    # re-derive every bound number from its artifact
+make freshness    # re-derive every bound number, and each derived artifact from its inputs
 make ship-check   # all gates on a fresh clone
 ```
 
