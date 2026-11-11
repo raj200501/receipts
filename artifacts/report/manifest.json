@@ -1,9 +1,11 @@
 {
   "figures": [
+    "docs/figures/demo_report_card.svg",
     "docs/figures/smoke_outcomes.svg"
   ],
   "files": {
     "artifacts/report/numbers.json": "f9d40f8e6f01b4fdb7828906774e9709d1104d011a4e3a5a0a19a872b140fc6a",
+    "docs/figures/demo_report_card.svg": "8a65752fe5df2766080967f4fa519433629a0eca103d2d69f4788c4b87916010",
     "docs/figures/smoke_outcomes.svg": "094341652efd48930a31036acab35a6c6946dfd3973410984bb066d8cda13c57"
   },
   "numbers": 29,

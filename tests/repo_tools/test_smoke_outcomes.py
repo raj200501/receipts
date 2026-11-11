@@ -94,3 +94,33 @@ def test_report_derives_smoke_numbers_and_the_headline_figure(tmp_path: Path) ->
     assert "docs/figures/smoke_outcomes.svg" in manifest["figures"]
     svg = (tmp_path / "docs/figures/smoke_outcomes.svg").read_text(encoding="utf-8")
     assert "False success" in svg and "prefers-color-scheme: dark" in svg
+
+
+def test_text_panel_wraps_and_colors_verdicts() -> None:
+    from receipts.report.svg import text_panel
+
+    lines = [
+        "=== run | agent",
+        "  [SUPPORTED   ] tests_pass: all tests pass.",
+        "  [NOT MENTIONED] hidden check " + "x" * 200 + " failed",
+        "Summary: success reported=True",
+    ]
+    out = text_panel(lines, title="A & B")
+    assert 'class="ok"' in out and 'class="bad"' in out and 'class="title"' in out
+    assert "A &amp; B" in out and out.count("<text") > len(lines) + 1
+
+
+def test_demo_report_card_is_cut_from_the_golden_demo_output(tmp_path: Path) -> None:
+    from receipts.report.spec import DEMO_GOLDEN, demo_report_card
+
+    assert demo_report_card(tmp_path) is None
+    golden = tmp_path / DEMO_GOLDEN
+    golden.parent.mkdir(parents=True)
+    golden.write_text(
+        "header\n=== pilot-py-bizdays | agent\n    recorded from somewhere\nFinal report:\n"
+        "  [SUPPORTED   ] tests_pass: synthetic.\nSummary: done\n\n=== next | agent\n",
+        encoding="utf-8",
+    )
+    svg = demo_report_card(tmp_path)
+    assert svg is not None and "recorded from" not in svg and "Summary: done" in svg
+    assert "next" not in svg

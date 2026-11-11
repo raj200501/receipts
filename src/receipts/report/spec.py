@@ -17,7 +17,7 @@ from typing import Any
 
 from receipts.report.build import ReportSpec
 from receipts.report.registry import fmt_ci, fmt_pct, fmt_rate, load_artifact
-from receipts.report.svg import Bar, bar_chart
+from receipts.report.svg import Bar, bar_chart, text_panel
 
 SPEC = ReportSpec()
 
@@ -104,3 +104,24 @@ def smoke_outcomes_figure(root: Path) -> str | None:
         "share of runs, Wilson 95% intervals"
     )
     return bar_chart(bars, title=title, y_label="share of runs", width=720)
+
+
+DEMO_GOLDEN = "tests/golden/demo_output.txt"
+DEMO_RUN = "=== pilot-py-bizdays"
+
+
+@SPEC.figure("docs/figures/demo_report_card.svg")
+def demo_report_card(root: Path) -> str | None:
+    """One recorded run's report card, cut from the committed ``make demo`` golden output."""
+    path = root / DEMO_GOLDEN
+    if not path.is_file():
+        return None
+    lines = path.read_text(encoding="utf-8").splitlines()
+    starts = [i for i, line in enumerate(lines) if line.startswith(DEMO_RUN)]
+    if not starts:
+        return None
+    end = next(
+        (i for i in range(starts[0], len(lines)) if lines[i].startswith("Summary:")), len(lines) - 1
+    )
+    section = [line for line in lines[starts[0] : end + 1] if not line.startswith("    recorded")]
+    return text_panel(section, title="make demo: one recorded run, checked claim by claim")

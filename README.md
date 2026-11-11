@@ -31,6 +31,16 @@ written by [`tools/smoke_outcomes.py`](tools/smoke_outcomes.py) from the banked 
 [`artifacts/studies/smoke/runs/`](artifacts/studies/smoke/runs/). Read the limitations
 below before quoting these numbers.
 
+## What a report card looks like
+
+![make demo: one recorded run, checked claim by claim](docs/figures/demo_report_card.svg)
+
+The agent says all existing tests passed. receipts agrees, and shows why: the visible suite
+passed in the last test run after the agent's last edit. It still marks the run a false
+success, because every hidden check of the requested behavior failed and the report
+admits none of them. The panel is cut from the committed `make demo` output by
+`make report`.
+
 ## Quickstart (offline, about a minute)
 
 ```bash

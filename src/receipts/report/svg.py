@@ -97,3 +97,68 @@ def bar_chart(
         )
     parts.append("</svg>")
     return "\n".join(parts) + "\n"
+
+
+TERMINAL_STYLE = """<style>
+svg { --bg: #f6f8fa; --fg: #1f2328; --muted: #59636e; --ok: #1a7f37; --bad: #cf222e;
+      --warn: #9a6700; --edge: #d1d9e0; }
+@media (prefers-color-scheme: dark) {
+  svg { --bg: #151b23; --fg: #e6edf3; --muted: #9198a1; --ok: #3fb950; --bad: #f85149;
+        --warn: #d29922; --edge: #3d444d; }
+}
+rect.panel { fill: var(--bg); stroke: var(--edge); }
+text { fill: var(--fg); font: 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+       white-space: pre; }
+.muted { fill: var(--muted); } .ok { fill: var(--ok); } .bad { fill: var(--bad); }
+.warn { fill: var(--warn); } .title { font-weight: 600; }
+</style>"""
+
+
+def _line_class(line: str) -> str:
+    stripped = line.lstrip()
+    if stripped.startswith("[SUPPORTED"):
+        return "ok"
+    if stripped.startswith(("[CONTRADICTED", "[NOT MENTIONED")):
+        return "bad"
+    if stripped.startswith("[UNVERIFIABLE"):
+        return "warn"
+    if stripped.startswith(("Summary:", "===")):
+        return "title"
+    if line.startswith("    "):
+        return "muted"
+    return ""
+
+
+def text_panel(lines: Sequence[str], *, title: str, width: int = 860, wrap: int = 108) -> str:
+    """A terminal-style panel of monospace lines (long lines wrapped), as an SVG string.
+
+    Lines that start with a verdict tag are colored by verdict, so the panel reads like
+    the console output it reproduces, in both GitHub themes.
+    """
+    import textwrap
+
+    if not lines:
+        raise ValueError("a panel needs at least one line")
+    rows: list[tuple[str, str]] = []
+    for line in lines:
+        indent = len(line) - len(line.lstrip())
+        pieces = textwrap.wrap(
+            line.strip(), wrap - indent, subsequent_indent="  ", break_long_words=True
+        ) or [""]
+        cls = _line_class(line)
+        rows.extend((" " * indent + piece, cls) for piece in pieces)
+    step, top = 17, 44
+    height = top + step * len(rows) + 16
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
+        f'width="{width}" height="{height}" role="img" aria-label="{escape(title)}">',
+        TERMINAL_STYLE,
+        f'<rect class="panel" x="0.5" y="0.5" width="{width - 1}" height="{height - 1}" rx="8"/>',
+        f'<text class="title" x="16" y="26">{escape(title)}</text>',
+    ]
+    for i, (text, cls) in enumerate(rows):
+        attr = f' class="{cls}"' if cls else ""
+        y = top + step * (i + 1) - 4
+        parts.append(f'<text{attr} x="16" y="{y}" xml:space="preserve">{escape(text)}</text>')
+    parts.append("</svg>")
+    return "\n".join(parts) + "\n"
