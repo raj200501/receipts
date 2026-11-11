@@ -1902,6 +1902,11 @@ def g4(ctx: Context) -> str:
 SMOKE_RUNS = "artifacts/bench/smoke_runs.json"
 E0_COUNTS = "artifacts/e0/claim_type_counts.json"
 E0_EVAL = "artifacts/e0/seeded_eval.json"
+# The verifier mode the held-out evaluation must record (prereg 0001 section 5, Instrument
+# version; DECISIONS D54; receipts.evaluation.e0.VERIFIER_MODE): each seeded report
+# verified with the requirement texts of the task its ledger's run_start names. An
+# evaluation in another mode did not evaluate the instrument the studies use.
+E0_VERIFIER_MODE = "task_requirements"
 E0_MANIFEST = "artifacts/e0/heldout_manifest.json"
 E0_HELDOUT = "artifacts/e0/seeded/heldout"
 E0_COMPLETENESS = "artifacts/e0/ledger_completeness.json"
@@ -1920,6 +1925,19 @@ INSTRUMENT_ROOTS = ("receipts.claims", "receipts.verify", "receipts.evaluation.e
 # imports are followed wherever they are.
 INSTRUMENT_STEP = "receipts.evaluation.e0"
 Ignorable = dict[tuple[str, str], tuple[frozenset[str], tuple[int, int]]]
+
+
+def require_verifier_mode(seeded: Mapping[str, Any]) -> None:
+    """The held-out evaluation records that it verified every seeded report in the
+    preregistered verifier mode (:data:`E0_VERIFIER_MODE`). G5 and, where they read the
+    evaluation, G7 and G9 require it."""
+    mode = seeded.get("verifier_mode")
+    require(
+        mode == E0_VERIFIER_MODE,
+        f"{E0_EVAL} was not made in the preregistered verifier mode: it records "
+        f"verifier_mode {mode!r}, not {E0_VERIFIER_MODE!r} (each seeded report verified "
+        "with the requirement texts of its ledger's task; prereg 0001 section 5)",
+    )
 
 
 def is_real_agent(agent: object) -> bool:
@@ -2485,6 +2503,7 @@ def g5(ctx: Context) -> str:
     seeded = load_json(root, E0_EVAL)
     require_provenance(E0_EVAL, seeded)
     require(seeded.get("split") == "heldout", "seeded_eval.json is not the held-out split")
+    require_verifier_mode(seeded)
     require(
         seeded.get("heldout_manifest") == E0_MANIFEST,
         f"seeded_eval.json does not cite {E0_MANIFEST}",
@@ -2818,16 +2837,19 @@ ROW_INSTRUMENT_PATHS = ("src/receipts/claims", "src/receipts/verify", "src/recei
 def evaluated_trees(root: Path) -> Evaluated:
     """``(commit, trees)`` of the instrument the held-out G5 evaluation scored
     (``instrument`` in artifacts/e0/seeded_eval.json), after checking that the file is
-    the held-out split, that it ran a clean instrument (``dirty`` false, nothing
-    uncommitted), at a commit of this repository, and that it records a git tree for
-    every path it covers, :data:`ROW_INSTRUMENT_PATHS` among them (prereg 0001 section
-    5, Instrument version). ``trees`` holds the trees of :data:`ROW_INSTRUMENT_PATHS`
-    only, the ones a row's instrument record must equal."""
+    the held-out split, made in the preregistered verifier mode
+    (:func:`require_verifier_mode`), that it ran a clean instrument (``dirty`` false,
+    nothing uncommitted), at a commit of this repository, and that it records a git tree
+    for every path it covers, :data:`ROW_INSTRUMENT_PATHS` among them (prereg 0001
+    section 5, Instrument version). ``trees`` holds the trees of
+    :data:`ROW_INSTRUMENT_PATHS` only, the ones a row's instrument record must equal.
+    It is the one place G7 and G9 read the evaluation's fields."""
     seeded = load_json(root, E0_EVAL)
     require(
         isinstance(seeded, dict) and seeded.get("split") == "heldout",
         f"{E0_EVAL} is not the held-out G5 evaluation (split: heldout)",
     )
+    require_verifier_mode(seeded)
     instrument = seeded.get("instrument")
     require(isinstance(instrument, dict), f"{E0_EVAL} does not record the instrument it evaluated")
     assert isinstance(instrument, dict)

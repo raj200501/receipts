@@ -238,6 +238,12 @@ def test_overlap_with_e1_and_a_missing_evaluation_fail(
     write_json(tmp_path / analyze_e4.SEEDED_EVAL, {**seeded_eval(), "instrument": None})
     assert run(tmp_path) == 1
     assert "instrument" in capsys.readouterr().err
+    # An evaluation made without the task requirements (DECISIONS D54): no artifact.
+    other = {**seeded_eval(), "verifier_mode": "no_requirements"}
+    write_json(tmp_path / analyze_e4.SEEDED_EVAL, other)
+    assert run(tmp_path) == 1
+    assert "verifier mode" in capsys.readouterr().err
+    assert not (tmp_path / DEFAULT_OUT).exists()
 
 
 def test_without_a_plan_or_e1_the_gaps_are_recorded(tmp_path: Path) -> None:

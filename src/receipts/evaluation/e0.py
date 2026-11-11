@@ -28,14 +28,18 @@ order (docs/E0_PROTOCOL.md, "Files and commands"):
    each report bound to the ledger its writer's packet was built from.
 9. :func:`evaluate`: precision and recall per claim type, with Wilson intervals; the
    held-out half only on committed code, with the top five from checked counts, and
-   every attempt logged.
+   every attempt logged. Every report is verified in the preregistered verifier mode
+   (:data:`VERIFIER_MODE`): with the requirement texts of the task its ledger's
+   ``run_start`` names (:func:`score_document`).
 10. :func:`completeness_artifact`: E0b ledger completeness.
 
 Blindness: labelers, writers, and adjudicators run ``check-labels``, ``check-raw``, and
 ``check-adjudication``, so this module imports ``receipts.claims`` and
 ``receipts.verify`` only inside the two functions that need them
 (:func:`count_claim_types` and :func:`predict`). A test runs the three commands in a
-subprocess and checks that neither package is loaded.
+subprocess and checks that neither package is loaded. (The task loader,
+``receipts.bench.spec``, is imported at module level: it is neither, and the scoring
+step needs it.)
 """
 
 from __future__ import annotations
@@ -52,6 +56,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from receipts.bench.spec import load_task
 from receipts.evaluation import GOLD_CLAIM_TYPES
 from receipts.evaluation.facts import fact_lines
 from receipts.evaluation.seeded import (
@@ -63,7 +68,7 @@ from receipts.evaluation.seeded import (
     report_items,
     score,
 )
-from receipts.ledger.events import Ledger
+from receipts.ledger.events import Ledger, canonical_json, sha256_text
 
 #: Seed of every seeded hash in E0: the dev/held-out split and the choice of phrasing
 #: examples. Fixed before any seeded report exists.
@@ -71,14 +76,23 @@ SPLIT_SEED = 20261107
 #: The instrument's source (D31). Counts and the held-out evaluation refuse to run
 #: while either has uncommitted changes.
 INSTRUMENT_PATHS: tuple[str, ...] = ("src/receipts/claims", "src/receipts/verify")
-#: What turns a seeded report into scoring items: the instrument, the ledger reader, and
-#: the scorer (the paths gate G5 holds unchanged since the evaluated commit). The held-out
-#: evaluation refuses while any of them has uncommitted changes.
+#: What turns a seeded report into scoring items: the instrument, the ledger reader, the
+#: scorer, and the task loader that gives each report its requirement texts (the paths
+#: whose files gate G5 holds unchanged since the evaluated commit; DECISIONS D36, D54).
+#: The held-out evaluation refuses while any of them has uncommitted changes.
 SCORING_PATHS: tuple[str, ...] = (
     *INSTRUMENT_PATHS,
     "src/receipts/ledger",
     "src/receipts/evaluation",
+    "src/receipts/bench",
 )
+#: The verifier mode every evaluation runs in and records (prereg 0001 section 5,
+#: Instrument version; DECISIONS D54): ``verify_run`` is given the requirement texts of
+#: the task that the seeded report's ledger's ``run_start`` names, the mapping the
+#: banking (``receipts.study.rescore.task_requirements``) and the runner pass.
+VERIFIER_MODE = "task_requirements"
+#: Where the benchmark tasks are, under the repository root (``bench/tasks/<task_id>/``).
+TASKS_DIR = "bench/tasks"
 #: The protocol's names of the instrument (brief section 5, docs/E0_PROTOCOL.md). A tool
 #: call or tool result of a labeler, writer, or adjudicator that mentions any of them voids it.
 FORBIDDEN_REFERENCES: tuple[str, ...] = (
@@ -2453,13 +2467,46 @@ def subject(params: Mapping[str, object]) -> str:
     return ""
 
 
-def predict(report: str, ledger: Ledger) -> list[PredictedClaim]:
-    """The instrument's claims for ``report``: pattern extractor, then the verifier."""
+def task_requirements(root: Path, task_id: str) -> dict[str, str]:
+    """The requirement texts of the benchmark task ``root/bench/tasks/<task_id>/``.
+
+    ``TaskSpec.requirement_texts()`` of :func:`receipts.bench.spec.load_task`: the mapping
+    ``receipts.study.rescore.task_requirements`` gives the banking and the runner gives
+    the verifier (a contract test keeps the two equal). Raises E0Error when ``task_id``
+    is not a plain id, the task does not exist, or its files break the task spec.
+    """
+    if not is_id(task_id):
+        raise E0Error(f"task id {task_id!r} is not a plain id")
+    task_dir = root / TASKS_DIR / task_id
+    if not task_dir.is_dir():
+        raise E0Error(f"no task {task_id!r} under {TASKS_DIR}")
+    try:
+        return dict(load_task(task_dir).requirement_texts())
+    except (ValueError, OSError) as exc:  # TaskSpecError is a ValueError
+        raise E0Error(f"task {task_id} does not load ({exc})") from exc
+
+
+def requirements_sha256(requirements: Mapping[str, str]) -> str:
+    """SHA-256 of a requirement mapping as canonical JSON (sorted keys, compact, UTF-8)."""
+    return sha256_text(canonical_json(dict(requirements)))
+
+
+def predict(report: str, ledger: Ledger, requirements: Mapping[str, str]) -> list[PredictedClaim]:
+    """The instrument's claims for ``report``: the pattern extractor, then the verifier.
+
+    The verifier runs in :data:`VERIFIER_MODE`: ``requirements`` are the requirement
+    texts of the run's task (:func:`task_requirements`), so a ``bug_fixed``,
+    ``feature_implemented``, or ``could_not`` claim is judged on the hidden checks of the
+    requirements it maps to. An empty mapping is passed as None, as the runner and the
+    banking pass a task without requirements.
+    """
     from receipts.claims.extract import extract_claims  # scoring only (blindness)
     from receipts.verify import verify_run
 
     claims = extract_claims(report)
-    verification = verify_run(claims, ledger, report=report)
+    verification = verify_run(
+        claims, ledger, requirements=dict(requirements) or None, report=report
+    )
     return [
         PredictedClaim(c.type.value, c.span, v.label.value, c.claim_id, subject(c.params))
         for c, v in zip(verification.claims, verification.verdicts, strict=True)
@@ -2472,13 +2519,33 @@ def _span(value: object) -> tuple[int, int]:
     return (int(value[0]), int(value[1]))
 
 
-def score_document(root: Path, document: Mapping[str, Any]) -> list[dict[str, object]]:
-    """Scoring items for one seeded report file (its ledger must match its hash)."""
+def score_document(
+    root: Path, document: Mapping[str, Any]
+) -> tuple[list[dict[str, object]], dict[str, str]]:
+    """Scoring items for one seeded report file, and the requirements it was verified with.
+
+    The report's ledger must match its hash. The verifier runs in :data:`VERIFIER_MODE`,
+    with the requirement texts of the task that the ledger's ``run_start`` names
+    (:func:`task_requirements`); the second value records them as ``task_id`` and
+    ``requirements_sha256`` (:func:`requirements_sha256`). Raises E0Error when the
+    ledger is missing or changed, or names no task whose requirements load: the report
+    is never verified without them.
+    """
     report_id = str(document["report_id"])
     ledger_path = root / str(document["ledger"])
     if not ledger_path.is_file() or sha256_file(ledger_path) != document.get("ledger_sha256"):
         raise E0Error(f"report {report_id}: ledger {document['ledger']} is missing or changed")
     ledger = Ledger.load(ledger_path)
+    start = ledger.run_start()
+    task_id = start.data.get("task_id") if start is not None else None
+    if not isinstance(task_id, str) or not is_id(task_id):
+        raise E0Error(
+            f"report {report_id}: its ledger's run_start names no plain task id ({task_id!r})"
+        )
+    try:
+        requirements = task_requirements(root, task_id)
+    except E0Error as exc:
+        raise E0Error(f"report {report_id}: {exc}") from exc
     gold = [
         GoldClaim(
             str(g["claim_type"]),
@@ -2495,7 +2562,9 @@ def score_document(root: Path, document: Mapping[str, Any]) -> list[dict[str, ob
         )
         for c in document["ignored"]
     ]
-    return report_items(report_id, gold, predict(str(document["report"]), ledger), ignored)
+    predicted = predict(str(document["report"]), ledger, requirements)
+    record = {"task_id": task_id, "requirements_sha256": requirements_sha256(requirements)}
+    return report_items(report_id, gold, predicted, ignored), record
 
 
 def type_entry(result: TypeScore) -> dict[str, Any]:
@@ -2636,6 +2705,10 @@ def evaluate(
     pass only when five types were counted. ``dev`` checks none of this (it is the
     development loop, so a dirty instrument is recorded, not refused), is not logged,
     and is never read by the gate.
+
+    Both splits verify every report in :data:`VERIFIER_MODE` (:func:`score_document`)
+    and record it: ``verifier_mode``, and ``report_requirements`` with each scored
+    report's ``task_id`` and ``requirements_sha256``.
     """
     if split not in ("heldout", "dev"):
         raise E0Error(f"unknown split {split!r}")
@@ -2668,8 +2741,14 @@ def evaluate(
     method = counts_data.get("method") if isinstance(counts_data, dict) else None
     top5 = top_types(counted)
     items: list[dict[str, object]] = []
+    verified: dict[str, dict[str, str]] = {}
     for path in files:
-        items.extend(score_document(root, load_json(path)))
+        document = load_json(path)
+        report_id = str(document["report_id"])
+        if report_id in verified:
+            raise E0Error(f"report {report_id} appears in more than one seeded report file")
+        scored, verified[report_id] = score_document(root, document)
+        items.extend(scored)
     scores = score(items)
     for name in top5:
         scores.setdefault(name, TypeScore(name, 0, 0, 0))
@@ -2685,6 +2764,8 @@ def evaluate(
         "claim_type_counts": COUNTS if counts_path.is_file() else None,
         "claim_type_counts_sha256": sha256_file(counts_path) if counts_path.is_file() else None,
         "claim_type_counts_method": method,
+        "verifier_mode": VERIFIER_MODE,
+        "report_requirements": dict(sorted(verified.items())),
         "reports": len(files),
         "items": items,
         "per_type": per_type,

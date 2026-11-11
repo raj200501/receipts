@@ -94,7 +94,9 @@ INSTRUMENT = {
     "src/receipts/evaluation/e3.py": "from receipts.evaluation.judges import JUDGES\n",
     "src/receipts/evaluation/mechanism.py": "# SYNTHETIC stand-in for E2\nMECHANISM = 1\n",
 }
-# The paths tools/e0.py checks for uncommitted changes before a held-out evaluation.
+# The paths the stand-in evaluation checked for uncommitted changes: those tools/e0.py
+# checks before a held-out evaluation, less src/receipts/bench, whose task loader the real
+# E0 module imports (DECISIONS D54) and the stand-in does not.
 CHECKED_PATHS = (
     "src/receipts/claims",
     "src/receipts/verify",
@@ -216,6 +218,7 @@ def seeded_eval(
     data: dict[str, Any] = {
         "split": "heldout",
         "heldout_manifest": MANIFEST,
+        "verifier_mode": "task_requirements",
         "items": list(items),
         "instrument": {
             "commit": instrument,
@@ -391,6 +394,27 @@ def test_evaluation_must_cite_the_canonical_manifest(git_repo: Path, commit: Com
     put(git_repo, "artifacts/e0/ledger_completeness.json", completeness())
     sha = commit(git_repo, "evaluate")
     with pytest.raises(GateError, match=r"does not cite artifacts/e0/heldout_manifest\.json"):
+        ship_check.g5(context(git_repo, sha))
+
+
+@pytest.mark.parametrize("mode", [None, "no_requirements", ""])
+def test_an_evaluation_in_another_verifier_mode_fails(
+    git_repo: Path, commit: Commit, mode: str | None
+) -> None:
+    # Prereg 0001 section 5 and DECISIONS D54: scored without each report's task
+    # requirements, the evaluation did not evaluate the instrument.
+    evaluated = base(git_repo, commit)
+    write_heldout(git_repo, DOCS)
+    commit(git_repo, "freeze the held-out half")
+    data = seeded_eval(perfect_items(DOCS), evaluated)
+    if mode is None:
+        del data["verifier_mode"]
+    else:
+        data["verifier_mode"] = mode
+    put(git_repo, EVAL, data)
+    put(git_repo, "artifacts/e0/ledger_completeness.json", completeness())
+    sha = commit(git_repo, "evaluate without the task requirements")
+    with pytest.raises(GateError, match="verifier mode"):
         ship_check.g5(context(git_repo, sha))
 
 

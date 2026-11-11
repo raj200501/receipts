@@ -270,7 +270,12 @@ def seeded_eval(gold: Mapping[str, int], trees: Mapping[str, str] = TREES) -> di
         for i in range(n)
     ]
     instrument = {"commit": "b" * 40, "paths": list(trees), "trees": dict(trees)}
-    return {"split": "heldout", "items": items, "instrument": instrument}
+    return {
+        "split": "heldout",
+        "verifier_mode": "task_requirements",
+        "items": items,
+        "instrument": instrument,
+    }
 
 
 #: SYNTHETIC valid types: tests_pass has 10 held-out gold claims, file_modified 9 (below

@@ -161,6 +161,16 @@ def test_task_requirements_are_the_ones_the_runner_passes() -> None:
     assert expected
 
 
+def test_e0_verifies_with_the_requirements_the_banking_passes() -> None:
+    """REAL committed task files, read-only: the held-out evaluation's verifier mode
+    (DECISIONS D54) gives every task the requirement texts that re-verification at
+    banking gives it."""
+    tasks = sorted(p.parent.name for p in (ROOT / "bench" / "tasks").glob("*/task.toml"))
+    assert tasks
+    for task_id in tasks:
+        assert e0.task_requirements(ROOT, task_id) == rescore.task_requirements(ROOT, task_id)
+
+
 @pytest.mark.parametrize("task_id", ["", ".", "..", "../py-api-docs", "py/api", "a\\b"])
 def test_task_requirements_refuse_ids_that_are_not_one_directory(task_id: str) -> None:
     with pytest.raises(ValueError, match="task id"):
@@ -629,6 +639,7 @@ def seeded(entries: Sequence[Any], **over: Any) -> dict[str, Any]:
         "schema": "receipts.e0.seeded_eval/1",
         "split": "heldout",
         "synthetic_reports": True,
+        "verifier_mode": "task_requirements",
         "items": [dict(e) if isinstance(e, Mapping) else e for e in entries],
         "instrument": dict(INSTRUMENT),
         **over,
@@ -713,6 +724,33 @@ def test_thresholds_are_the_g5_thresholds() -> None:
     assert rescore.GOLD_MIN == 10
 
 
+def test_the_verifier_mode_is_the_one_e0_records_and_the_gates_require() -> None:
+    assert e0.VERIFIER_MODE == ship_check.E0_VERIFIER_MODE == "task_requirements"
+    assert f"verifier_mode {e0.VERIFIER_MODE!r}" in rescore.VERIFIER_MODE_RULE
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [pytest.param(None, id="missing"), "", "no_requirements", "TASK_REQUIREMENTS", True],
+)
+def test_valid_types_refuse_an_evaluation_in_another_verifier_mode(mode: object) -> None:
+    """Prereg 0001 section 5 (Instrument version) and section 11 item 7, DECISIONS D54:
+    an evaluation that did not verify each seeded report with its task's requirements
+    did not evaluate the instrument, so no valid type comes from it."""
+    data = seeded(items("tests_pass", correct=10))
+    if mode is None:
+        del data["verifier_mode"]
+    else:
+        data["verifier_mode"] = mode
+    with pytest.raises(ValueError, match="verifier mode") as refused:
+        rescore.valid_types(data)
+    assert rescore.VERIFIER_MODE_RULE in str(refused.value)
+    assert "requirement texts of the task" in rescore.VERIFIER_MODE_RULE
+    # The split is checked first: a development evaluation is refused as that.
+    with pytest.raises(ValueError, match="held-out"):
+        rescore.valid_types({**data, "split": "dev"})
+
+
 def test_valid_types_return_the_evaluated_instrument_and_digest(tmp_path: Path) -> None:
     data = seeded(items("tests_pass", correct=10))
     result = rescore.valid_types(data)
@@ -752,7 +790,10 @@ def test_valid_types_return_the_evaluated_instrument_and_digest(tmp_path: Path) 
     ("data", "message"),
     [
         (seeded([], split="dev"), "held-out"),
-        ({"split": "heldout", "instrument": INSTRUMENT}, "items"),
+        (
+            {"split": "heldout", "verifier_mode": "task_requirements", "instrument": INSTRUMENT},
+            "items",
+        ),
         (seeded([{"gold_verdict": "supported"}]), "claim_type"),
         (seeded(["not an item"]), "item 0"),
         (seeded([item("tests_pass", "maybe", None)]), "gold_verdict"),

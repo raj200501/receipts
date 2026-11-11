@@ -154,6 +154,9 @@ def test_the_whole_pipeline_through_the_command_line(
     )
     evaluation = json.loads((git_repo / e0.EVAL).read_text("utf-8"))
     assert evaluation["provenance"]["command"] == "python tools/e0.py evaluate"
+    # Verified in the preregistered verifier mode, with a record per report (D54).
+    assert evaluation["verifier_mode"] == "task_requirements"
+    assert sorted(evaluation["report_requirements"]) == ["rep-3", "rep-9"]
     alt = git_repo / "rescored.json"
     assert run(git_repo, "evaluate", "--out", str(alt)) == 2
     assert "commit the earlier held-out attempt" in capsys.readouterr().err
@@ -358,7 +361,7 @@ def test_label_packets_exit_1_when_a_packet_would_void_its_labeler(
 ) -> None:
     runs = make_world(git_repo)
     write_run(runs, "r6", "Moved the checks into `app/verify/rules.py`.")
-    row = {"run_id": "r6", "task_id": "t-alpha", "agent": SMOKE_AGENT, "synthetic": False}
+    row = {"run_id": "r6", "task_id": "py-alpha", "agent": SMOKE_AGENT, "synthetic": False}
     write_smoke_summary(git_repo, [*smoke_rows(), row])
     commit(git_repo, "world")
     out = git_repo / "lp"

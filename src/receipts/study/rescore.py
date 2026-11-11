@@ -50,14 +50,17 @@ API (other modules build on exactly this):
   :func:`load_valid_types` always sets it, :func:`valid_types` only when given).
 
 The rule of :func:`valid_types`, over the items of a held-out evaluation (``split:
-heldout``): items with ``ignored: true`` (predictions on claims adjudication dropped)
-are left out; per claim type, gold items have a gold verdict, predicted items a
-predicted verdict, and correct items are gold items whose predicted verdict equals the
-gold one; precision = correct / predicted and recall = correct / gold, as point
-estimates, as ``tools/ship_check.py`` g5 computes them. A type is valid when gold >=
-:data:`GOLD_MIN`, predicted >= 1, precision >= :data:`PRECISION_MIN`, and recall >=
-:data:`RECALL_MIN`. Every type in the evaluation is judged, not only the five most
-common.
+heldout``) made in the preregistered verifier mode (``verifier_mode`` is
+:data:`VERIFIER_MODE`, ``receipts.evaluation.e0``'s: each seeded report verified with
+its task's requirement texts, DECISIONS D54; any other evaluation is refused, so no
+analysis takes valid types from it): items with ``ignored: true`` (predictions on
+claims adjudication dropped) are left out; per claim type, gold items have a gold
+verdict, predicted items a predicted verdict, and correct items are gold items whose
+predicted verdict equals the gold one; precision = correct / predicted and recall =
+correct / gold, as point estimates, as ``tools/ship_check.py`` g5 computes them. A type
+is valid when gold >= :data:`GOLD_MIN`, predicted >= 1, precision >=
+:data:`PRECISION_MIN`, and recall >= :data:`RECALL_MIN`. Every type in the evaluation is
+judged, not only the five most common.
 """
 
 from __future__ import annotations
@@ -72,7 +75,7 @@ from typing import Any
 
 from receipts.bench.spec import load_task
 from receipts.claims.extract import extract_claims
-from receipts.evaluation.e0 import INSTRUMENT_PATHS, E0Error, instrument_state
+from receipts.evaluation.e0 import INSTRUMENT_PATHS, VERIFIER_MODE, E0Error, instrument_state
 from receipts.evaluation.seeded import VERDICTS
 from receipts.ledger.events import Ledger, stored_text
 from receipts.verify import verify_run
@@ -85,8 +88,9 @@ RECALL_MIN = 0.90
 #: The paths an instrument record covers: exactly the code :func:`rescore_run` runs,
 #: the extractor and the verifier (``receipts.evaluation.e0.INSTRUMENT_PATHS``) and the
 #: ledger reader (DECISIONS D47). The held-out G5 evaluation records each of them among
-#: its ``SCORING_PATHS``; the rest of ``src/receipts/evaluation`` (the E0 scorer, E2 and
-#: E3 code) is not bound to the rows.
+#: its ``SCORING_PATHS``; its other paths (the rest of ``src/receipts/evaluation``, with
+#: the E0 scorer and the E2 and E3 code, and the task loader in ``src/receipts/bench``,
+#: DECISIONS D54) are not bound to the rows.
 INSTRUMENT_RECORD_PATHS: tuple[str, ...] = (*INSTRUMENT_PATHS, "src/receipts/ledger")
 #: The keys of an instrument record.
 INSTRUMENT_KEYS: tuple[str, ...] = ("commit", "paths", "trees", "dirty", "uncommitted")
@@ -95,6 +99,15 @@ VALID_TYPE_RULE = (
     "ignored items left out, it has at least 10 gold claims, at least one predicted "
     "claim, precision = correct / predicted >= 0.95, and recall = correct / gold >= "
     "0.90 (point estimates; every type in the evaluation is judged)"
+)
+#: The rule an evaluation must meet before any type is judged (prereg 0001 section 5,
+#: Instrument version, and section 11 item 7; DECISIONS D54). ``VERIFIER_MODE`` is the
+#: name ``receipts.evaluation.e0`` records for it.
+VERIFIER_MODE_RULE = (
+    f"the held-out evaluation must record verifier_mode {VERIFIER_MODE!r}: each seeded "
+    "report verified with the requirement texts of the task that its ledger's run_start "
+    "names; an evaluation in another verifier mode did not evaluate the instrument, and "
+    "no row is confirmatory with it"
 )
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -426,16 +439,23 @@ def valid_types(seeded_eval: Mapping[str, Any], *, sha256: str | None = None) ->
             (:func:`load_valid_types` computes it).
 
     Raises:
-        ValueError: It is not the held-out split; it has no items list; an item is not
-            an object, has no claim type, has a verdict outside supported,
-            contradicted, and unverifiable, has an ``ignored`` other than true or
-            false, or is ignored and has a gold verdict; the instrument is missing or
-            malformed; or ``sha256`` is not 64 lowercase hex digits.
+        ValueError: It is not the held-out split; its ``verifier_mode`` is missing or
+            other than :data:`VERIFIER_MODE` (:data:`VERIFIER_MODE_RULE`); it has no
+            items list; an item is not an object, has no claim type, has a verdict
+            outside supported, contradicted, and unverifiable, has an ``ignored`` other
+            than true or false, or is ignored and has a gold verdict; the instrument is
+            missing or malformed; or ``sha256`` is not 64 lowercase hex digits.
     """
     if sha256 is not None and not _SHA256.match(sha256):
         raise ValueError(f"{sha256!r} is not a SHA-256 digest (64 lowercase hex digits)")
     if seeded_eval.get("split") != "heldout":
         raise ValueError("the seeded evaluation is not the held-out split (split: heldout)")
+    mode = seeded_eval.get("verifier_mode")
+    if mode != VERIFIER_MODE:
+        raise ValueError(
+            f"the seeded evaluation was not made in the preregistered verifier mode (it "
+            f"records verifier_mode {mode!r}): {VERIFIER_MODE_RULE}"
+        )
     items = seeded_eval.get("items")
     if not isinstance(items, list):
         raise ValueError("the seeded evaluation has no items list")

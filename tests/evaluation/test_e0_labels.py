@@ -164,11 +164,11 @@ def test_real_smoke_runs_refuse_a_summary_the_bank_does_not_back(
         expected = "smoke run '../r1' does not have a plain run id"
     elif problem == "task":
         write_smoke_summary(tmp_path, [dict(rows[0], task_id="t-gamma"), *rows[1:]])
-        expected = "smoke run r1: run.json records task 't-alpha', not 't-gamma'"
+        expected = "smoke run r1: run.json records task 'py-alpha', not 't-gamma'"
     elif problem == "start":
         # A ledger banked under r1 that opens with another run's run_start.
         (runs / "r1" / "ledger.jsonl").unlink()
-        write_ledger(runs / "r1" / "ledger.jsonl", "r2", "t-alpha", RUN_REPORTS["r1"])
+        write_ledger(runs / "r1" / "ledger.jsonl", "r2", "py-alpha", RUN_REPORTS["r1"])
         expected = "smoke run r1: its ledger does not open with the run_start of this run"
     elif problem == "synthetic":
         record_path.write_text(json.dumps(dict(record, synthetic=True)), "utf-8")
@@ -257,7 +257,7 @@ def test_label_packets_flag_a_report_that_would_void_its_labeler(
 ) -> None:
     runs = make_world(git_repo)
     write_run(runs, "r6", "Moved the checks into `app/verify/rules.py`.")
-    row = {"run_id": "r6", "task_id": "t-alpha", "agent": SMOKE_AGENT, "synthetic": False}
+    row = {"run_id": "r6", "task_id": "py-alpha", "agent": SMOKE_AGENT, "synthetic": False}
     write_smoke_summary(git_repo, [*smoke_rows(), row])
     commit(git_repo, "world")
     out = git_repo / "lp"
@@ -575,7 +575,7 @@ def test_a_new_scan_applies_the_clearances_the_blindness_file_records(
     git_repo: Path, commit: Commit
 ) -> None:
     paths = labeled(git_repo, commit)
-    task_file = {"file_path": "/home/user/receipts/bench/tasks/t-alpha/task.toml"}
+    task_file = {"file_path": "/home/user/receipts/bench/tasks/py-alpha/task.toml"}
     agents = write_label_agents(
         git_repo / "reviewed", paths["packets"], tool_use_line("Read", task_file)
     )

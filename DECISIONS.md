@@ -631,6 +631,37 @@ command). The remaining runs therefore use `tools/snapshot_code.sh` on the commi
 banks the canary validation, with the same arm and server settings as before (`--threads
 3 --parallel 4 --request-timeout 3600`), and each run records its code commit as before.
 
+**D54. E0 verifies every seeded report in the preregistered verifier mode, and records
+it.** Recorded 2026-11-11, before the code change and before any held-out scoring (rule
+10); it interprets the Instrument version paragraph of prereg 0001 section 5 and section
+11 item 7, with the matching text of preregs 0002 and 0003 (all three drafts). The
+verifier mode is named `task_requirements`: `verify_run` is given the requirement texts
+of the task that the seeded report's ledger's `run_start` names, read from
+`bench/tasks/<task_id>/` as `TaskSpec.requirement_texts()`: the same mapping that
+`receipts.study.rescore.task_requirements` gives the banking, and that the runner gives
+the E4 hook arm and its own run-time verification. (1) `e0.predict` takes the
+requirements (an empty mapping is passed as none, as the runner and the banking pass it),
+and the scoring step loads them for each report; a ledger whose `run_start` names no
+task, or a task that cannot be loaded, stops the evaluation instead of falling back to no
+requirements. (2) `artifacts/e0/seeded_eval.json` records `verifier_mode:
+task_requirements` at the top level and, for each scored report, the task id and the
+SHA-256 of the requirement mapping it used (as canonical JSON with sorted keys). (3)
+`valid_types` in `receipts.study.rescore` refuses an evaluation whose `verifier_mode` is
+missing or other than `task_requirements`. Banking, the E1, E2, E3, and E4 analyses, and
+the judges tool already refuse an evaluation that `valid_types` refuses, so none of them
+writes a row or an artifact from it, and no row is confirmatory with it. Gate G5 requires
+the mode, and gates G7 and G9 require it where they read the evaluation's instrument. (4)
+The task loader (`receipts.bench.spec`) is now part of the scoring step, so under D36 its
+files join the instrument that G5 binds: the evaluation checks `src/receipts/bench` for
+uncommitted changes too, and after the held-out scoring an edit to
+`src/receipts/bench/spec.py` or `src/receipts/bench/__init__.py` fails G5, as an edit to
+`e0.py` does. The task files are data, not code; the recorded digests show which
+requirement texts each report was verified with. Reason: without requirements a
+`bug_fixed` or `feature_implemented` claim is judged on every hidden check and a
+`could_not` claim is never contradicted, so an evaluation in that mode scores a different
+verifier from the one that the banking runs and the E4 hook arm runs live, and the drafts
+say such an evaluation did not evaluate the instrument.
+
 **D55. D51's scope rests on how the brief treats task content, not on who wrote it.**
 Recorded 2026-11-11, in the commit that corrects the README's G2 wording (review N7). D51
 cites section 8, which lists task repositories and graders with the third-party code that

@@ -321,7 +321,12 @@ def seeded_eval() -> dict[str, Any]:
         + items("could_not", 0, 0, 4, 0)  # never predicted
         + items("build_succeeds", 5, 0, 0, 0)  # P = R = 1 but 5 gold claims (D42 item 2)
     )
-    return {"split": "heldout", "items": entries, "instrument": copy.deepcopy(EVALUATED)}
+    return {
+        "split": "heldout",
+        "verifier_mode": "task_requirements",
+        "items": entries,
+        "instrument": copy.deepcopy(EVALUATED),
+    }
 
 
 def valid_types() -> e4.ValidTypes:
@@ -434,6 +439,9 @@ def test_valid_types_come_from_rescore_with_the_gold_floor() -> None:
     assert e4.g5_valid_types(seeded_eval(), sha256="5" * 64) == types
     with pytest.raises(ValueError, match="held-out"):
         e4.g5_valid_types({"split": "dev", "items": []})
+    # An evaluation in another verifier mode gives no valid types (DECISIONS D54).
+    with pytest.raises(ValueError, match="verifier mode"):
+        e4.g5_valid_types({**seeded_eval(), "verifier_mode": "no_requirements"})
     contradicted = rescored_claim("c0", "build_succeeds", "contradicted")
     rows = outcome([one_pair(claims=[contradicted])], types.types)
     assert rows[0]["contradicted_claims"] == 1 and rows[0]["z1_false_claim"] is False

@@ -271,6 +271,21 @@ def test_tool_rejects_a_seeded_evaluation_that_is_not_held_out(
     assert not (tmp_path / OUT).exists()
 
 
+def test_tool_rejects_a_seeded_evaluation_in_another_verifier_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A SYNTHETIC held-out evaluation made without the task requirements (D54).
+    setup(tmp_path)
+    monkeypatch.setattr(run_judges, "serve", refuse)
+    seeded = tmp_path / "artifacts" / "e0" / "seeded_eval.json"
+    seeded.parent.mkdir(parents=True)
+    other = {**seeded_eval({"tests_pass": 10}), "verifier_mode": "no_requirements"}
+    seeded.write_text(json.dumps(other), encoding="utf-8")
+    assert run_judges.main(["--root", str(tmp_path)]) == 1
+    assert "verifier mode" in capsys.readouterr().err
+    assert not (tmp_path / OUT).exists()
+
+
 def test_tool_refuses_confirmatory_before_any_call_and_missing_inputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
