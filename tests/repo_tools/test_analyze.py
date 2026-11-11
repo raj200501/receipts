@@ -645,6 +645,10 @@ def test_errors_exit_with_status_2(tmp_path: Path, capsys: pytest.CaptureFixture
     write_json(tmp_path / analyze.SEEDED, {**synthetic_seeded(), "split": "dev"})
     assert analyze.main(["e1", "--root", str(tmp_path), "--n-boot", "5"]) == 2
     assert "held-out split" in capsys.readouterr().err
+    # Not made in the preregistered verifier mode (DECISIONS D54): no E1 artifact.
+    write_json(tmp_path / analyze.SEEDED, {**synthetic_seeded(), "verifier_mode": None})
+    assert analyze.main(["e1", "--root", str(tmp_path), "--n-boot", "5"]) == 2
+    assert "verifier mode" in capsys.readouterr().err
     (tmp_path / analyze.SEEDED).write_text("[]", encoding="utf-8")
     assert analyze.main(["e1", "--root", str(tmp_path), "--n-boot", "5"]) == 2
     assert "is not a JSON object" in capsys.readouterr().err

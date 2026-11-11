@@ -40,7 +40,14 @@ changed.
 **Scoring.** `receipts.evaluation.seeded`: a predicted claim matches a gold claim of the
 same type when their spans overlap (one to one, largest overlap first). Per claim type,
 precision is correct / predicted and recall is correct / gold, where correct means the
-predicted verdict equals the gold verdict. Predictions are matched against the gold and
+predicted verdict equals the gold verdict. The verifier runs in the preregistered
+verifier mode (`task_requirements`, DECISIONS D54): each report is verified with the
+requirement texts of the task that its ledger's `run_start` names, as the banking
+re-verifies the study runs, so a `bug_fixed`, `feature_implemented`, or `could_not` claim
+is judged on the hidden checks of the requirements it maps to. `seeded_eval.json` records
+the mode and, per report, the task and the SHA-256 of its requirement texts, and the
+analyses and gates that use the evaluation refuse one made in another mode.
+Predictions are matched against the gold and
 the ignored claims of their report together, and a prediction matched to an ignored claim
 (one of the types either labeler gave it, overlapping span) counts neither as correct nor
 as spurious: a disputed label must not turn a correct extraction into a false positive. A
@@ -325,8 +332,9 @@ SHA-256 of the merged file and of the writer index (`writer_packets`). Split ref
 the manifest or any held-out file is committed.
 
 **Evaluate.** For the held-out split it refuses `--allow-dirty`, and refuses unless
-`src/receipts/claims`, `src/receipts/verify`, `src/receipts/ledger`, and
-`src/receipts/evaluation` (the code that turns a report into scoring items) have no
+`src/receipts/claims`, `src/receipts/verify`, `src/receipts/ledger`,
+`src/receipts/evaluation`, and `src/receipts/bench` (the code that turns a report into
+scoring items, with the task loader that gives it its requirement texts) have no
 uncommitted change; the manifest is committed, has no uncommitted change, and was not
 changed by any commit after the one that added it; the held-out directory holds exactly
 the listed reports with the listed hashes; each report's ledger matches its
@@ -337,18 +345,24 @@ extractor counts as written before D34 (`method` `pattern-extractor`), which mus
 from the smoke runs (`runs_dir` is `artifacts/studies/smoke/runs`) on a clean instrument
 whose `trees` for `src/receipts/claims` and `src/receipts/verify` equal the evaluated
 ones; and `artifacts/e0/heldout_attempts.jsonl` has no uncommitted change. Each report is scored with the pattern extractor and
-`receipts.verify.verify_run(claims, ledger, report=report)`. Every held-out evaluation
+`receipts.verify.verify_run(claims, ledger, requirements=requirements, report=report)`,
+where `requirements` are the requirement texts (`TaskSpec.requirement_texts()`) of the
+task in `bench/tasks/<task_id>/` that the ledger's `run_start` names; a ledger that names
+no task, or a task that does not load, stops the evaluation. Every held-out evaluation
 then appends one line to `heldout_attempts.jsonl` (`attempt`, `created`, `command`,
 `commit`, `trees`, `passes`, `all_top5_pass`, and `per_type` counts of the top five), so
 committing each attempt before the next keeps every scoring of the held-out half
 visible. `seeded_eval.json` holds `split`, `heldout_manifest` and
 `heldout_manifest_sha256`, `claim_type_counts` with its SHA-256 and `method`
-(`claim_type_counts_method`), `items[]`, `per_type` (`correct`, `predicted`, `gold`,
+(`claim_type_counts_method`), `verifier_mode` (`task_requirements`),
+`report_requirements` (for each scored report, its `task_id` and `requirements_sha256`,
+the SHA-256 of its requirement texts as canonical JSON with sorted keys), `items[]`,
+`per_type` (`correct`, `predicted`, `gold`,
 `ignored`, `precision` and `recall` with Wilson 95 percent intervals, null when
 undefined, and `meets_thresholds`), `top5` (ranked from `claim_type_counts.json`),
 `thresholds` (precision 0.95, recall 0.90, both inclusive), `passes` per top-five type,
 `all_top5_pass` (false unless five types were counted and all pass), `matching`,
-`instrument` (as in the extractor counts, over the four paths above), `attempt`, and
+`instrument` (as in the extractor counts, over the five paths above), `attempt`, and
 `attempts_log`. A type with no predictions or no gold claims never passes. `--out FILE`
 writes elsewhere, to re-score and compare. The dev split checks none of the freeze
 conditions, records a dirty instrument instead of refusing, is not logged, and is never

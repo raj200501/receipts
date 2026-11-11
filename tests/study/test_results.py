@@ -297,6 +297,7 @@ def synthetic_seeded() -> dict[str, Any]:
     return {
         "split": "heldout",
         "heldout_manifest": "artifacts/e0/heldout_manifest.json",
+        "verifier_mode": "task_requirements",
         "items": items,
         "synthetic": True,
         "instrument": {
@@ -614,6 +615,9 @@ def test_the_evaluation_file_digest_is_recorded(
         ({"split": "dev"}, "held-out split"),
         ({"items": None}, "no items list"),
         ({"instrument": None}, "records no instrument"),
+        # Not made in the preregistered verifier mode (DECISIONS D54): no artifact.
+        ({"verifier_mode": None}, "verifier mode"),
+        ({"verifier_mode": "no_requirements"}, "verifier mode"),
     ],
 )
 def test_e1_refuses_an_evaluation_that_is_not_the_held_out_one(

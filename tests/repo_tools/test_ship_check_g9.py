@@ -141,11 +141,12 @@ def instrument_record(root: Path, sha: str) -> dict[str, Any]:
 
 def seeded_eval(root: Path, sha: str) -> dict[str, Any]:
     """A SYNTHETIC held-out G5 evaluation of the instrument at ``sha``; g9 reads only its
-    split and its instrument record."""
+    split, its verifier mode, and its instrument record."""
     return {
         "schema": "receipts.e0.seeded_eval/1",
         "split": "heldout",
         "synthetic_reports": True,
+        "verifier_mode": "task_requirements",
         "items": [],
         "instrument": {**instrument_record(root, sha), "allow_dirty": False},
         "provenance": PROV,
@@ -824,6 +825,27 @@ def test_an_e4_study_needs_the_held_out_evaluation(git_repo: Path, commit: Commi
         orig=git_repo, clone=git_repo, logs=git_repo.parent / "logs", fast=False, sha="0" * 40
     )
     with pytest.raises(GateError, match=r"seeded_eval\.json missing"):
+        check_e4(ctx)
+
+
+@pytest.mark.parametrize("mode", [None, "no_requirements"])
+def test_an_evaluation_in_another_verifier_mode_fails(
+    git_repo: Path, commit: Commit, mode: str | None
+) -> None:
+    # Scored without each report's task requirements, the held-out evaluation did not
+    # evaluate the instrument the hook arm runs (prereg 0002 section 7, DECISIONS D54).
+    project(git_repo, commit)
+    evaluation = json.loads((git_repo / SEEDED).read_text("utf-8"))
+    if mode is None:
+        del evaluation["verifier_mode"]
+    else:
+        evaluation["verifier_mode"] = mode
+    put(git_repo, SEEDED, evaluation)
+    sha = commit(git_repo, "an evaluation in another verifier mode")
+    ctx = ship_check.Context(
+        orig=git_repo, clone=git_repo, logs=git_repo.parent / "logs", fast=False, sha=sha
+    )
+    with pytest.raises(GateError, match="verifier mode"):
         check_e4(ctx)
 
 

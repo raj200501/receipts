@@ -108,12 +108,13 @@ def instrument_record(root: Path, sha: str) -> dict[str, Any]:
 
 def seeded_eval(root: Path, sha: str) -> dict[str, Any]:
     """A SYNTHETIC held-out G5 evaluation of the instrument at ``sha``; g7 reads only its
-    split and its instrument record."""
+    split, its verifier mode, and its instrument record."""
     return {
         "schema": "receipts.e0.seeded_eval/1",
         "split": "heldout",
         "synthetic_reports": True,
         "heldout_manifest": "artifacts/e0/heldout_manifest.json",
+        "verifier_mode": "task_requirements",
         "items": [],
         "instrument": {**instrument_record(root, sha), "allow_dirty": False},
         "provenance": PROV,
@@ -905,6 +906,11 @@ def test_a_banking_commit_outside_the_repository_fails(git_repo: Path, commit: C
     ("change", "match"),
     [
         pytest.param({"split": "dev"}, "is not the held-out G5 evaluation", id="dev-split"),
+        # Scored without each report's task requirements (DECISIONS D54).
+        pytest.param({"verifier_mode": None}, "verifier mode", id="no-verifier-mode"),
+        pytest.param(
+            {"verifier_mode": "no_requirements"}, "verifier mode", id="other-verifier-mode"
+        ),
         pytest.param({"instrument": None}, "does not record the instrument", id="no-instrument"),
         pytest.param(
             {"instrument.commit": "1" * 40}, "is not a commit of this repository", id="no-commit"

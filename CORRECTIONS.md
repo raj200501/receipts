@@ -5,6 +5,13 @@ docs/BUILD_BRIEF.md section 9), newest first.
 
 ## 2026-11-11
 
+- **docs/E0_PROTOCOL.md, Scoring and Evaluate** (changed because the code changed, before
+  any held-out scoring): it said each seeded report is scored with
+  `verify_run(claims, ledger, report=report)`, that is without requirements, and that the
+  held-out evaluation checks four paths for uncommitted changes. The preregistration
+  drafts require the verifier mode that gives each report its task's requirement texts
+  (D54), so the evaluation now runs and records that mode and also checks
+  `src/receipts/bench`; the document describes this.
 - **README.md, the first screen and Status; docs/REPORT.md, next steps** (pushed from
   229a14f to 906140c): they said the TypeScript catalog tasks were the smoke runs still to
   run. The plan's own dry run lists the pending runs: three Python tasks and every

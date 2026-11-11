@@ -80,6 +80,7 @@ def seeded_eval(root: Path, split: str = "heldout") -> Path:
     data = {
         "split": split,
         "synthetic_reports": True,
+        "verifier_mode": "task_requirements",
         "items": items,
         "instrument": {"commit": "a" * 40, "paths": list(e0.SCORING_PATHS), "trees": {}},
     }
@@ -170,6 +171,24 @@ def test_a_malformed_held_out_evaluation_is_refused(
     assert bank_study.main(["e1"]) == 2
     assert "pred_verdict" in capsys.readouterr().err
     assert not any(p.exists() for p in outputs(checkout, "e1"))
+
+
+@pytest.mark.parametrize("mode", [None, "no_requirements"])
+def test_a_held_out_evaluation_in_another_verifier_mode_is_refused(
+    checkout: Path, capsys: pytest.CaptureFixture[str], mode: str | None
+) -> None:
+    # It did not evaluate the instrument (DECISIONS D54): no row is banked from it.
+    path = seeded_eval(checkout)
+    data = json.loads(path.read_text())
+    if mode is None:
+        del data["verifier_mode"]
+    else:
+        data["verifier_mode"] = mode
+    path.write_text(json.dumps(data))
+    for study in ("e1", "e4"):
+        assert bank_study.main([study]) == 2
+        assert "verifier mode" in capsys.readouterr().err
+        assert not any(p.exists() for p in outputs(checkout, study))
 
 
 def test_a_dirty_instrument_is_refused_unless_allowed(
