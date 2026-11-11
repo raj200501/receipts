@@ -225,16 +225,15 @@ Gates, from `python tools/ship_check.py --fast` on a fresh clone of the current 
 fast check skips slow steps and does not count as the final check):
 
 - **Passing:** G1 build and tests (every test passes, and each core module is above the
-  coverage floor), G4 offline demo (matches its golden output, with no network and no model
+  coverage floor), G2 static quality (ruff, ruff format, and mypy --strict clean, and every
+  `type: ignore` in project code has a code and a reason; benchmark task repositories are
+  third-party code to the project, DECISIONS D51), G3 CI parity (the workflow runs `make
+  ci` on Python 3.11 and 3.12, and `make ci` passes on both), G4 offline demo (matches its golden output, with no network and no model
   calls), G10 claim integrity (every number in this README and docs/REPORT.md is bound to
   an artifact and re-derived), G13 documentation, and G14 hygiene (secrets scan clean, no
   cash spent, nothing private tracked).
-- **Failing, and why:** G2 stops at `type: ignore` comments inside benchmark task
-  repositories that lack reasons; adding them changes task hashes that the banked runs
-  cite. G3 fails in the fast check only because it requires G2; `make ci` itself passes on
-  Python 3.11 and 3.12. G5 to
-  G9 and G11: the instrument validation (E0) and the studies (E1 to E4) have not run.
-  G12: no independent review has approved the current code.
+- **Failing, and why:** G5 to G9 and G11: the instrument validation (E0) and the studies
+  (E1 to E4) have not run. G12: no independent review has approved the current code.
 - **Built and checked:** the ledger, sandboxes, parsers, claim extractor, verifiers,
   minimal-agent, the analysis library, receipts-hook, the wrapper and the `receipts`
   command line, the E0 tooling, and the gates, with unit tests (`make test`); receipts-bench, where every task's reference solution passes

@@ -398,7 +398,7 @@ def test_check_rows_refuses_rows_it_cannot_read() -> None:
     with pytest.raises(ValueError, match="repeats"):
         e3.check_rows([*rows, rows[0]])
     with pytest.raises(ValueError, match="not an object"):
-        e3.check_rows([*rows, ["x"]])  # type: ignore[list-item]
+        e3.check_rows([*rows, ["x"]])  # type: ignore[list-item]  # a non-object row on purpose
 
 
 def test_sampling_frame_is_included_rows_with_a_claim() -> None:
@@ -618,7 +618,7 @@ def test_unservable_calls_come_from_the_failure_log(tmp_path: Path) -> None:
     assert e3.unservable_calls(e3.JUDGES[:1], items, entries) == {}
     for broken in ({"cache_key": "x"}, {**entries[0], "cache_key": None}, "line"):
         with pytest.raises(ValueError, match="failure log"):
-            e3.failure_counts([broken])  # type: ignore[list-item]
+            e3.failure_counts([broken])  # type: ignore[list-item]  # malformed entry on purpose
 
 
 # Scoring ---------------------------------------------------------------------------------

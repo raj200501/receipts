@@ -309,4 +309,30 @@ def test_type_ignore_grammar_matches_mypy(git_repo: Path, commit: Commit) -> Non
         'C: int = 1  # see the "# type: ignore" policy\n'
     )
     ctx = build(git_repo, commit, files={"src/receipts/ok.py": source})
-    assert "every type: ignore has a code and reason" in ship_check.g2(ctx)
+    assert "every type: ignore in project code has a code and reason" in ship_check.g2(ctx)
+
+
+# ---------------------------------------------------------------- D51 scope
+
+
+TASK_IGNORE = 'X: int = "a"  # type: ignore\n'
+
+
+def test_benchmark_task_content_is_outside_the_type_ignore_rule(
+    git_repo: Path, commit: Commit
+) -> None:
+    files = {
+        "bench/tasks/t1/repo/app.py": TASK_IGNORE,
+        "bench/tasks/t1/hidden/_cases.py": TASK_IGNORE,
+    }
+    ctx = build(git_repo, commit, files=files)
+    assert "(D51)" in ship_check.g2(ctx)
+
+
+@pytest.mark.parametrize("rel", ["tools/helper.py", "tests/test_x.py", "bench/tasks.py"])
+def test_project_code_outside_task_content_still_needs_a_reason(
+    git_repo: Path, commit: Commit, rel: str
+) -> None:
+    ctx = build(git_repo, commit, files={rel: TASK_IGNORE})
+    with pytest.raises(ship_check.GateError, match=rel.replace(".", r"\.") + ":1"):
+        ship_check.g2(ctx)

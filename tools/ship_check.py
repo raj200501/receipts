@@ -1360,9 +1360,16 @@ def write_mypy_config(ctx: Context) -> Path:
     return path
 
 
+# Benchmark task content (task repositories, variants, hidden checks, reference
+# solutions): third-party code to the project (brief section 8), frozen by the task
+# hashes, so G2's type-ignore rule does not cover it (DECISIONS D51).
+TASK_CONTENT = "bench/tasks/"
+
+
 def g2(ctx: Context) -> str:
     """Static quality on the package: ruff check, ruff format --check, mypy --strict,
-    and a code and reason on every ``type: ignore`` (none of them narrowed by config)."""
+    and a code and reason on every ``type: ignore`` in project code, which is every
+    tracked Python file outside :data:`TASK_CONTENT` (none of them narrowed by config)."""
     ctx.make("setup", 900)
     lint = ctx.make("lint", 600)
     require(lint.ok, "ruff check or ruff format --check failed")
@@ -1370,6 +1377,8 @@ def g2(ctx: Context) -> str:
     require(types.ok, "mypy --strict failed")
     bad: list[str] = []
     for rel in tracked(ctx.clone, "*.py", "*.pyi"):
+        if rel.startswith(TASK_CONTENT):
+            continue
         source = (ctx.clone / rel).read_text(encoding="utf-8")
         bad.extend(f"{rel}:{line}" for line in unexplained_type_ignores(source))
     require(not bad, "type: ignore without code and reason at " + ", ".join(bad[:3]))
@@ -1400,7 +1409,7 @@ def g2(ctx: Context) -> str:
     require(strict.ok, "mypy --strict on every package file: " + strict.first_line()[:90])
     return (
         "ruff check, ruff format --check, mypy --strict clean on every package file;"
-        " every type: ignore has a code and reason"
+        " every type: ignore in project code has a code and reason (D51)"
     )
 
 

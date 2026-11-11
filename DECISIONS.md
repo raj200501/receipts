@@ -582,3 +582,19 @@ stages the workspace (`git add -A` into a temporary index), so files that were u
 before the run are no longer reported as added. Both change instrument code
 (`src/receipts/ledger`, `src/receipts/verify`) before the held-out E0 evaluation and
 before any confirmatory data, so D47's instrument record will bind the new code.
+
+**D51. Gate G2's `type: ignore` rule covers project code, not benchmark task content.**
+Recorded 2026-11-11, before the check changed (Raj's crunch-time step 2 allows this when
+the brief does). Section 6 scopes G2 to the package ("`ruff check`, `ruff format
+--check`, and `mypy --strict` on the package"), and section 8 lists "task repositories"
+and graders among the third-party code that never runs on the host. Everything under
+`bench/tasks/<id>/` (the repository an agent edits, its variants, the hidden checks, and
+the reference solution) is benchmark content of that kind: written to look like real
+projects, frozen by the task hashes that the reference validation and the banked runs
+cite, and never imported by receipts. mypy already checks only `src/receipts` and
+`tools`. So the scan for a `type: ignore` without a code and reason now skips tracked
+files under `bench/tasks/` and nothing else: `src/`, `tools/`, `tests/`, and every other
+tracked Python file still fail on one. The three ignores the scan found (in the
+py-ci-workflow and py-email-tests task repositories) carry a code but no reason; they
+stay as task content, because adding reasons would change tasks the banked smoke runs
+were made on. A test pins the scope from both sides.

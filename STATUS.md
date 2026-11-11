@@ -49,6 +49,11 @@ freeze and runs, E2 to E4, then an independent review. CAP_SHARE stays 0.2.
   command claims in a wrapped report are unverifiable, not contradicted, and files
   untracked before the run are no longer reported as added. Hook coverage measured on
   the hook and CLI tests alone: 98%.
+- **G2, type-ignore scope.** The brief scopes G2 to the package and calls task
+  repositories third-party code (section 8), so the type-ignore scan now skips
+  `bench/tasks/` and nothing else (D51; a test pins the scope from both sides). The
+  narrower scan then found two bare ignores in project code (`tests/evaluation/test_e3.py`),
+  hidden before because the gate prints only its first findings; both now carry reasons.
 
 ## Next three actions
 

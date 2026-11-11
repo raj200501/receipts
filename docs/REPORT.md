@@ -620,6 +620,4 @@ re-verification at banking for the confirmatory studies (D42, D47), and the gate
    frozen, and bank the hook latency samples.
 5. Add Claude arms only on a machine with a clean plan login, under their own preregistration.
 
-Until then, G5, G6, G7 to G9, G11, and G12 cannot pass. The static-quality gate also
-fails at HEAD: some type-ignore comments inside benchmark task repositories lack reasons
-(STATUS.md). Every claim verdict here remains the instrument's own.
+Until then, G5, G6, G7 to G9, G11, and G12 cannot pass. Every claim verdict here remains the instrument's own.
