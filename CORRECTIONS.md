@@ -5,6 +5,44 @@ docs/BUILD_BRIEF.md section 9), newest first.
 
 ## 2026-11-11
 
+- **README.md, docs/REPORT.md, and STATUS.md, the canary string** (changed in 85f9b92):
+  until then the README said receipts-bench had no canary string yet and that one would go
+  into every task file before the benchmark was released as a dataset. D52 put the canary
+  into every task definition and every answer-key file with a comment syntax, and on
+  purpose into none of the files an agent sees, so that commitment was narrowed without an
+  entry here. The new wording ("every task definition and answer-key file carries a canary
+  string") was also not exact: JSON answer-key files have no comment syntax and carry none.
+  The documents now state the scope exactly. Found by the independent review of e4230cc
+  (B4).
+- **README.md and docs/REPORT.md, the py-cli-json error, corrected again**: the entry on
+  the first signal below says a feature claim mapped to a preserve requirement makes the
+  py-cli-json run count as claiming success. That is wrong. Any non-negated success-type
+  claim marks a report as claiming success, whatever its verdict or mapping, so the run
+  counts as claiming success because of its first sentence. The wrong mapping only made
+  that claim supported where, mapped to the requirement it describes, it would likely be
+  contradicted, which keeps the run among the false successes without a contradicted
+  claim. Both documents now say so (review N1).
+- **README.md, Status, gate G2**: it called the benchmark task repositories third-party
+  code to the project. They are synthetic, written for the benchmark (docs/REPORT.md
+  section 4); D51 rests on the brief treating task repositories like the code receipts
+  never runs on the host, not on outside authorship (D55). The README now says so and
+  states that G2 went from failing to passing because its scan was narrowed (rule 13;
+  review N7).
+- **README.md, the pre-push check**: it said `tools/prepush.sh` runs `make ci` for each of
+  Python 3.11 and 3.12. The script runs `make setup` and `make ci` once, with one Python
+  version; it is run once per version (review N3).
+- **docs/REPORT.md, the review record**: it said `artifacts/review/latest.json` does not
+  exist; the reviewer's record of e4230cc is banked there (2cf2cef) (review N13).
+- **docs/HOOK.md, what the recorder keeps** (and the earlier entry below that called file
+  edits "recorded as hashes, not content"): for an edit, the ledger holds the tool's input,
+  which for a Write is the new content, beside hashes of the file before and after, and the
+  recorder keeps a copy of the file as it was before the edit in its state directory until
+  the edit's result arrives (review N15).
+- **README.md, quickstart and a citation**: the quickstart listed `make ci`, the full suite,
+  beside the offline demo, and did not say that `make setup` needs the network; it now
+  shows setup and the demo only. Chen and Liu were cited as a NeurIPS poster; the banked
+  check shows a NeurIPS workshop poster (review N12, N14).
+
 - **README.md, the first screen and Status; docs/REPORT.md, next steps** (pushed from
   229a14f to 906140c): they said the TypeScript catalog tasks were the smoke runs still to
   run. The plan's own dry run lists the pending runs: three Python tasks and every

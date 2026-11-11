@@ -291,8 +291,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     records = aggregate.load_records(runs)
     prov = provenance(args.study)
     if args.study == "smoke":
-        # Claim-type counts (G5) come from tools/e0.py, which re-extracts each smoke
-        # report with the extractor version under test.
+        # Claim-type counts (G5) come from blind labels, not the extractor (D34, D43):
+        # tools/e0.py counts them from labeler subagents' labels of each smoke report.
         write_json(
             ROOT / "artifacts/bench/smoke_runs.json", aggregate.smoke_runs_artifact(records, prov)
         )

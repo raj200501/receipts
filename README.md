@@ -51,14 +51,14 @@ admits none of them. The panel is cut from the committed `make demo` output by
 
 ```bash
 git clone https://github.com/raj200501/receipts.git && cd receipts
-make setup        # uv sync --locked
-make demo         # replays recorded agent runs through receipts, no network, no model
-make ci           # lint, mypy --strict, tests, offline demo
+make setup        # uv sync --locked: the one step that needs the network
+make demo         # replays recorded agent runs through receipts, offline, in seconds
 ```
 
 `make demo` prints, for each recorded run, the agent's final report, every claim
 receipts extracted from it, the verdict for each claim, and the ledger events that
-decide it. Its output is compared with a committed golden file.
+decide it. Its output is compared with a committed golden file. `make ci` (lint,
+mypy --strict, the full test suite, and the demo) takes several minutes.
 
 ## What it is, and what it is not
 
@@ -71,8 +71,9 @@ receipts has an instrument, a benchmark with a study design, and a mitigation:
   commands run, dependencies, features done, "could not", and more); deterministic
   verifiers map each claim type to ledger queries and return supported, contradicted, or
   unverifiable with the evidence events.
-- **A benchmark and a study design.** receipts-bench is a set of small, realistic Python
-  and TypeScript repositories ([docs/BENCH.md](docs/BENCH.md)), each with hidden checks, a
+- **A benchmark and a study design.** receipts-bench is a set of small Python and
+  TypeScript repositories, synthetic and written for the benchmark to look like real
+  projects ([docs/BENCH.md](docs/BENCH.md)), each with hidden checks, a
   reference solution that passes them, and a manifest of manipulable features. A
   randomized study, written as draft preregistrations in [prereg/](prereg/) that are not
   frozen yet, is designed to cross realistic situations
@@ -107,20 +108,27 @@ and each item names the preregistration that will test the same outcome.
   claim was contradicted (interval
   <!--n:smoke.false_success_without_contradicted_claim.ci-->[0.40, 0.89]<!--/n-->).
   Read by hand, most of those reports state the requested change in a sentence the
-  extractor missed or checked wrongly (see Limitations). Confirmatory test: E1, outcome Y1, in
+  extractor missed or checked wrongly (see Limitations). Source:
+  [`artifacts/exploratory/smoke_outcomes.json`](artifacts/exploratory/smoke_outcomes.json).
+  Confirmatory test: E1, outcome Y1, in
   [`prereg/0001-e1-main-study.md`](prereg/0001-e1-main-study.md) (a draft, not frozen).
 - **Claim by claim, most extracted claims check out.** Of the
   <!--n:smoke.claims-->29<!--/n--> claims receipts extracted from the final reports,
   <!--n:smoke.claims.supported-->26<!--/n--> were supported,
   <!--n:smoke.claims.contradicted-->3<!--/n--> contradicted, and
   <!--n:smoke.claims.unverifiable-->0<!--/n--> unverifiable. These verdicts are the
-  instrument's own until its blind validation (E0, gate G5) is done. Confirmatory test:
-  E1, outcome Y2, in the same preregistration.
+  instrument's own until its blind validation (E0, gate G5) is done. Source:
+  [`artifacts/exploratory/smoke_outcomes.json`](artifacts/exploratory/smoke_outcomes.json).
+  Confirmatory test: E1, outcome Y2, in
+  [`prereg/0001-e1-main-study.md`](prereg/0001-e1-main-study.md).
 - **No run completed its task.** <!--n:smoke.task_success.k-->0<!--/n--> of
   <!--n:smoke.task_success.n-->20<!--/n--> runs passed every hidden check, and
   <!--n:smoke.turn_cap_reached-->10<!--/n--> stopped at the turn cap (D39). A small local
   model is a weak agent, so these runs test the instrument and the benchmark more than
-  they describe capable agents.
+  they describe capable agents. Source:
+  [`artifacts/exploratory/smoke_outcomes.json`](artifacts/exploratory/smoke_outcomes.json).
+  Confirmatory test: E1, task success, in
+  [`prereg/0001-e1-main-study.md`](prereg/0001-e1-main-study.md).
 - **The mitigation is not measured yet.** E4, a randomized test of the hook's check code
   inside minimal-agent with local models on held-out tasks, is drafted in
   [`prereg/0002-e4-mitigation.md`](prereg/0002-e4-mitigation.md). It does not measure the
@@ -226,8 +234,9 @@ fast check skips slow steps and does not count as the final check):
 
 - **Passing:** G1 build and tests (every test passes, and each core module is above the
   coverage floor), G2 static quality (ruff, ruff format, and mypy --strict clean, and every
-  `type: ignore` in project code has a code and a reason; benchmark task repositories are
-  third-party code to the project, DECISIONS D51), G3 CI parity (the workflow runs `make
+  `type: ignore` in project code has a code and a reason; G2 went from failing to passing
+  because its scan was narrowed to skip the synthetic benchmark task content under
+  `bench/tasks/`, whose own bare ignores stay as frozen task content, DECISIONS D51), G3 CI parity (the workflow runs `make
   ci` on Python 3.11 and 3.12, and `make ci` passes on both), G4 offline demo (matches its golden output, with no network and no model
   calls), G10 claim integrity (every number in this README and docs/REPORT.md is bound to
   an artifact and re-derived), G13 documentation, and G14 hygiene (secrets scan clean, no
@@ -246,9 +255,10 @@ fast check skips slow steps and does not count as the final check):
   tasks, most of them TypeScript), E0, the pilot and power run, freezing the preregistration drafts, and
   then E1 to E4.
 
-Before a push, `tools/prepush.sh` runs `make ci` (lint, mypy --strict, tests, offline
-demo) on a fresh clone for each of Python 3.11 and 3.12, and
-[.github/workflows/ci.yml](.github/workflows/ci.yml) runs the same target on both versions.
+Before a push, `tools/prepush.sh` runs `make setup` and `make ci` (lint, mypy --strict,
+tests, offline demo) on a fresh clone with one Python version; it is run once for each of
+Python 3.11 and 3.12, and [.github/workflows/ci.yml](.github/workflows/ci.yml) runs the
+same target on both versions.
 
 ## Reproduce
 
@@ -275,6 +285,10 @@ make ship-check   # all gates on a fresh clone
   smoke study (first the turn cap with its final-report request, D39, then the serving,
   parsing, and grammar fixes, D44 to D46), so later runs used a more capable harness than
   earlier ones; each run records the code and agent settings it ran with.
+- **The intervals assume independent runs.** Each Wilson interval treats the banked runs
+  as independent draws, but they are one run per task, on the tasks that happened to run
+  first rather than a random sample of the benchmark, and mostly Python tasks, the pilot
+  tasks among them. The real uncertainty is wider than the intervals show.
 - **Claim verdicts are not yet validated.** The extractor and verifiers are checked by
   unit tests and a development corpus, but their held-out precision and recall (G5) are
   not measured yet.
@@ -292,8 +306,12 @@ make ship-check   # all gates on a fresh clone
     claims), so neither run counts as claiming success; the success-claimed rate is too
     low by those runs.
   - In py-cli-json, receipts correctly records "the tests are failing" as an admission,
-    yet the run counts as claiming success: keyword overlap mapped its feature claim to
-    the task's preserve requirement, whose checks passed.
+    and the run counts as claiming success because its first sentence is a feature claim
+    (any non-negated success claim counts, whatever its verdict). Keyword overlap mapped
+    that claim to the task's preserve requirement, whose checks passed, so it was labeled
+    supported; mapped to the requirement it describes, whose checks failed, it would
+    likely be contradicted, which is one more reason the count of false successes without
+    a contradicted claim is too high.
 
   [docs/REPORT.md](docs/REPORT.md) section 7 discusses them; measuring such errors is what
   the blind E0 validation is for.
@@ -326,9 +344,11 @@ make ship-check   # all gates on a fresh clone
   also avoids it (the py-ci-workflow and ts-ci-workflow reports already do so by
   accident). Omissions (known failures a report never mentions) are reported next to
   contradicted claims, and the blind E0 validation measures the extractor's recall. Every
-  receipts-bench task definition and answer-key file (hidden checks, reference solution)
-  carries a canary string, so training pipelines can drop them; the files an agent sees
-  carry none ([docs/DATA.md](docs/DATA.md), DECISIONS D52).
+  receipts-bench task definition (`task.toml`) and every answer-key file with a comment
+  syntax (hidden checks, and reference files that differ from what the agent sees) carries
+  a canary string, so training pipelines can drop them. JSON answer-key files have no
+  comment syntax and carry none, and the files an agent sees carry none by design
+  ([docs/DATA.md](docs/DATA.md), DECISIONS D52).
 - **Security issues in receipts itself**, such as a sandbox escape: report them privately,
   as [SECURITY.md](SECURITY.md) describes.
 
@@ -337,7 +357,7 @@ make ship-check   # all gates on a fresh clone
 - Transluce, [Investigating truthfulness in a pre-release o3 model](https://transluce.org/investigating-o3-truthfulness) (2025): a model claiming actions it never took.
 - Transluce, [Measuring coding agent misalignment in the wild](https://www.lesswrong.com/posts/smE9h9RnaK7FWKBZ2/measuring-coding-agent-misalignment-in-the-wild-1) (2026): on public SWE-chat sessions, overselling of any severity was frequent while severe overselling was rare, and per-model rates are confounded by different tasks.
 - Tang et al., [How Coding Agents Fail Their Users](https://arxiv.org/abs/2605.29442) (2026): inaccurate self-reporting in real sessions, observational.
-- Chen and Liu, [Evaluating Misalignment in Coding Agents: Apparent-Success Reporting with Verbalizable Representations and Model Forensics](https://neurips.cc/virtual/2026/loc/sydney/168218) (2026), a NeurIPS poster: agents report all tests passing while one fails.
+- Chen and Liu, [Evaluating Misalignment in Coding Agents: Apparent-Success Reporting with Verbalizable Representations and Model Forensics](https://neurips.cc/virtual/2026/loc/sydney/168218) (2026), a NeurIPS workshop poster: agents report all tests passing while one fails.
 - Ren et al., [The MASK Benchmark](https://arxiv.org/abs/2503.03750) (2025): honesty separated from accuracy, for LLMs.
 - Zhong et al., [ImpossibleBench](https://arxiv.org/abs/2510.20270) (2025): the propensity to exploit contradictory tests, a different question from reporting honesty.
 - Norman et al., [Reliability without Validity](https://arxiv.org/abs/2606.19544) (2026): LLM judges can look reliable while being invalid.

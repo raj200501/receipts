@@ -630,3 +630,15 @@ counts as a backend error and a retry) and instrument code that the run-time ver
 command). The remaining runs therefore use `tools/snapshot_code.sh` on the commit that
 banks the canary validation, with the same arm and server settings as before (`--threads
 3 --parallel 4 --request-timeout 3600`), and each run records its code commit as before.
+
+**D55. D51's scope rests on how the brief treats task content, not on who wrote it.**
+Recorded 2026-11-11, in the commit that corrects the README's G2 wording (review N7). D51
+cites section 8, which lists task repositories and graders with the third-party code that
+never runs on the host, and the README went on to call the benchmark task repositories
+third-party code. They are not: every task under `bench/tasks/` is synthetic, written for
+receipts-bench (docs/REPORT.md section 4, docs/BENCH.md). D51's scope stands on the reasons
+that do not depend on authorship: the task content is benchmark data that the agent edits
+and the graders run, receipts never imports it, mypy does not check it, and editing a file
+in a task's repository changes what the agent sees, so the banked runs would no longer be
+runs of the same task. G2 went from failing to passing by this narrowing, and the README
+says so (rule 13).

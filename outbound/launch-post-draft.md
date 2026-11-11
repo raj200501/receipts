@@ -38,5 +38,5 @@ https://github.com/raj200501/receipts
   errors, most of which make the count of false successes without a
   contradicted claim too high (README, Limitations). Say so if
   you quote the numbers.
-- Before posting, fast-forward `main` to the session branch (STATUS.md, Needs Raj), so the
-  link opens on the real README rather than the brief.
+- `main` already holds the session branch's release commits (DECISIONS D49), so the link
+  opens on the real README; check that it shows the latest RELEASE-READY commit.

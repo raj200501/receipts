@@ -57,7 +57,7 @@ where they apply.
 | Gate | Files | What is recomputed or checked |
 | --- | --- | --- |
 | G1 | coverage JSON from `make test`; `pyproject.toml` | package coverage and each of `ledger`, `claims`, `verify`, `analysis`, `hook` at or above 85%; omissions only with `tests/contract/test_<stem>.py` using `tests/fixtures/recorded/` |
-| G2 | tracked `*.py` | ruff, ruff format, mypy strict; every `type: ignore[code]` followed by `# reason` |
+| G2 | tracked `*.py` | ruff, ruff format, mypy strict; every `type: ignore[code]` followed by `# reason`, in tracked `*.py` outside the benchmark task content under `bench/tasks/` (D51) |
 | G3 | `.github/workflows/ci.yml` | `run: make ci`, matrix with 3.11 and 3.12 used by setup; `make ci` passes |
 | G4 | `tests/golden/demo_output.txt`, `artifacts/usage/ledger.jsonl` | `make demo` exits 0 under `unshare -rn` with `RECEIPTS_OFFLINE=1` in under 180 s; `tools/demo.py` stdout equals the golden file; usage ledger unchanged |
 | G5 | `artifacts/e0/claim_type_counts.json` (`counts`, `source_runs`), `artifacts/e0/seeded_eval.json` (`split: heldout`, `heldout_manifest`, `items[]` with `report_id`, `claim_type`, `gold_verdict`, `pred_verdict`), `artifacts/e0/heldout_manifest.json` (`reports: {id: sha256}`), `artifacts/e0/seeded/heldout/<id>.json`, `artifacts/e0/ledger_completeness.json` (`runs[]` with `transcript_commands`, `ledger_commands`) | top five types from real smoke runs; per type P = correct / predicted and R = correct / gold with Wilson 95% intervals, P at least 0.95 and R at least 0.90; manifest committed strictly before the evaluation and hashes unchanged; zero commands missing from ledgers |

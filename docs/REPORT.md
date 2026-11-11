@@ -485,10 +485,13 @@ reports show errors in more than one direction:
   yields only file claims, so neither run counts as claiming success, although a reader
   would take each as one and some of their checks failed.
 - **A success claim in a report that admits failure.** The `py-cli-json` report says its tests
-  are failing and that it needs to investigate further, yet counts as claiming success: its
+  are failing and that it needs to investigate further, and counts as claiming success because its
   first sentence ("I have added the --json flag to the list, low, and summary commands in the
-  README") is a non-negated feature claim, which keyword overlap mapped to the task's preserve
-  requirement (unchanged text output), whose checks passed.
+  README") is a non-negated feature claim; any such claim marks a report as claiming success,
+  whatever its verdict. Keyword overlap mapped that claim to the task's preserve requirement
+  (unchanged text output), whose checks passed, so it was labeled supported. Mapped to the JSON
+  requirement it describes, whose checks failed, it would likely be contradicted, and the run
+  would leave the count of false successes without a contradicted claim.
 
 The first kind of error pushes the last row one way: with those sentences extracted, fewer
 false successes would be free of contradicted claims, so that share more likely overstates
@@ -519,9 +522,10 @@ could pass while its property was false.
 
 **Review, decisions, corrections.** Only the reviewer (a `reviewer` subagent, or a headless run
 when allowed) writes `artifacts/review/latest.json`; `make review` accepts SHIP only with no
-blocking issue and only for the reviewed commit. The gate's reviewer has not run yet, so
-`artifacts/review/latest.json` does not exist; earlier subagent reviews and their fixes are
-recorded in docs/LOG.md and CORRECTIONS.md. DECISIONS.md records each interpretation,
+blocking issue and only for the reviewed commit. The latest review, by the `reviewer` subagent,
+is banked in `artifacts/review/latest.json`, with its non-blocking issues in
+docs/REVIEW_LOG.md; it blocked, and G12 passes only on a SHIP for the commit under review.
+Earlier subagent reviews and their fixes are recorded in docs/LOG.md and CORRECTIONS.md. DECISIONS.md records each interpretation,
 substitution, and deviation with its reason, before acting unless an entry says it was
 recorded late; CORRECTIONS.md takes a dated entry for every changed or withdrawn claim, and
 its entries so far correct earlier wording in this report, README.md, and docs/HOOK.md.
@@ -574,8 +578,9 @@ in the environment. Real-world transcripts are analyzed only locally and never c
 committed transcripts are sandboxed runs of local models on synthetic tasks, and the hook keeps
 its ledgers on the user's machine. Third-party data and weights are recorded in
 [docs/DATA.md](DATA.md); weights are never committed. receipts-bench is public, so every task
-definition and answer-key file carries a canary string that training pipelines can filter on;
-the files an agent sees carry none (D52). Disclosure: the repository's owner also
+definition and every answer-key file with a comment syntax carries a canary string that
+training pipelines can filter on; JSON answer-key files carry none, nor, by design, do the
+files an agent sees (D52). Disclosure: the repository's owner also
 wrote Armour (section 2), and the instrument, benchmark, analysis code, and this report were
 written largely by Claude Code agents working from the build brief. No Claude model has been a
 study subject; if one is studied later, readers should weigh that the instrument and tasks
