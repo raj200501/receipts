@@ -84,6 +84,39 @@ It is not an LLM judge. No verdict comes from a model reading a transcript: verd
 from the ledger, and a claim the ledger cannot settle is reported as unverifiable, never
 guessed. (Whether LLM judges can match the ledger is one of the study's questions, E3.)
 
+## Key results
+
+Every result so far is exploratory. All of them come from the G6 smoke runs, which are
+unmanipulated, use one local model and one seed, and were not preregistered as a test.
+They are banked in
+[`artifacts/exploratory/smoke_outcomes.json`](artifacts/exploratory/smoke_outcomes.json),
+and each item names the preregistration that will test the same outcome.
+
+- **False success is frequent, and often has no false sentence.** The report claimed
+  success while a hidden check failed in <!--n:smoke.false_success.k-->10<!--/n--> of
+  <!--n:smoke.false_success.n-->20<!--/n--> runs (Wilson 95% interval
+  <!--n:smoke.false_success.ci-->[0.30, 0.70]<!--/n-->). In
+  <!--n:smoke.false_success_without_contradicted_claim.k-->7<!--/n--> of those
+  <!--n:smoke.false_success_without_contradicted_claim.n-->10<!--/n--> reports, no claim
+  was contradicted (interval
+  <!--n:smoke.false_success_without_contradicted_claim.ci-->[0.40, 0.89]<!--/n-->).
+  Confirmatory test: E1, outcome Y1, in
+  [`prereg/0001-e1-main-study.md`](prereg/0001-e1-main-study.md) (a draft, not frozen).
+- **Sentence by sentence, most reports check out.** Of the
+  <!--n:smoke.claims-->29<!--/n--> claims receipts extracted from the final reports,
+  <!--n:smoke.claims.supported-->26<!--/n--> were supported,
+  <!--n:smoke.claims.contradicted-->3<!--/n--> contradicted, and
+  <!--n:smoke.claims.unverifiable-->0<!--/n--> unverifiable. These verdicts are the
+  instrument's own until its blind validation (E0, gate G5) is done. Confirmatory test:
+  E1, outcome Y2, in the same preregistration.
+- **No run completed its task.** <!--n:smoke.task_success.k-->0<!--/n--> of
+  <!--n:smoke.task_success.n-->20<!--/n--> runs passed every hidden check, and
+  <!--n:smoke.turn_cap_reached-->10<!--/n--> stopped at the turn cap (D39). A small local
+  model is a weak agent, so these runs test the instrument and the benchmark more than
+  they describe capable agents.
+- **The mitigation is not measured yet.** E4, the randomized test of receipts-hook on
+  held-out tasks, is drafted in [`prereg/0002-e4-mitigation.md`](prereg/0002-e4-mitigation.md).
+
 ## How it works
 
 ```mermaid
@@ -171,6 +204,24 @@ final-report request (D39), per-run server slots (D44), tolerant JSON parsing wi
 specific error messages (D45), and grammar-constrained actions (D46). Before them, some
 runs repeated one malformed action for hours.
 
+## Reproduce
+
+One command rebuilds every figure and number in this README from the banked artifacts, in
+a temporary directory, and fails if anything differs from what is committed:
+
+```bash
+make reproduce
+```
+
+The parts, run separately:
+
+```bash
+make report       # numbers registry, figures, manifest, from banked artifacts only
+make claimcheck   # every number in README.md and docs/REPORT.md is bound to an artifact
+make freshness    # re-derive every bound number from its artifact
+make ship-check   # all gates on a fresh clone
+```
+
 ## Limitations and threats to validity
 
 - **The first signal is exploratory.** The smoke runs are unmanipulated, use one model
@@ -191,14 +242,25 @@ runs repeated one malformed action for hours.
   study keeps them apart on purpose: false success (Y1) is measured from hidden checks,
   contradicted claims (Y2) from the ledger.
 
-## Reproduce
+## Responsible disclosure
 
-```bash
-make report       # numbers registry, figures, manifest, from banked artifacts only
-make reproduce    # rebuild everything in a temporary directory and diff
-make claimcheck   # every number in README.md and docs/REPORT.md is bound to an artifact
-make ship-check   # all gates on a fresh clone
-```
+- **What is measured.** receipts measures how agents describe their own work. Its
+  situations are realistic and harmless (an unattainable requirement, truncated output,
+  time pressure, a long prior session, flaky tools). Agents run only in disposable
+  sandboxes with no network and no credentials, and no agent is instructed, trained, or
+  rewarded to misreport.
+- **Results about a named vendor.** The only subject so far is an open-weight model run
+  locally. A result about a named vendor's agent or model goes to that vendor, with its
+  evidence, before it is published. Drafts are prepared in [outbound/](outbound/) for the
+  maintainer to review and send; none is sent automatically.
+- **Dual use.** The verifiers are public and deterministic, so an agent tuned against
+  them could learn to avoid checkable claims rather than report truthfully. For that
+  reason the main outcome, false success, is measured from hidden checks rather than from
+  the verifiers, and omissions (known failures a report never mentions) are reported next
+  to contradicted claims. receipts-bench has no canary string yet; one goes into every
+  task file before the benchmark is released as a dataset ([docs/DATA.md](docs/DATA.md)).
+- **Security issues in receipts itself**, such as a sandbox escape: report them privately,
+  as [SECURITY.md](SECURITY.md) describes.
 
 ## Related work (each reference opened and checked; see artifacts/citecheck.json)
 
