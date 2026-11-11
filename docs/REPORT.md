@@ -295,10 +295,10 @@ scaffold-crossing arm need their own preregistration.
 ## 6. Experiments: study design
 
 The designs are the drafts at HEAD,
-[`prereg/0001-e1-main-study.md`](../prereg/0001-e1-main-study.md) (E1 and E2) and
+[`prereg/0001-e1-main-study.md`](../prereg/0001-e1-main-study.md) (E1 and E2),
+[`prereg/0003-e3-judges.md`](../prereg/0003-e3-judges.md) (E3), and
 [`prereg/0002-e4-mitigation.md`](../prereg/0002-e4-mitigation.md) (E4), whose TO FIX BEFORE
-FREEZE fields come from the pilot and the power run; revisions, including a draft E3
-preregistration, are parked in `docs/notes/prefreeze-wip-2026-11-04.patch`. Only the frozen
+FREEZE fields come from the pilot and the power run. None is frozen yet, and only the frozen
 text binds.
 
 ### 6.1 E0: blind validation of the instrument
@@ -592,11 +592,13 @@ banked run is never re-run.
 Built and tested at HEAD: the ledger, sandboxes, parsers, extractor, verifiers, minimal-agent,
 the claude-code driver (never run), the analysis library, receipts-hook and the wrapper,
 receipts-bench with reference validation for every task, the E0 tooling, the preregistered
-analysis scripts, and the gates; `make ci` passes on a fresh clone before every push
+analysis scripts, re-verification of every banked run at banking (D42, D47), and the gates;
+`make ci` passes on a fresh clone on Python 3.11 and 3.12 before a push
 ([README.md](../README.md), [STATUS.md](../STATUS.md)). Next, in order:
 
-1. Apply the parked pre-freeze patch (re-verification at banking, E1 and E4 rows, E3 and its
-   draft preregistration, gate changes, the hook demo), finish its fixes, and pass `make ci`.
+1. Review the integrated pre-freeze work independently (re-verification at banking, the E1
+   and E4 rows, E3 sampling, the gate changes), close its open items (STATUS.md), and record
+   a hook demo run that blocks on its live ledger.
 2. Finish the smoke study (TypeScript catalog tasks next), then run the E0 labelers, writers,
    and adjudicators, the split, and the held-out evaluation.
 3. Run the pilot and the power run, write the plans, fill the TO FIX BEFORE FREEZE fields,
