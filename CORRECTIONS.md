@@ -5,6 +5,12 @@ docs/BUILD_BRIEF.md section 9), newest first.
 
 ## 2026-11-11
 
+- **docs/REPORT.md section 7.2 and README.md, the turn cap**: "Every run ended with a final
+  report" held for the first banked runs, but ts-csv-parse, banked later, reached the turn
+  cap and never answered the final-report request, so its report is empty. Both documents
+  now count the runs that reached the cap with and without a report
+  (`turn_cap_without_report` in the smoke summary). The interim counts in both documents
+  now cover the runs banked up to this commit.
 - **README.md, Responsible disclosure, the canary string**: it described the canary as
   covering the benchmark's answer keys without saying that the banked runs quote those
   answer keys (hidden-check names and output) and carry no canary (review N8). New study

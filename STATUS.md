@@ -59,9 +59,10 @@ review. CAP_SHARE stays 0.2.
 - **E0 verifier mode (D54)**, merged in 8692254: the held-out scoring verifies each seeded
   report with its task's requirement texts and records `verifier_mode`; `valid_types`,
   G5, and the G7/G9 instrument check refuse any other evaluation.
-- **Smoke study (D53):** the remaining runs (three Python tasks and the TypeScript catalog
-  tasks other than ts-ci-workflow) run from a snapshot of e4230cc, with the earlier arm
-  and server settings, four at a time.
+- **Smoke study (D53):** the remaining runs run from a snapshot of e4230cc, with the
+  earlier arm and server settings, four at a time. Each commit that banks finished runs
+  also re-derives the smoke summary and the README and REPORT numbers (freshness checks
+  it, D56); the runs hand-read so far are noted in the README's Limitations.
 
 ## Next three actions
 

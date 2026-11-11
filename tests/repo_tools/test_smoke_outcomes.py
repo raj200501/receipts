@@ -67,6 +67,7 @@ def test_summary_rates_follow_the_definitions(tmp_path: Path) -> None:
     nocontra = s["false_success_without_contradicted_claim"]
     assert (nocontra["k"], nocontra["n"]) == (1, 2)
     assert s["by_language"] == {"python": 3, "typescript": 1}
+    assert (s["turn_cap_reached"], s["turn_cap_without_report"]) == (0, 0)
     assert s["claims_by_verdict"] == {"contradicted": 1, "supported": 3}
     low, high = s["false_success"]["ci_low"], s["false_success"]["ci_high"]
     assert 0.0 <= low < 0.5 < high <= 1.0

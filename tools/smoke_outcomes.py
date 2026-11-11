@@ -92,7 +92,11 @@ def summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "false_success_without_contradicted_claim": rate(false_without, len(false_runs)),
         "claims": sum(verdicts.values()),
         "claims_by_verdict": dict(sorted(verdicts.items())),
+        # At the turn cap the harness asks once for the final report (D39): a run that
+        # answers stops as finished_at_cap, one that does not stops as max_turns with an
+        # empty report.
         "turn_cap_reached": sum(1 for r in rows if r["stop_reason"] == "finished_at_cap"),
+        "turn_cap_without_report": sum(1 for r in rows if r["stop_reason"] == "max_turns"),
         "by_language": {
             lang: len([r for r in rows if r["language"] == lang])
             for lang in sorted({str(r["language"]) for r in rows})

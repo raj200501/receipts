@@ -65,7 +65,7 @@ def _language(language: str) -> Any:
     return derive
 
 
-for _field in ("runs", "runs_with_report", "claims", "turn_cap_reached"):
+for _field in ("runs", "runs_with_report", "claims", "turn_cap_reached", "turn_cap_without_report"):
     SPEC.numbers.add(f"smoke.{_field}", SMOKE)(_count(_field))
 for _name in (
     "task_success",

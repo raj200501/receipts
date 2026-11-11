@@ -128,3 +128,19 @@ The offline demo replays the banked pipeline-check run; pilot runs with reports 
   pilot, killed by the worker restart, restarted from a snapshot of 71db6e6 (it uses no
   plan usage). The E0-tooling and analysis-pipeline builds wait until the claims fix
   lands.
+
+### 2026-11-11 crunch time (goal_turn 6), moved from STATUS.md
+
+- `main` holds the release commits through Raj's merge commit, and the repository is
+  public. In Raj's order: G1 (real tests for `receipts wrap` and the CLI, D50), G2 (the
+  type-ignore scan skips synthetic task content, D51 and D55), G3 on both Pythons, and
+  the canary string (D52) landed; RELEASE-READY 01f40e9, then `main` moved to e4230cc.
+- The smoke study restarted from a snapshot of e4230cc (D53): four runs at a time on the
+  4-CPU host, roughly one token per second per slot while tests share the CPUs.
+- The independent review of e4230cc blocked (B1 to B4, N1 to N16; 2cf2cef). Its
+  documentation findings were fixed in e8ee5de; the E0 verifier mode (D54) merged in
+  8692254; freshness re-derives the smoke summary (B1, N4, D56, b3f48b2, pushed to the
+  branch and `main`); G8, G13, and G5 checks were tightened (B3, N16, N5, D58, aa1f5a1);
+  new study runs carry the canary in the files that name hidden checks (N8, D59,
+  2e84e90). B2 and N6 (G7 and G9 row coverage and re-derivation, D57) and the
+  extractor's recall on completion statements (D60) are being fixed in worktrees.
