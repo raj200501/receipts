@@ -1,3 +1,6 @@
 # Design-parameter phrases allowed to contain numbers in README.md and docs/REPORT.md.
 # Format: <exact phrase> | <reason>. Result numbers never go here; they use
 # <!--n:key-->value<!--/n--> markers bound to artifacts/report/numbers.json.
+Qwen2.5-Coder-7B-Instruct | the name of the pinned model, not a result
+Wilson 95% interval | the coverage level of the reported intervals, a design parameter
+Python 3.11 and 3.12 | the supported Python versions, not a result

@@ -1,8 +1,11 @@
 {
-  "figures": [],
+  "figures": [
+    "docs/figures/smoke_outcomes.svg"
+  ],
   "files": {
-    "artifacts/report/numbers.json": "7b22372f5b41104bec22b65307470709d47c1135bdb59d88be04cde003abaca6"
+    "artifacts/report/numbers.json": "f9d40f8e6f01b4fdb7828906774e9709d1104d011a4e3a5a0a19a872b140fc6a",
+    "docs/figures/smoke_outcomes.svg": "094341652efd48930a31036acab35a6c6946dfd3973410984bb066d8cda13c57"
   },
-  "numbers": 0,
+  "numbers": 29,
   "schema": "receipts.report-manifest/1"
 }
