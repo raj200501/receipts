@@ -2,6 +2,49 @@
 
 History moved out of STATUS.md, newest first.
 
+## 2026-11-11: final push (goal_turn 4), moved from STATUS.md
+
+Stopped 2026-11-11 at the end of Raj's final push. Origin's session branch has every
+commit and the working tree is clean.
+
+This push:
+
+- **Public README.** The exploratory smoke result, with Wilson intervals, the headline
+  figure, a report card from `make demo`, key results linked to their artifact and to the
+  draft preregistrations, responsible disclosure, and the verified related work. Every
+  number is bound to `artifacts/exploratory/smoke_outcomes.json` (claimcheck, freshness).
+- **Exploratory smoke outcomes.** `tools/smoke_outcomes.py` reads the banked smoke runs
+  and writes `artifacts/exploratory/smoke_outcomes.json` (labeled exploratory, not
+  confirmatory); `src/receipts/report/spec.py` derives the registry and both figures.
+- **Technical report.** `docs/REPORT.md`: the instrument, receipts-bench, agents and
+  scaffold, the preregistered design, the exploratory first signal with intervals,
+  integrity engineering, limitations, ethics and disclosure, and reproducibility. Every
+  number is bound to an artifact and every reference is verified. Reading the banked
+  reports by hand found extractor errors in both directions (missed completion
+  statements; a failure admission recorded as a supported tests-pass claim); the README
+  and the report both list them.
+- **Python 3.12.** `make ci` failed on Python 3.12: `mypy --strict` under the NumPy 2.5
+  stubs that the lock resolves there. Fixed in 7ac1494 without changing values; both
+  versions now pass on a fresh clone before a push. CORRECTIONS.md has its first two
+  entries (this one, and docs/HOOK.md overstating what was measured); D48 records the
+  README's exploratory first screen.
+- **Pre-freeze work integrated** (83926a4, cherry-picked from the integration worktree):
+  D42 re-verification at banking (`receipts.study.rescore`), the E1 and E4 row contract,
+  the E1 to E4 analyses, E3 sampling, the gate changes to g7, g8, g9 and
+  `tools/prereg.py`, the run_study retry cap, the paired E4 plan, prereg drafts 0001 to
+  0003, and the review's remaining blocking fixes (D47: a row binds exactly the code
+  re-verification runs; lone surrogates; run_start checks; the exact 2 x 4 E4 plan in g9;
+  E3 exclusion records in g8; dropped connections as backend errors). The parked patch
+  file is gone. Left out: the hook demo, which has no recorded run that blocks on its live
+  ledger yet. The integrated code has not had an independent review since its fixes.
+- **Adversarial docs review** (workflow: four lenses, then a skeptic per lens): found
+  overstated or wrong statements in README.md, docs/REPORT.md, and docs/HOOK.md, all checked
+  against the banked runs and the code and corrected (CORRECTIONS.md). The headline caveat
+  changed most: in most false successes the unvalidated extractor missed or mis-checked the
+  completion statement, so "no contradicted claim" mostly measures the extractor.
+- **Style fix.** The parked patch held a literal em dash, which failed the style test
+  (fixed in 499026e, before the patch was integrated).
+
 ## 2026-11-04 17:00 UTC: pause (goal_turn 3), moved from STATUS.md
 
 Paused at Raj's request (clean stop). Origin had every commit; the working tree was clean.

@@ -1,14 +1,14 @@
-goal_turn: 4
+goal_turn: 5
 STATE: ACTIVE
 
 # Status
 
-Updated 2026-11-11, goal_turn 4 (Raj's final push before the repository goes public).
+Updated 2026-11-11, goal_turn 5 (release sprint: Raj is making the repository public).
 History is in docs/LOG.md.
 
 ## Gates
 
-`python tools/ship_check.py --fast` at d96b542 (fresh clone): **4/14** (FAST, does not count).
+`python tools/ship_check.py --fast` at 229a14f (fresh clone): **4/14** (FAST, does not count).
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
@@ -24,59 +24,36 @@ History is in docs/LOG.md.
 | G10 Claim integrity | PASS | make claimcheck and make freshness pass on README.md and docs/REPORT.md |
 | G11 Prereg integrity | FAIL | no confirmatory artifacts cite a preregistration |
 | G12 Review | FAIL | latest review is not a valid SHIP for HEAD: REVIEW: BLOCK |
-| G13 Documentation | PASS | README follows section 11; REPORT.md 6715 words; figures reproduce; every reference verified |
+| G13 Documentation | PASS | README follows section 11; REPORT.md 6992 words; figures reproduce; every reference verified |
 | G14 Hygiene | PASS | secrets clean; cash_usd = 0, caps respected; private/ untracked; files present; clean |
 
 G1 fails on coverage only: `src/receipts/hook/wrap.py` (the `receipts wrap` command) has no
-tests, which pulls the hook package to 78.6%; every test passes. G3 fails in fast mode only
-because it requires G1 and G2; `make ci` itself passes on Python 3.11 and 3.12. G2 fails on
-three `type: ignore[code]` comments without a reason inside benchmark task repositories;
-adding reasons changes the task hashes that the reference validation and the banked smoke
-runs cite, so that waits for the next benchmark version. G5 to G9, G11, and G12 wait on the
-studies and on a review of the current code.
+tests, which keeps the hook package below the floor; every test passes. G3 fails in fast
+mode only because it requires G1 and G2; `make ci` itself passes on Python 3.11 and 3.12.
+G2 stops at `type: ignore[code]` comments without a reason inside benchmark task
+repositories; adding reasons changes the task hashes that the reference validation and the
+banked smoke runs cite, so that waits for the next benchmark version. G5 to G9, G11, and
+G12 wait on the studies and on a review of the current code.
 
 ## Now
 
-Stopped 2026-11-11 at the end of Raj's final push. Origin's session branch has every
-commit and the working tree is clean.
+Release sprint, 2026-11-11 (goal_turn 5): Raj is making the repository public. The goal's
+experiments are on hold during the sprint; no model calls and no model-heavy runs.
 
-This push:
-
-- **Public README.** The exploratory smoke result, with Wilson intervals, the headline
-  figure, a report card from `make demo`, key results linked to their artifact and to the
-  draft preregistrations, responsible disclosure, and the verified related work. Every
-  number is bound to `artifacts/exploratory/smoke_outcomes.json` (claimcheck, freshness).
-- **Exploratory smoke outcomes.** `tools/smoke_outcomes.py` reads the banked smoke runs
-  and writes `artifacts/exploratory/smoke_outcomes.json` (labeled exploratory, not
-  confirmatory); `src/receipts/report/spec.py` derives the registry and both figures.
-- **Technical report.** `docs/REPORT.md`: the instrument, receipts-bench, agents and
-  scaffold, the preregistered design, the exploratory first signal with intervals,
-  integrity engineering, limitations, ethics and disclosure, and reproducibility. Every
-  number is bound to an artifact and every reference is verified. Reading the banked
-  reports by hand found extractor errors in both directions (missed completion
-  statements; a failure admission recorded as a supported tests-pass claim); the README
-  and the report both list them.
-- **Python 3.12.** `make ci` failed on Python 3.12: `mypy --strict` under the NumPy 2.5
-  stubs that the lock resolves there. Fixed in 7ac1494 without changing values; both
-  versions now pass on a fresh clone before a push. CORRECTIONS.md has its first two
-  entries (this one, and docs/HOOK.md overstating what was measured); D48 records the
-  README's exploratory first screen.
-- **Pre-freeze work integrated** (83926a4, cherry-picked from the integration worktree):
-  D42 re-verification at banking (`receipts.study.rescore`), the E1 and E4 row contract,
-  the E1 to E4 analyses, E3 sampling, the gate changes to g7, g8, g9 and
-  `tools/prereg.py`, the run_study retry cap, the paired E4 plan, prereg drafts 0001 to
-  0003, and the review's remaining blocking fixes (D47: a row binds exactly the code
-  re-verification runs; lone surrogates; run_start checks; the exact 2 x 4 E4 plan in g9;
-  E3 exclusion records in g8; dropped connections as backend errors). The parked patch
-  file is gone. Left out: the hook demo, which has no recorded run that blocks on its live
-  ledger yet. The integrated code has not had an independent review since its fixes.
-- **Adversarial docs review** (workflow: four lenses, then a skeptic per lens): found
-  overstated or wrong statements in README.md, docs/REPORT.md, and docs/HOOK.md, all checked
-  against the banked runs and the code and corrected (CORRECTIONS.md). The headline caveat
-  changed most: in most false successes the unvalidated extractor missed or mis-checked the
-  completion statement, so "no contradicted claim" mostly measures the extractor.
-- **Style fix.** The parked patch held a literal em dash, which failed the style test
-  (fixed in 499026e, before the patch was integrated).
+- **Safe to publish.** `make secrets-scan` is clean. Nothing under `private/` or `runs/`,
+  and no `.env` file, is tracked or was ever tracked on this branch. Every email address
+  in the tracked files is a reserved test address, Raj's GitHub noreply address, or a
+  public organizational contact quoted in a citation record; no commit, commit message,
+  or past file version on the branch holds a personal address or a secret pattern, and
+  the only commit identities are Raj's noreply and Claude's noreply. The benchmark tasks
+  are synthetic and use reserved domains, with no vulnerability details, vendored
+  dependencies, or binaries, and no third-party datasets are used (docs/DATA.md).
+- **Checks.** `make ci` (lint, typecheck, test, demo) passes on a fresh clone of the
+  pushed head on Python 3.11 and 3.12 (`tools/prepush.sh`, and `PY=3.12`).
+- **README.** The first screen says there is no study result yet and that its numbers
+  are interim observations from an unfinished validation run; the results section says
+  no manipulation effect, model comparison, or mitigation effect has been measured; the
+  Status section lists which gates pass in the fast check and why the others fail.
 
 ## Next three actions
 
