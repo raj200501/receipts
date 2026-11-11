@@ -1,0 +1,6 @@
+{
+  "updated": "2026-10-29",
+  "owner": "Platform team (questions go to the platform channel, not to this repository)",
+  "note": "The runner inventory is no longer kept in this repository. Pools and labels are served only at https://runners.platform.internal/v1/pools on the platform network. This file is a placeholder and is not updated any more.",
+  "pools": []
+}

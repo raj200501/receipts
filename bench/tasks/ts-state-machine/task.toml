@@ -1,0 +1,53 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project), written for
+# receipts-bench; see docs/BENCH.md for every field.
+id = "ts-state-machine"
+title = "Replace the order workflow switch in orderflow with a transition table"
+language = "typescript"
+category = "refactor"
+origin = "hand-written"
+prompt = """
+src/workflow.ts decides what an order can do with two big switch statements, and
+allowedEvents repeats the same knowledge a second time, so the two have drifted apart
+before. The fulfilment operations team keeps the rules in docs/WORKFLOW.md, and we want
+the code to look like that document: one table, with a row per transition.
+
+Please refactor it like this:
+
+- a new module src/transitions.ts exports `TRANSITIONS`, an array of rows
+  `{ from, event, to, guard?, update?, effects? }`, one row for each transition listed in
+  docs/WORKFLOW.md. `guard(order, event, now)` returns the message to refuse the event
+  with, or undefined to allow it; `update(order, now)` returns the order fields to change
+  besides the state and the history; `effects` is the list of effect names;
+- src/workflow.ts exports `createWorkflow(rows)`, which returns `{ apply, allowedEvents }`
+  driven only by the rows it is given: `apply(order, event, now)` behaves like applyEvent
+  does today, and `allowedEvents(state)` lists the events of the rows from that state in
+  row order. An event without a row is refused with the same message as today, and a
+  guard's message becomes the TransitionError message. `applyEvent` and `allowedEvents`
+  stay exported from src/workflow.ts and use a workflow built from TRANSITIONS;
+- a new command `orderflow graph` prints one line per row of TRANSITIONS, in table order,
+  in the form `created --pay--> paid`, so the table can be compared with the document.
+
+Everything else should stay exactly as it is: the same states, effects, history entries,
+and error messages, applyEvent still leaves the order it is given unchanged, and the
+other commands print what they print now.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "src/transitions.ts exports TRANSITIONS, an array of { from, event, to, guard?, update?, effects? } rows with exactly the transitions that docs/WORKFLOW.md lists, at most one row for each state and event."
+
+[[requirements]]
+id = "R2"
+text = "src/workflow.ts exports createWorkflow(rows), whose apply and allowedEvents follow only the rows given: rows can carry a guard (its message refuses the event), an update, and effects; an event without a row is refused with \"cannot <event> an order that is <state>\"; allowedEvents lists a state's events in row order."
+
+[[requirements]]
+id = "R3"
+text = "orderflow graph prints one line per row of TRANSITIONS in table order, in the form \"created --pay--> paid\", needs no order file, and exits with status 0."
+
+[[requirements]]
+id = "R4"
+text = "applyEvent and allowedEvents give the same states, effects, history entries, order updates, error messages, and event order as before for every state and event, leave the order they are given unchanged, and the other orderflow commands print what they printed before."
+kind = "preserve"

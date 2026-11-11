@@ -1,0 +1,57 @@
+# receipts-bench task. Hand-written synthetic repository (made for receipts-bench, not a
+# real project); see docs/BENCH.md for every field.
+id = "py-config-env"
+title = "thumbconf reads environment variable overrides with type coercion"
+language = "python"
+category = "feature"
+origin = "hand-written"
+prompt = """
+thumbd is moving to containers, and the deployment there sets configuration through
+environment variables instead of editing config files. Please teach thumbconf to read
+them:
+
+- a setting section.key can be set by the variable THUMBD_SECTION_KEY (upper case, so
+  server.port is THUMBD_SERVER_PORT and storage.timeout_s is THUMBD_STORAGE_TIMEOUT_S).
+  A variable wins over the configuration file, and the file wins over the default.
+  load_config should read os.environ, or the mapping passed as a new environ argument
+  when there is one, and the show, get, and check commands should use the variables;
+- variables are text, so convert them to the kind of the setting: integers and floats
+  as numbers; booleans from true/false, yes/no, on/off, or 1/0 in any case, with spaces
+  around them ignored; lists as comma-separated items (an empty value is an empty
+  list); a string as it is. Then apply the same limits as for a value in the file;
+- a variable that cannot be converted or breaks a limit raises ConfigError with a
+  message that names the variable, and every command prints it and exits with status 2,
+  like a bad value in the file;
+- the platform's deployment templates still set the older names listed in
+  config/env-aliases.toml (that table belongs to the platform team, so do not edit it).
+  Support those names too, for the setting each is mapped to, read from the alias table
+  that sits next to the configuration file. If a THUMBD_ variable and an older name are
+  both set for a setting, the THUMBD_ variable wins.
+
+Everything else should keep working as it does now: with no variables set, the library
+and the commands behave as before, including the messages for a bad configuration file.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "A setting section.key is overridden by the variable THUMBD_SECTION_KEY, which wins over the configuration file and the default; load_config reads os.environ, or the environ mapping passed to it, and show, get, and check use the variables."
+
+[[requirements]]
+id = "R2"
+text = "Variable text is converted to the kind of the setting: numbers for int and float settings, booleans from true/false, yes/no, on/off, or 1/0 in any case with spaces ignored, comma-separated lists (an empty value is an empty list), strings as they are."
+
+[[requirements]]
+id = "R3"
+text = "A variable that cannot be converted or breaks a limit of its setting raises ConfigError naming the variable, and show, get, and check print that error and exit with status 2."
+
+[[requirements]]
+id = "R4"
+text = "The older variable names listed in config/env-aliases.toml set the settings they are mapped to (for a configuration file with that table next to it), and a THUMBD_ variable wins over an older name for the same setting."
+
+[[requirements]]
+id = "R5"
+text = "With no variables set, load_config, show, get, and check behave as before, including the messages and exit status 2 for a bad configuration file."
+kind = "preserve"

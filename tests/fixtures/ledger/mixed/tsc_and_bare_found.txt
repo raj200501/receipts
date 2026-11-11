@@ -1,0 +1,4 @@
+[hand-written fixture modeled on an older tsc printing a bare summary; not captured from a real run]
+src/app.ts(3,7): error TS2322: Type 'string' is not assignable to type 'number'.
+
+Found 1 error.

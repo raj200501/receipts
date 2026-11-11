@@ -1,0 +1,97 @@
+{
+  "synthetic": true,
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository).",
+  "episodes": [
+    {
+      "request": "Accounting asked which customer name invoicer puts on an invoice when the export has different spellings of the customer on different lines of the same invoice. Can you check in the code? Please don't change anything.",
+      "steps": [
+        {
+          "thought": "Start with the README to see what it says about invoices and customers.",
+          "tool": "read",
+          "args": {
+            "path": "README.md"
+          },
+          "output": "# invoicer\n\nInvoice totals for the monthly billing run. invoicer reads the CSV export of invoice\nlines from the order system and prints every invoice with its lines, subtotal, VAT, and\ntotal.\n\n## Usage\n\n    python3 -m invoicer totals examples/october.csv\n    python3 -m invoicer totals examples/october.csv --invoice INV-2026-1042\n    python3 -m invoicer list examples/october.csv\n\nThe export has a header row and one row per invoice line:\n\n    invoice,customer,description,quantity,unit_price,vat_rate\n    INV-2026-1042,Harbor Street Bakery,Espresso machine service,1,185.00,20\n\n`quantity` and `unit_price` are decimal numbers (a credit line has a negative quantity),\nand `vat_rate` is a percentage from 0 to 100. The lines with the same invoice number make\nup one invoice, which takes its customer from its first line.\n\n`invoicer totals` prints one block per invoice, in the order in which the invoices first\nappear in the export, with a blank line between blocks:\n\n    INV-2026-1042  Harbor Street Bakery\n      Espresso machine service          185.00\n      Descaling tablets (box of 10)      26.85\n      subtotal                          211.85\n      vat 7%                              1.88\n      vat 20%                            37.00\n      total                             250.73\n\nDescriptions longer than 30 characters are cut in the report. `invoicer list` prints one\nline per invoice with its number, customer, and total.\n\nA row that cannot be read stops either command with a message that names its line, such\nas `invoicer: line 4: invalid unit price 'seven'`, and the command exits with status 2.\nSo does a missing file or an unknown `--invoice` number.\n\nThe rules for rounding amounts and calculating VAT are finance's rounding policy in\n[docs/ROUNDING.md](docs/ROUNDING.md).\n\n## Library\n\n    from pathlib import Path\n\n    from invoicer import invoice_totals, read_items\n\n    for invoice in invoice_totals(read_items(Path(\"examples/october.csv\"))):\n        print(invoice.invoice, invoice.subtotal, invoice.vat, invoice.total)\n\n`read_items` returns `LineItem` objects (`amount` is the rounded line amount), and\n`invoice_totals` returns one `InvoiceTotals` per invoice with its `subtotal`, `vat` (VAT\nrate to VAT amount), and `total`. A row that cannot be read raises `ItemError`, a\n`ValueError` whose message starts with `line N:`.\n\n## Development\n\n    python3 -m pytest -v\n\nThe package lives in `src/invoicer/` and uses only the standard library.\n"
+        },
+        {
+          "thought": "Invoices are put together from their lines in totals.py; read it.",
+          "tool": "read",
+          "args": {
+            "path": "src/invoicer/totals.py"
+          },
+          "output": "\"\"\"Invoice totals: the subtotal, the VAT for each rate, and the total.\"\"\"\n\nfrom __future__ import annotations\n\nfrom collections.abc import Iterable, Sequence\nfrom dataclasses import dataclass\n\nfrom invoicer.items import LineItem\nfrom invoicer.money import round_cents\n\n\n@dataclass(frozen=True)\nclass InvoiceTotals:\n    \"\"\"One invoice with its lines and totals.\n\n    ``vat`` maps each VAT rate on the invoice to its VAT amount, from the lowest rate to\n    the highest.\n    \"\"\"\n\n    invoice: str\n    customer: str\n    items: tuple[LineItem, ...]\n    subtotal: float\n    vat: dict[float, float]\n    total: float\n\n\ndef vat_by_rate(items: Iterable[LineItem]) -> dict[float, float]:\n    \"\"\"The VAT of each rate: the rate applied once to the sum of that rate's line amounts.\"\"\"\n    bases: dict[float, float] = {}\n    for item in items:\n        bases[item.vat_rate] = bases.get(item.vat_rate, 0.0) + item.amount\n    return {rate: round_cents(base * rate / 100) for rate, base in sorted(bases.items())}\n\n\ndef totals_for(items: Sequence[LineItem]) -> InvoiceTotals:\n    \"\"\"The totals of one invoice; every item must belong to the same invoice.\"\"\"\n    if not items:\n        raise ValueError(\"an invoice needs at least one line\")\n    numbers = {item.invoice for item in items}\n    if len(numbers) != 1:\n        raise ValueError(f\"lines of several invoices: {', '.join(sorted(numbers))}\")\n    subtotal = sum(item.amount for item in items)\n    vat = vat_by_rate(items)\n    total = subtotal + sum(vat.values())\n    first = items[0]\n    return InvoiceTotals(first.invoice, first.customer, tuple(items), subtotal, vat, total)\n\n\ndef invoice_totals(items: Iterable[LineItem]) -> list[InvoiceTotals]:\n    \"\"\"Totals of every invoice, in the order in which the invoices first appear.\"\"\"\n    groups: dict[str, list[LineItem]] = {}\n    for item in items:\n        groups.setdefault(item.invoice, []).append(item)\n    return [totals_for(lines) for lines in groups.values()]\n"
+        },
+        {
+          "thought": "Check every place that reads or prints the customer.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n customer src/invoicer/items.py src/invoicer/totals.py src/invoicer/report.py"
+          },
+          "output": "src/invoicer/items.py:12:HEADER = (\"invoice\", \"customer\", \"description\", \"quantity\", \"unit_price\", \"vat_rate\")\nsrc/invoicer/items.py:32:    customer: str\nsrc/invoicer/items.py:56:    invoice, customer, description = (field.strip() for field in row[:3])\nsrc/invoicer/items.py:66:    return LineItem(invoice, customer, description, quantity, unit_price, vat_rate, line)\nsrc/invoicer/totals.py:21:    customer: str\nsrc/invoicer/totals.py:47:    return InvoiceTotals(first.invoice, first.customer, tuple(items), subtotal, vat, total)\nsrc/invoicer/report.py:21:    lines = [f\"{invoice.invoice}  {invoice.customer}\".rstrip()]\nsrc/invoicer/report.py:38:    \"\"\"One line per invoice: the number, the customer, and the total.\"\"\"\nsrc/invoicer/report.py:40:        f\"{invoice.invoice:<16}{invoice.customer:<30.30}{format_amount(invoice.total):>10}\\n\"\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "The customer comes from one place only, so I can answer.",
+        "report": "invoicer uses the customer of the first line of each invoice and ignores the customer column of its other lines. invoice_totals in src/invoicer/totals.py groups the lines by invoice number in the order in which the invoices first appear, and totals_for builds the InvoiceTotals from first = items[0], so InvoiceTotals.customer is first.customer. The README says the same: an invoice takes its customer from its first line. The report prints that name in the header line of each invoice block, and invoicer list prints it in a 30-character column, cut if it is longer. Different spellings on later lines are not reported anywhere, so an export with a typo on the first line of an invoice shows the typo."
+      }
+    },
+    {
+      "request": "Thanks. Someone in the billing team asked why a long product name looks cut off in the report. Where is that done, and what is the width?",
+      "steps": [
+        {
+          "thought": "The report layout lives in report.py; read it.",
+          "tool": "read",
+          "args": {
+            "path": "src/invoicer/report.py"
+          },
+          "output": "\"\"\"The plain-text invoice report and the one-line-per-invoice list.\"\"\"\n\nfrom __future__ import annotations\n\nfrom collections.abc import Sequence\n\nfrom invoicer.money import format_amount, format_rate\nfrom invoicer.totals import InvoiceTotals\n\nLABEL_WIDTH = 30\nAMOUNT_WIDTH = 10\n\n\ndef row(label: str, amount: str) -> str:\n    \"\"\"One report row: the label (cut to its column) and the amount, right-aligned.\"\"\"\n    return f\"  {label:<{LABEL_WIDTH}.{LABEL_WIDTH}}{amount:>{AMOUNT_WIDTH}}\"\n\n\ndef render_invoice(invoice: InvoiceTotals) -> str:\n    \"\"\"One invoice: a header, a row per line, the subtotal, a row per VAT rate, the total.\"\"\"\n    lines = [f\"{invoice.invoice}  {invoice.customer}\".rstrip()]\n    lines.extend(row(item.description, format_amount(item.amount)) for item in invoice.items)\n    lines.append(row(\"subtotal\", format_amount(invoice.subtotal)))\n    lines.extend(\n        row(f\"vat {format_rate(rate)}%\", format_amount(amount))\n        for rate, amount in invoice.vat.items()\n    )\n    lines.append(row(\"total\", format_amount(invoice.total)))\n    return \"\\n\".join(lines) + \"\\n\"\n\n\ndef render(invoices: Sequence[InvoiceTotals]) -> str:\n    \"\"\"Every invoice, separated by blank lines (empty text when there are none).\"\"\"\n    return \"\\n\".join(render_invoice(invoice) for invoice in invoices)\n\n\ndef render_list(invoices: Sequence[InvoiceTotals]) -> str:\n    \"\"\"One line per invoice: the number, the customer, and the total.\"\"\"\n    return \"\".join(\n        f\"{invoice.invoice:<16}{invoice.customer:<30.30}{format_amount(invoice.total):>10}\\n\"\n        for invoice in invoices\n    )\n"
+        },
+        {
+          "thought": "Check where the width constants are used.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n 'LABEL_WIDTH\\|AMOUNT_WIDTH' src/invoicer/report.py"
+          },
+          "output": "10:LABEL_WIDTH = 30\n11:AMOUNT_WIDTH = 10\n16:    return f\"  {label:<{LABEL_WIDTH}.{LABEL_WIDTH}}{amount:>{AMOUNT_WIDTH}}\"\n[exit code 0]"
+        },
+        {
+          "thought": "See what the entry point does, in case it changes the output.",
+          "tool": "read",
+          "args": {
+            "path": "src/invoicer/__main__.py"
+          },
+          "output": "\"\"\"Entry point for ``python3 -m invoicer``.\"\"\"\n\nfrom invoicer.cli import main\n\nraise SystemExit(main())\n"
+        }
+      ],
+      "finish": {
+        "thought": "The cut happens in one function and the width is a constant.",
+        "report": "The cut is made in row() in src/invoicer/report.py. It formats the label with the width LABEL_WIDTH both as minimum and as maximum (the f-string spec :<{LABEL_WIDTH}.{LABEL_WIDTH}), so every label is padded to 30 characters and anything longer is cut at 30 without a marker. LABEL_WIDTH is 30 and AMOUNT_WIDTH, the right-aligned amount column, is 10. The description of each line, the subtotal, each VAT row, and the total all go through row(), so they share the limit. The invoice header line is not cut, and invoicer list cuts the customer to 30 characters with the format :<30.30. python3 -m invoicer only calls main() from cli.py, so it does not change the output."
+      }
+    },
+    {
+      "request": "Last thing for now: how many invoices and lines are in examples/october.csv, and how many tests does each test module have?",
+      "steps": [
+        {
+          "thought": "Count the lines per invoice number in the example export.",
+          "tool": "bash",
+          "args": {
+            "cmd": "cut -d, -f1 examples/october.csv | sort | uniq -c"
+          },
+          "output": "      2 INV-2026-1042\n      2 INV-2026-1043\n      2 INV-2026-1044\n      2 INV-2026-1045\n      1 invoice\n[exit code 0]"
+        },
+        {
+          "thought": "Count the test functions in each test module.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -c '^def test_' tests/test_cli.py tests/test_items.py tests/test_money.py tests/test_report.py tests/test_totals.py"
+          },
+          "output": "tests/test_cli.py:6\ntests/test_items.py:11\ntests/test_money.py:5\ntests/test_report.py:6\ntests/test_totals.py:7\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "Both counts are in.",
+        "report": "examples/october.csv has 4 invoices with 8 lines: INV-2026-1042, INV-2026-1043, INV-2026-1044, and INV-2026-1045 have 2 lines each (the fifth entry in the count, 'invoice', is the header row). The test modules define 35 test functions: 6 in tests/test_cli.py, 11 in tests/test_items.py, 5 in tests/test_money.py, 6 in tests/test_report.py, and 7 in tests/test_totals.py. That counts functions, not test cases: a parametrized test runs once per parameter set, so pytest can report more."
+      }
+    }
+  ]
+}

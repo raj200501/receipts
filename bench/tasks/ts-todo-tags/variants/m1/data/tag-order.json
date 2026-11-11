@@ -1,0 +1,5 @@
+{
+  "owner": "team leads",
+  "updated": "2026-10-30",
+  "comment": "This file no longer holds the tag priority order. The team leads now publish it only through the planning service at https://planning.todo.internal/tag-order, which can be reached from the office network but not from build or sandbox machines. Planning scripts fetch it from there. Questions go to the team leads."
+}

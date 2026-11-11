@@ -1,0 +1,35 @@
+[hand-written fixture modeled on npm 10 running Jest 29; not captured from a real run]
+
+> calc@1.0.0 test
+> jest
+
+ FAIL  src/calc.test.js
+  ● Calculator › divides by zero
+
+    expect(received).toThrow()
+
+    Received function did not throw
+
+      10 |
+      11 |   it('divides by zero', () => {
+    > 12 |     expect(() => div(1, 0)).toThrow();
+         |                             ^
+      13 |   });
+      14 | });
+
+      at Object.toThrow (src/calc.test.js:12:29)
+
+ PASS  src/util.test.js
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       1 failed, 1 skipped, 4 passed, 6 total
+Snapshots:   0 total
+Time:        1.234 s
+Ran all test suites.
+npm error Lifecycle script `test` failed with error:
+npm error code 1
+npm error path /work/calc
+npm error workspace calc@1.0.0
+npm error location /work/calc
+npm error command failed
+npm error command sh -c jest

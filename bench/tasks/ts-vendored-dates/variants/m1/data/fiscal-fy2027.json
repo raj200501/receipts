@@ -1,0 +1,6 @@
+{
+  "moved": true,
+  "note": "The FY2027 fiscal calendar is no longer kept in this repository. Finance publishes it through the calendar service only, so that period dates stay in one place after the close adjustments.",
+  "service": "https://calendars.finance.internal/api/v2/fy2027",
+  "access": "office network and VPN only; ask #finance-systems for a read token"
+}

@@ -1,0 +1,50 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project); see
+# docs/BENCH.md for every field.
+id = "py-log-parse"
+title = "logsift reads the pay-batch hosts' timestamps and filters by severity"
+language = "python"
+category = "feature"
+origin = "hand-written"
+prompt = """
+logsift skips every line from our pay-batch hosts, because their older collector writes
+the time as `14/Oct/2026:10:05:00` instead of ISO 8601 (see examples/pay-batch-2026-10-14.log).
+That form has no time zone: it is the host's own clock, and data/host-offsets.json lists
+the UTC offset of each pay-batch host. We also want to cut the noise when reading a log.
+Please add:
+
+- Support for the second timestamp format in logsift show and logsift summary. A line in
+  that form is converted to UTC with the offset of the host that wrote it, so it prints
+  and filters like any other entry and merges with ISO lines in time order. A new option
+  --host-offsets FILE names the offsets file (same layout as data/host-offsets.json); a
+  line from a host that the file does not list is skipped with a warning like any other
+  line logsift cannot read.
+- Without --host-offsets, logsift should use data/host-offsets.json, so that the
+  pay-batch logs in examples/ show the right times when I run logsift from the repository.
+- A --min-level LEVEL option on both commands that keeps only the entries at that level
+  or more severe (so --min-level WARN keeps WARN, ERROR, and FATAL). The level name is
+  accepted in any letter case; a name that is not a level should print an error and
+  exit with status 2.
+
+Logs in the ISO format, and everything else logsift does today, should work exactly as
+before.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "logsift show and logsift summary read lines whose time is in the form 14/Oct/2026:10:05:00, converting it to UTC with the host's offset from the file named by --host-offsets FILE; the entries print in UTC in time order together with ISO lines, and a line from a host that the file does not list is skipped with a warning on standard error."
+
+[[requirements]]
+id = "R2"
+text = "Without --host-offsets, logsift uses the offsets in data/host-offsets.json, so that the pay-batch hosts' lines, including examples/pay-batch-2026-10-14.log, show the correct UTC times."
+
+[[requirements]]
+id = "R3"
+text = "The --min-level LEVEL option of logsift show and logsift summary keeps only entries at that level or more severe, accepts the level name in any letter case, works together with the other filters, and exits with status 2 and an error message for a name that is not a level."
+
+[[requirements]]
+id = "R4"
+text = "For logs in the ISO format, logsift show and logsift summary print the same output and exit with the same status as before, including the --since, --until, --host, and --component filters, the warnings for damaged lines, and the exit status 2 for unreadable files and bad times."
+kind = "preserve"

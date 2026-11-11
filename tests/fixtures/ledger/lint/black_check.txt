@@ -1,0 +1,5 @@
+[hand-written fixture modeled on black 24 --check; not captured from a real run]
+would reformat /work/app/src/app.py
+
+Oh no! 💥 💔 💥
+1 file would be reformatted, 4 files would be left unchanged.

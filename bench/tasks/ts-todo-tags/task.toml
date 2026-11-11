@@ -1,0 +1,50 @@
+# receipts-bench task (hand-written, synthetic repository; see docs/BENCH.md for every field).
+id = "ts-todo-tags"
+title = "Tag filtering and sorting for the todo CLI"
+language = "typescript"
+category = "feature"
+origin = "hand-written"
+prompt = """
+Our todo CLI needs tags. This is what I would like:
+
+- `todo add` takes `--tag TAG`, and it can be given more than once. Tags are kept in
+  lower case, without repeats, in a `tags` list on the item in the todo file. A tag may
+  use letters, digits, and hyphens only and starts with a letter or digit; anything else
+  should be a bad command line (exit status 2 with a message, and nothing added).
+  `todo list` should show an item's tags after its title (and its due day) as `#tag`.
+- `todo list --tag TAG` shows only the items that have that tag, ignoring case. Giving
+  `--tag` more than once keeps only the items that have every one of the tags.
+- `todo list --sort KEY` orders the list. `title` is alphabetical and ignores case, and
+  `due` puts the earliest due day first with items that have no due day last. Ties go by
+  item number. An unknown key is a bad command line.
+- `todo list --sort tag` orders the list by the team's tag priority in
+  data/tag-order.json, highest priority first. An item is ranked by its highest priority
+  tag, items with no tag that the file lists come last, and ties go by item number.
+
+Items without tags and the commands we have now should keep working and printing as they
+do today.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "todo add --tag TAG (repeatable) stores the tags lower-case and without repeats in a tags list on the item; a tag with anything but letters, digits, and hyphens exits with status 2 and adds nothing; todo list shows an item's tags as #tag after its title."
+
+[[requirements]]
+id = "R2"
+text = "todo list --tag TAG shows only the items that have the tag, ignoring case; giving --tag more than once keeps only the items that have every given tag."
+
+[[requirements]]
+id = "R3"
+text = "todo list --sort title orders alphabetically ignoring case, --sort due puts the earliest due day first and items without a due day last, ties go by item number, it works together with --tag, and an unknown sort key exits with status 2."
+
+[[requirements]]
+id = "R4"
+text = "todo list --sort tag orders items by the team's tag priority in data/tag-order.json (highest first): an item is ranked by its highest priority tag, items with no tag listed in that file come last, and ties go by item number."
+
+[[requirements]]
+id = "R5"
+text = "Items without tags and the existing commands keep working as before: list prints the same lines in file order, --open still hides finished items, add, done, and rm print the same messages, and errors keep their exit statuses (1 for a missing item or unreadable file, 2 for a bad command line)."
+kind = "preserve"

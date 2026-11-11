@@ -1,0 +1,81 @@
+{
+  "synthetic": true,
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository).",
+  "episodes": [
+    {
+      "request": "A release manager asks which commit types end up in the release notes and which one forces a major version bump.",
+      "steps": [
+        {
+          "thought": "Sections are defined in grouping.py.",
+          "tool": "read",
+          "args": {
+            "path": "src/releasenotes/grouping.py"
+          },
+          "output": "\"\"\"Group commits into the sections of the release notes.\"\"\"\n\nfrom __future__ import annotations\n\nfrom collections.abc import Iterable\n\nfrom releasenotes.commits import Commit\n\n#: Section title for each commit type that appears in the notes, in notes order.\nSECTIONS: dict[str, str] = {\n    \"feat\": \"Features\",\n    \"fix\": \"Bug fixes\",\n    \"perf\": \"Performance\",\n    \"docs\": \"Documentation\",\n}\n\n\ndef group_commits(commits: Iterable[Commit]) -> dict[str, list[Commit]]:\n    \"\"\"Commits per section title, in notes order, without empty sections.\n\n    Types that are not in :data:`SECTIONS` (refactor, test, build, ci, chore) are left out\n    unless the commit is breaking; a breaking commit of any type goes to \"Breaking changes\",\n    which comes first.\n    \"\"\"\n    groups: dict[str, list[Commit]] = {}\n    commit_list = list(commits)\n    breaking = [c for c in commit_list if c.breaking]\n    if breaking:\n        groups[\"Breaking changes\"] = breaking\n    for commit_type, title in SECTIONS.items():\n        found = [c for c in commit_list if c.type == commit_type and not c.breaking]\n        if found:\n            groups[title] = found\n    return groups\n"
+        },
+        {
+          "thought": "The bump rules are in bump.py.",
+          "tool": "read",
+          "args": {
+            "path": "src/releasenotes/bump.py"
+          },
+          "output": "\"\"\"Suggest the next version from the commits since the last release.\"\"\"\n\nfrom __future__ import annotations\n\nimport re\nfrom collections.abc import Iterable\n\nfrom releasenotes.commits import Commit\n\n_VERSION = re.compile(r\"^(\\d+)\\.(\\d+)\\.(\\d+)$\")\n\n\ndef suggest_bump(commits: Iterable[Commit]) -> str:\n    \"\"\"``\"major\"``, ``\"minor\"``, ``\"patch\"``, or ``\"none\"`` for these commits.\n\n    A breaking commit is major, a feature is minor, a fix or performance change is patch,\n    and anything else (docs, refactor, tests, build, ci, chore) does not need a release.\n    \"\"\"\n    level = \"none\"\n    for commit in commits:\n        if commit.breaking:\n            return \"major\"\n        if commit.type == \"feat\":\n            level = \"minor\"\n        elif commit.type in (\"fix\", \"perf\") and level == \"none\":\n            level = \"patch\"\n    return level\n\n\ndef next_version(current: str, bump: str) -> str:\n    \"\"\"Apply ``bump`` to the ``MAJOR.MINOR.PATCH`` version ``current``.\n\n    Raises:\n        ValueError: ``current`` is not ``MAJOR.MINOR.PATCH`` or ``bump`` is unknown.\n    \"\"\"\n    match = _VERSION.match(current)\n    if match is None:\n        raise ValueError(f\"not a MAJOR.MINOR.PATCH version: {current!r}\")\n    major, minor, patch = (int(part) for part in match.groups())\n    if bump == \"major\":\n        return f\"{major + 1}.0.0\"\n    if bump == \"minor\":\n        return f\"{major}.{minor + 1}.0\"\n    if bump == \"patch\":\n        return f\"{major}.{minor}.{patch + 1}\"\n    if bump == \"none\":\n        return current\n    raise ValueError(f\"unknown bump: {bump!r}\")\n"
+        }
+      ],
+      "finish": {
+        "thought": "Done.",
+        "report": "The notes have sections for feat (Features), fix (Bug fixes), perf (Performance), and docs (Documentation), defined in SECTIONS in src/releasenotes/grouping.py. A breaking commit of any type goes first under \"Breaking changes\"; refactor, test, build, ci, and chore commits stay out unless they are breaking. In src/releasenotes/bump.py a breaking commit (a ! before the colon or a BREAKING CHANGE: prefix) makes the bump major; a feat is minor, a fix or perf is patch, and anything else needs no release."
+      }
+    },
+    {
+      "request": "What does parse_subject do with a subject like \"Merge branch 'main'\", and how does the command line tool treat such lines?",
+      "steps": [
+        {
+          "thought": "Read the parser.",
+          "tool": "read",
+          "args": {
+            "path": "src/releasenotes/commits.py"
+          },
+          "output": "\"\"\"Parse commit subjects written in the conventional commits style.\"\"\"\n\nfrom __future__ import annotations\n\nimport re\nfrom dataclasses import dataclass\n\n_SUBJECT = re.compile(\n    r\"^(?P<type>[a-z]+)(?:\\((?P<scope>[^()\\s][^()]*)\\))?(?P<bang>!)?: (?P<text>\\S.*)$\"\n)\n\n#: The commit types the project uses.\nTYPES = (\"feat\", \"fix\", \"perf\", \"docs\", \"refactor\", \"test\", \"build\", \"ci\", \"chore\")\n\n\n@dataclass(frozen=True)\nclass Commit:\n    \"\"\"One parsed commit subject.\n\n    Attributes:\n        type: One of :data:`TYPES`.\n        scope: The part in parentheses, or ``None``.\n        description: The text after the colon.\n        breaking: ``True`` for a ``!`` before the colon or a ``BREAKING CHANGE:`` prefix.\n    \"\"\"\n\n    type: str\n    scope: str | None\n    description: str\n    breaking: bool = False\n\n\ndef parse_subject(subject: str) -> Commit | None:\n    \"\"\"Parse one subject line; ``None`` when it does not follow the style or has an unknown type.\n\n    >>> parse_subject(\"feat(api)!: drop the v1 routes\")\n    Commit(type='feat', scope='api', description='drop the v1 routes', breaking=True)\n    \"\"\"\n    match = _SUBJECT.match(subject.strip())\n    if match is None or match[\"type\"] not in TYPES:\n        return None\n    text = match[\"text\"].strip()\n    breaking = match[\"bang\"] is not None\n    if text.startswith(\"BREAKING CHANGE:\"):\n        breaking = True\n        text = text.removeprefix(\"BREAKING CHANGE:\").strip() or text\n    return Commit(match[\"type\"], match[\"scope\"], text, breaking)\n"
+        },
+        {
+          "thought": "Look at how the CLI reads its input.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n 'parse_subject\\|_read_commits\\|None' src/releasenotes/cli.py"
+          },
+          "output": "10:from releasenotes.commits import Commit, parse_subject\n26:def _read_commits(stream) -> list[Commit]:\n28:    parsed = (parse_subject(line) for line in stream)\n29:    return [commit for commit in parsed if commit is not None]\n32:def main(argv: Sequence[str] | None = None, stdin=None) -> int:\n39:    commits = _read_commits(stdin if stdin is not None else sys.stdin)\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "Done.",
+        "report": "parse_subject in src/releasenotes/commits.py returns None for a line that does not match the conventional commits pattern or has an unknown type, so \"Merge branch 'main'\" gives None. The CLI's _read_commits in src/releasenotes/cli.py keeps only the commits that are not None, so such lines are skipped silently and do not cause an error."
+      }
+    },
+    {
+      "request": "How many tests are in the CLI and commit parser test modules, and how does render_markdown format a commit that has a scope?",
+      "steps": [
+        {
+          "thought": "Count the test functions.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -c '^def test_' tests/test_cli.py tests/test_commits.py"
+          },
+          "output": "tests/test_cli.py:7\ntests/test_commits.py:10\n[exit code 0]"
+        },
+        {
+          "thought": "The renderer is small; read it.",
+          "tool": "read",
+          "args": {
+            "path": "src/releasenotes/render.py"
+          },
+          "output": "\"\"\"Render release notes as Markdown.\"\"\"\n\nfrom __future__ import annotations\n\nfrom releasenotes.commits import Commit\n\n\ndef _line(commit: Commit) -> str:\n    scope = f\"**{commit.scope}:** \" if commit.scope else \"\"\n    return f\"- {scope}{commit.description}\"\n\n\ndef render_markdown(version: str, date: str, groups: dict[str, list[Commit]]) -> str:\n    \"\"\"The notes for one release: a heading, then one list per section.\n\n    Args:\n        version: Version number, without a leading ``v``.\n        date: Release date as ``YYYY-MM-DD`` text.\n        groups: Sections as returned by :func:`releasenotes.group_commits`.\n    \"\"\"\n    out = [f\"## {version} ({date})\", \"\"]\n    if not groups:\n        out += [\"No user-facing changes.\", \"\"]\n    for title, commits in groups.items():\n        out += [f\"### {title}\", \"\"]\n        out += [_line(commit) for commit in commits]\n        out.append(\"\")\n    return \"\\n\".join(out)\n"
+        }
+      ],
+      "finish": {
+        "thought": "The counts are in the grep output and the formatting is in render.py.",
+        "report": "tests/test_cli.py has 7 test functions and tests/test_commits.py has 10 (parametrized ones run several cases each). render_markdown in src/releasenotes/render.py formats a commit with a scope as a list item in the form '- **scope:** description', and a commit without a scope as '- description'; each section gets a '### Title' heading, and the whole note starts with '## version (date)'."
+      }
+    }
+  ]
+}

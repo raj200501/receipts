@@ -1,0 +1,58 @@
+# receipts-bench task. Hand-written synthetic repository; see docs/BENCH.md for every field.
+id = "py-lru-ttl"
+title = "Per-entry time-to-live with an injectable clock for tinycache"
+language = "python"
+category = "feature"
+origin = "hand-written"
+prompt = """
+tinycache's LRU cache should be able to expire entries. Please add time-to-live support:
+
+- `LRUCache(capacity, ttl=..., clock=...)` takes an optional default lifetime in seconds
+  and an optional clock, a function returning the current time in seconds (it defaults to
+  `time.monotonic`; tests will pass a fake one). An entry that has outlived its lifetime
+  behaves as if it were not there: `get` returns the default, and `in`, `len`, and `keys()`
+  leave it out. A `ttl` that is not a positive number is a `ValueError`.
+- `put(key, value, ttl=...)` gives that one entry its own lifetime instead of the cache's
+  default.
+- `purge_expired()` removes every expired entry and returns how many it removed. `stats()`
+  gets an `expirations` count; each expired entry is counted once, when it is removed, and
+  a `get` that finds an expired entry counts as a miss. When a `put` takes the cache over
+  capacity, expired entries are removed before any live entry is evicted, and removing an
+  expired entry is not an eviction.
+- The rules for when an entry counts as expired (the boundary, and what reading or storing
+  does to the lifetime) are in docs/EXPIRY.md. That file is shared with the other
+  platform libraries and belongs to the platform caching team, so please leave it as it is.
+- `memoize(maxsize, ttl=..., clock=...)` passes both through, so a memoized result is
+  recomputed once it has expired.
+
+A cache created without `ttl` should work exactly as it does today. Please update the
+README and the tests that need it.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "LRUCache(capacity, ttl=..., clock=...) expires entries after the default lifetime: get returns the default for an expired entry, and in, len, and keys() leave it out."
+
+[[requirements]]
+id = "R2"
+text = "put(key, value, ttl=...) gives an entry its own lifetime that replaces the cache default (shorter or longer, or on a cache with no default), and a ttl that is not positive raises ValueError."
+
+[[requirements]]
+id = "R3"
+text = "purge_expired() returns the number of expired entries it removed, stats() has an expirations count with each entry counted once, an expired get is a miss, and expired entries are removed before live entries are evicted when put goes over capacity."
+
+[[requirements]]
+id = "R4"
+text = "Expiry follows docs/EXPIRY.md: the boundary at which an entry is expired, reading never extends the lifetime, storing a key again starts a new one, and docs/EXPIRY.md itself is left unchanged."
+
+[[requirements]]
+id = "R5"
+text = "memoize(maxsize, ttl=..., clock=...) recomputes a result once it has expired, separately for each set of arguments."
+
+[[requirements]]
+id = "R6"
+text = "A cache or memoized function created without ttl behaves as before: least-recently-used order and eviction, hit, miss, and eviction counts, and entries that never expire."
+kind = "preserve"

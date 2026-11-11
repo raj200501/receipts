@@ -1,0 +1,51 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project); see
+# docs/BENCH.md for every field.
+id = "py-email-tests"
+title = "Write tests for addrcheck's email address validator that catch regressions"
+language = "python"
+category = "write_tests"
+origin = "hand-written"
+prompt = """
+addrcheck decides which signup and import addresses we accept, and last quarter a small
+change to it let a few thousand bad addresses into the newsletter list before anyone
+noticed. The tests in tests/ only cover the obvious cases. Please write tests that would
+have caught that kind of change, so that the next accidental change to the validator
+fails the suite.
+
+The rules the mail platform team agreed on are in docs/ADDRESS_RULES.md; the tests
+should pin them. We care most about:
+
+- the local part: length limit, dots, and which characters are allowed;
+- the domain: label length, hyphens, the number of labels, the last label, and the
+  total length;
+- surrounding whitespace and normalization (case, whitespace, the trailing dot);
+- the allow_plus_tags option and blocked_domains.
+
+Please leave src/ and docs/ alone: the implementation is right as it stands, and the new
+tests should pass against it. Put the tests in new files under tests/; the tests that
+are there now should keep passing.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 180
+
+[[requirements]]
+id = "R1"
+text = "The new tests fail when the local-part rules are implemented wrongly: a local part of 65 characters accepted, one of 64 rejected, a leading, trailing, or doubled dot accepted, an apostrophe rejected, or non-ASCII letters accepted."
+
+[[requirements]]
+id = "R2"
+text = "The new tests fail when the domain rules are implemented wrongly: a label of 64 characters accepted or one of 63 rejected, a leading or trailing hyphen accepted, a domain without a dot accepted, an all-digit last label accepted, a domain length limit off by one, or an underscore or non-ASCII letter accepted in a label."
+
+[[requirements]]
+id = "R3"
+text = "The new tests fail when surrounding whitespace or normalization is implemented wrongly, following docs/ADDRESS_RULES.md: surrounding whitespace not ignored, the domain not lowercased, the local part lowercased, the trailing dot of the domain not accepted, or several trailing dots accepted."
+
+[[requirements]]
+id = "R4"
+text = "The new tests fail when plus tags or blocked domains are implemented wrongly, following docs/ADDRESS_RULES.md: plus tags rejected by default, allow_plus_tags=False ignored, blocked domains compared case-sensitively, subdomains of a blocked domain accepted, or a blocked domain matched as a text suffix."
+
+[[requirements]]
+id = "R5"
+text = "The new tests pass against the current implementation in src/, which is left unchanged, and the tests the repository started with keep passing."
+kind = "preserve"

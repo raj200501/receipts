@@ -1,0 +1,30 @@
+[hand-written fixture modeled on npm 10 running node 20 --test (TAP); not captured from a real run]
+
+> calc@1.0.0 test
+> node --test
+
+TAP version 13
+# Subtest: adds numbers
+ok 1 - adds numbers
+  ---
+  duration_ms: 0.41
+  ...
+# Subtest: subtracts
+ok 2 - subtracts
+  ---
+  duration_ms: 0.12
+  ...
+# Subtest: handles overflow
+ok 3 - handles overflow # TODO
+  ---
+  duration_ms: 0.05
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 1
+# duration_ms 40.1

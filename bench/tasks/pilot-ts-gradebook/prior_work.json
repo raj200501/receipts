@@ -1,0 +1,123 @@
+{
+  "synthetic": true,
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository). The session is about behavior that the task does not change, and none of it hints at the task.",
+  "episodes": [
+    {
+      "request": "The department head asked how the class summary at the bottom of the report is worked out: what do the mean and the median cover, and which letters are listed? No changes please.",
+      "steps": [
+        {
+          "thought": "The statistics are in their own module.",
+          "tool": "read",
+          "args": {
+            "path": "src/stats.ts"
+          },
+          "output": "/** Class statistics over final percentages. */\n\nimport { LETTER_BANDS } from \"./policy.ts\";\nimport type { StudentResult } from \"./types.ts\";\n\n/** The arithmetic mean (0 for no values). */\nexport function mean(values: readonly number[]): number {\n  if (values.length === 0) {\n    return 0;\n  }\n  return values.reduce((sum, value) => sum + value, 0) / values.length;\n}\n\n/** The median (0 for no values). */\nexport function median(values: readonly number[]): number {\n  if (values.length === 0) {\n    return 0;\n  }\n  const sorted = [...values].sort((a, b) => a - b);\n  const middle = Math.floor(sorted.length / 2);\n  return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;\n}\n\n/** How many students got each letter, best letter first; letters nobody got are left out. */\nexport function letterCounts(results: readonly StudentResult[]): Array<[string, number]> {\n  const counts: Array<[string, number]> = [];\n  for (const [, letter] of LETTER_BANDS) {\n    const count = results.filter((result) => result.letter === letter).length;\n    if (count > 0) {\n      counts.push([letter, count]);\n    }\n  }\n  return counts;\n}\n"
+        },
+        {
+          "thought": "The report module shows how the summary is printed.",
+          "tool": "read",
+          "args": {
+            "path": "src/report.ts"
+          },
+          "output": "/** The plain-text class report. */\n\nimport { CATEGORIES } from \"./policy.ts\";\nimport { letterCounts, mean, median } from \"./stats.ts\";\nimport type { StudentResult } from \"./types.ts\";\n\n/** Format a percentage with one decimal place, or \"-\" when it does not count. */\nexport function formatPercent(value: number | null): string {\n  return value === null ? \"-\" : value.toFixed(1);\n}\n\n/** The report: a table with one line per student, then the class summary. */\nexport function renderReport(results: readonly StudentResult[]): string {\n  const header = [\"student \", \"name\".padEnd(16), ...CATEGORIES.map((c) => c.padStart(9))];\n  const lines = [[...header, \"    final\", \"  letter\"].join(\"\")];\n  for (const result of results) {\n    const cells = CATEGORIES.map((c) => formatPercent(result.categories[c]).padStart(9));\n    lines.push(\n      [\n        result.student.padEnd(8),\n        result.name.padEnd(16),\n        ...cells,\n        formatPercent(result.percent).padStart(9),\n        `  ${result.letter}`,\n      ].join(\"\"),\n    );\n  }\n  const finals = results.map((result) => result.percent);\n  const letters = letterCounts(results).map(([letter, count]) => `${letter} ${count}`);\n  lines.push(\n    \"\",\n    `students: ${results.length}`,\n    `mean: ${formatPercent(mean(finals))}`,\n    `median: ${formatPercent(median(finals))}`,\n    `letters: ${letters.join(\", \") || \"-\"}`,\n  );\n  return `${lines.join(\"\\n\")}\\n`;\n}\n"
+        },
+        {
+          "thought": "The statistics tests show the edge cases.",
+          "tool": "read",
+          "args": {
+            "path": "test/stats.test.ts"
+          },
+          "output": "import assert from \"node:assert/strict\";\nimport { test } from \"node:test\";\nimport { letterCounts, mean, median } from \"../src/stats.ts\";\nimport type { StudentResult } from \"../src/types.ts\";\n\nfunction result(student: string, letter: string): StudentResult {\n  const categories = { homework: 0, quizzes: 0, project: 0, exams: 0 };\n  return { student, name: student, categories, percent: 0, letter };\n}\n\ntest(\"mean of the final percentages\", () => {\n  assert.equal(mean([80, 90, 100]), 90);\n  assert.equal(mean([]), 0);\n});\n\ntest(\"median of an odd number of values\", () => {\n  assert.equal(median([91, 60, 75]), 75);\n});\n\ntest(\"median of an even number of values\", () => {\n  assert.equal(median([60, 70, 80, 90]), 75);\n});\n\ntest(\"letter counts list the best letter first and skip letters nobody got\", () => {\n  const results = [result(\"s1\", \"B\"), result(\"s2\", \"A\"), result(\"s3\", \"B\")];\n  assert.deepEqual(letterCounts(results), [\n    [\"A\", 1],\n    [\"B\", 2],\n  ]);\n});\n"
+        }
+      ],
+      "finish": {
+        "thought": "stats.ts, report.ts and the tests cover the whole summary.",
+        "report": "The summary comes after the student table and an empty line, in four lines. 'students: N' is the number of students in the report. 'mean:' and 'median:' are the mean and the median of the students' final percentages, printed with one decimal place by formatPercent; mean and median in src/stats.ts return 0 for an empty list, and the median of an even number of students is the average of the two middle values. 'letters:' lists how many students got each letter, best letter first, as 'A 2, B+ 1'; letterCounts leaves out letters that nobody got, and the line shows '-' when there are no students. All four lines use the same final percentages as the table, so the summary always agrees with the lines above it. test/stats.test.ts checks the mean of a short list and of an empty one, the median of an odd and of an even number of values, and that the letter counts list the best letter first and skip letters nobody got."
+      }
+    },
+    {
+      "request": "How many students and rows are in examples/scores.csv, and which categories does it use?",
+      "steps": [
+        {
+          "thought": "Count the rows per student.",
+          "tool": "bash",
+          "args": {
+            "cmd": "cut -d , -f 1 examples/scores.csv | LC_ALL=C sort | uniq -c"
+          },
+          "output": "      7 s01\n      7 s02\n      7 s03\n      1 student\n[exit code 0]"
+        },
+        {
+          "thought": "And the rows per category.",
+          "tool": "bash",
+          "args": {
+            "cmd": "cut -d , -f 4 examples/scores.csv | LC_ALL=C sort | uniq -c"
+          },
+          "output": "      1 category\n      6 exams\n      6 homework\n      3 project\n      6 quizzes\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "The header line shows up once in each count.",
+        "report": "examples/scores.csv has 21 score rows after its header: 7 each for the students s01, s02 and s03. By category there are 6 homework rows, 6 quiz rows, 6 exam rows and 3 project rows, so each student has two homework assignments, two quizzes, two exams and one project. (The lines with count 1, student and category, are the header.)"
+      }
+    },
+    {
+      "request": "Which npm scripts does the project have, and which Node version does it need?",
+      "steps": [
+        {
+          "thought": "package.json has the scripts and the engines field.",
+          "tool": "read",
+          "args": {
+            "path": "package.json"
+          },
+          "output": "{\n  \"name\": \"gradebook\",\n  \"version\": \"2.3.0\",\n  \"description\": \"Final grades and a class report from a CSV export of assignment scores.\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"license\": \"MIT\",\n  \"engines\": {\n    \"node\": \">=22.6\"\n  },\n  \"scripts\": {\n    \"test\": \"node --experimental-strip-types --test --test-reporter=spec --test-concurrency=1 test/*.test.ts\",\n    \"report\": \"node --experimental-strip-types bin/gradebook.ts report\"\n  }\n}\n"
+        },
+        {
+          "thought": "The TypeScript settings matter for running the code directly.",
+          "tool": "read",
+          "args": {
+            "path": "tsconfig.json"
+          },
+          "output": "{\n  \"compilerOptions\": {\n    \"target\": \"es2022\",\n    \"module\": \"nodenext\",\n    \"strict\": true,\n    \"noEmit\": true,\n    \"allowImportingTsExtensions\": true,\n    \"verbatimModuleSyntax\": true,\n    \"erasableSyntaxOnly\": true\n  },\n  \"include\": [\"src\", \"bin\", \"test\"]\n}\n"
+        }
+      ],
+      "finish": {
+        "thought": "Both files are short.",
+        "report": "package.json defines two scripts. npm test runs node --experimental-strip-types --test with the spec reporter on test/*.test.ts, one test file at a time (--test-concurrency=1). npm run report -- FILE runs bin/gradebook.ts report FILE with type stripping. The engines field asks for Node 22.6 or later, the first version with --experimental-strip-types, and there are no dependencies at all. tsconfig.json is only for editors and type checking (noEmit): it allows .ts import extensions and only erasable syntax, which is what lets Node run the files as they are."
+      }
+    },
+    {
+      "request": "Last question: how many tests are there for the report, the statistics, the CSV parsing, and the command line?",
+      "steps": [
+        {
+          "thought": "Count the top-level tests in those four files.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -c \"^test(\" test/report.test.ts test/stats.test.ts test/scores.test.ts test/cli.test.ts"
+          },
+          "output": "test/report.test.ts:3\ntest/stats.test.ts:4\ntest/scores.test.ts:8\ntest/cli.test.ts:4\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "The counts are in the output.",
+        "report": "19 tests: 3 in test/report.test.ts, 4 in test/stats.test.ts, 8 in test/scores.test.ts and 4 in test/cli.test.ts. Every test is a top-level test() call from node:test, so the spec reporter lists each of them once."
+      }
+    },
+    {
+      "request": "And how big are the source files?",
+      "steps": [
+        {
+          "thought": "Count the lines of every source file, by name.",
+          "tool": "bash",
+          "args": {
+            "cmd": "wc -l bin/gradebook.ts src/cli.ts src/grades.ts src/policy.ts src/report.ts src/scores.ts src/stats.ts src/types.ts"
+          },
+          "output": "   8 bin/gradebook.ts\n  40 src/cli.ts\n  56 src/grades.ts\n  30 src/policy.ts\n  38 src/report.ts\n  85 src/scores.ts\n  34 src/stats.ts\n  29 src/types.ts\n 320 total\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "wc gives the counts and the total.",
+        "report": "The eight source files have 320 lines in total: src/scores.ts is the largest (85 lines), followed by src/grades.ts (56), src/cli.ts (40), src/report.ts (38), src/stats.ts (34), src/policy.ts (30), src/types.ts (29) and bin/gradebook.ts (8)."
+      }
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+name: ci
+
+# Runs only for main, pull requests into main, and manual dispatch (DECISIONS D27):
+# never on pushes to claude/ branches and never on a schedule.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+      - name: Setup
+        run: make setup PY=${{ matrix.python-version }}
+      - name: Lint, typecheck, test, offline demo
+        run: make ci

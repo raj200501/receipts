@@ -1,0 +1,11 @@
+{
+  "id": "SO-1001",
+  "customer": "Ada Lovelace",
+  "state": "paid",
+  "totalCents": 4590,
+  "paidCents": 4590,
+  "address": "12 Crescent Lane, Springfield",
+  "history": [
+    { "at": "2027-05-03T10:00:00Z", "from": "created", "event": "pay", "to": "paid" }
+  ]
+}

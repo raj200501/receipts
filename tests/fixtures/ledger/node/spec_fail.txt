@@ -1,0 +1,38 @@
+[hand-written fixture modeled on node 22 --test spec reporter; not captured from a real run]
+▶ Calculator
+  ✔ adds numbers (0.512ms)
+  ✖ divides by zero (0.803ms)
+    AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+    
+    Infinity !== 0
+    
+        at TestContext.<anonymous> (file:///work/calc/test/calc.test.js:12:12)
+        at Test.runInAsyncScope (node:async_hooks:206:9) {
+      generatedMessage: true,
+      code: 'ERR_ASSERTION',
+      actual: Infinity,
+      expected: 0,
+      operator: 'strictEqual'
+    }
+
+  ﹣ rounds (0.051ms) # SKIP
+▶ Calculator (2.114ms)
+✔ parses input (0.33ms)
+ℹ tests 4
+ℹ suites 1
+ℹ pass 2
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 61.209
+
+✖ failing tests:
+
+test at test/calc.test.js:10:3
+✖ divides by zero (0.803ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  Infinity !== 0
+  
+      at TestContext.<anonymous> (file:///work/calc/test/calc.test.js:12:12)

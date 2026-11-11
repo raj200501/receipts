@@ -1,0 +1,12 @@
+{
+  "name": "Office closures 2026",
+  "days": {
+    "2026-01-01": "New Year's Day",
+    "2026-04-03": "Spring closure",
+    "2026-05-01": "Labour Day",
+    "2026-12-24": "Winter closure",
+    "2026-12-25": "Winter closure",
+    "2026-12-28": "Winter closure",
+    "2026-12-31": "Winter closure"
+  }
+}

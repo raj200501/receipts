@@ -1,0 +1,11 @@
+{
+  "study": "Typing-pause study, September 2026 (UXR-212)",
+  "units": "milliseconds",
+  "notes": "wait: the pause after the last edit before a draft is saved. maxWait: the longest an edit may stay unsaved while the user keeps typing.",
+  "fields": {
+    "title": {"wait": 650, "maxWait": 4000},
+    "body": {"wait": 1350, "maxWait": 9000},
+    "tags": {"wait": 450, "maxWait": 2500},
+    "checklist": {"wait": 900, "maxWait": 6000}
+  }
+}

@@ -1,0 +1,16 @@
+[hand-written fixture modeled on Jest 29 with a suite that fails to load; not captured from a real run]
+ FAIL  src/broken.test.js
+  ● Test suite failed to run
+
+    SyntaxError: /work/calc/src/broken.test.js: Unexpected token (3:10)
+
+      1 | import { div } from './calc';
+      2 |
+    > 3 | describe(('math' => {
+        |           ^
+
+Test Suites: 1 failed, 1 total
+Tests:       0 total
+Snapshots:   0 total
+Time:        0.5 s
+Ran all test suites.

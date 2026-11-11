@@ -1,0 +1,16 @@
+[hand-written fixture modeled on python -m unittest (Python 3.11) with a broken module; not captured from a real run]
+E
+======================================================================
+ERROR: tests.test_cart (unittest.loader._FailedTest.tests.test_cart)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: tests.test_cart
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/unittest/loader.py", line 407, in _find_test_path
+    module = self._get_module_from_name(name)
+ModuleNotFoundError: No module named 'shop.cart'
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (errors=1)

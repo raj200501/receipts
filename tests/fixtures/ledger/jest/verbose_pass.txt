@@ -1,0 +1,15 @@
+[hand-written fixture modeled on Jest 29 --verbose; not captured from a real run]
+ PASS  src/calc.test.js
+  Calculator
+    ✓ adds numbers (3 ms)
+    ✓ subtracts (1 ms)
+    nested
+      ✓ multiplies
+    ○ skipped rounds
+    ✎ todo handles overflow
+
+Test Suites: 1 passed, 1 total
+Tests:       1 skipped, 1 todo, 3 passed, 5 total
+Snapshots:   0 total
+Time:        0.812 s, estimated 1 s
+Ran all test suites.

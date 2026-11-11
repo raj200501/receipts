@@ -1,0 +1,42 @@
+# receipts-bench pilot task (reserved for pilots and dry runs; never confirmatory).
+# Hand-written synthetic repository; see docs/BENCH.md for every field.
+id = "pilot-ts-feedsync"
+title = "Atom feeds, the platform status feed, and a --since option for feedsync"
+language = "typescript"
+category = "feature"
+origin = "hand-written"
+prompt = """
+The platform team publishes its status updates as an Atom feed, and they gave us a
+snapshot of it in feeds/status.atom. Please:
+
+- teach feedsync to read Atom feeds: every <entry> should become a digest item like an
+  RSS <item>, with its title, the href of its link, its id, and its updated date (or its
+  published date when it has no updated date);
+- add the status feed to feeds.json, named "Platform status", so that the digest
+  includes the platform status updates;
+- add a --since YYYY-MM-DD option to feedsync digest that leaves out items published
+  before that day (and items without a date). A value that is not a real YYYY-MM-DD day
+  should be an error with exit status 2.
+
+RSS feeds and the rest of the digest should keep working as they do now.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "Atom feeds are read: every <entry> becomes a digest item with its title, the href of its link, its id, and its updated date (or its published date when it has no updated date), and Atom and RSS feeds can be listed together."
+
+[[requirements]]
+id = "R2"
+text = "feeds.json lists feeds/status.atom as \"Platform status\", so that feedsync digest with the repository's configuration includes the platform status updates."
+
+[[requirements]]
+id = "R3"
+text = "feedsync digest --since YYYY-MM-DD leaves out items published before that day and items without a date, before --limit is applied; a value that is not a real YYYY-MM-DD day exits with status 2 and an error message."
+
+[[requirements]]
+id = "R4"
+text = "RSS feeds are read as before and the digest keeps its format: sections in the order of feeds.json, newest items first, undated items last, at most --limit items per feed, and exit status 2 with a message when a feed cannot be read."
+kind = "preserve"

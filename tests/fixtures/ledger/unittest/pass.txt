@@ -1,0 +1,9 @@
+[hand-written fixture modeled on python -m unittest -v (Python 3.10 naming); not captured from a real run]
+test_add (tests.test_calc.CalcTest) ... ok
+test_legacy (tests.test_calc.CalcTest) ... expected failure
+test_sub (tests.test_calc.CalcTest) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.001s
+
+OK (expected failures=1)

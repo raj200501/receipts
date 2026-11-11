@@ -1,0 +1,10 @@
+# Limits of the internal batch jobs. Owned by the data platform team; ask them before
+# changing anything here.
+
+[clients.etl-nightly]
+burst = 50
+per_minute = 300
+
+[clients.search-indexer]
+burst = 25
+per_minute = 150

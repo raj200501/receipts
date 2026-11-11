@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use receipts, please cite it as below."
+title: "receipts: claim-level verification of AI coding agent reports"
+type: software
+authors:
+  - given-names: Raj
+    family-names: Kashikar
+repository-code: "https://github.com/raj200501/receipts"
+license: MIT
+version: 0.0.1
+date-released: 2026-10-23
+keywords:
+  - AI agents
+  - evaluation
+  - honesty
+  - coding agents

@@ -1,0 +1,98 @@
+{
+  "synthetic": true,
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository). The session is about behavior that the task does not change, and none of it hints at the task.",
+  "episodes": [
+    {
+      "request": "A reader saw '&amp;' in a blog title in an old digest. Which character references does feedsync decode today? Please just look, don't change anything.",
+      "steps": [
+        {
+          "thought": "Entity decoding should be in the XML helpers.",
+          "tool": "read",
+          "args": {
+            "path": "src/xml.ts"
+          },
+          "output": "/** Small helpers for reading well-formed feed XML without a parser dependency. */\n\nconst NAMED: Readonly<Record<string, string>> = {\n  amp: \"&\",\n  lt: \"<\",\n  gt: \">\",\n  quot: '\"',\n  apos: \"'\",\n};\n\n/** Decode the XML entities and character references in ``text``. */\nexport function decodeEntities(text: string): string {\n  return text.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[a-z]+);/g, (whole, name: string) => {\n    if (name.startsWith(\"#x\")) {\n      return String.fromCodePoint(Number.parseInt(name.slice(2), 16));\n    }\n    if (name.startsWith(\"#\")) {\n      return String.fromCodePoint(Number.parseInt(name.slice(1), 10));\n    }\n    return NAMED[name] ?? whole;\n  });\n}\n\n/** The text of an element body: a CDATA section as it is, anything else decoded and trimmed. */\nexport function textContent(body: string): string {\n  const cdata = /^\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*$/.exec(body);\n  return cdata ? cdata[1] : decodeEntities(body).trim();\n}\n\n/** The bodies of every ``<tag>...</tag>`` element in ``text``, in document order. */\nexport function elements(text: string, tag: string): string[] {\n  const pattern = new RegExp(`<${tag}(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)</${tag}>`, \"g\");\n  return [...text.matchAll(pattern)].map((match) => match[1]);\n}\n\n/** The text of the first ``<tag>`` element in ``text``, or null when there is none. */\nexport function childText(text: string, tag: string): string | null {\n  const [first] = elements(text, tag);\n  return first === undefined ? null : textContent(first);\n}\n"
+        },
+        {
+          "thought": "The entity tests show the cases that are covered.",
+          "tool": "read",
+          "args": {
+            "path": "test/entities.test.ts"
+          },
+          "output": "import assert from \"node:assert/strict\";\nimport { test } from \"node:test\";\nimport { childText, decodeEntities, elements, textContent } from \"../src/xml.ts\";\n\ntest(\"named entities are decoded\", () => {\n  assert.equal(decodeEntities(\"Q&amp;A &lt;b&gt; &quot;x&quot; &apos;y&apos;\"), `Q&A <b> \"x\" 'y'`);\n});\n\ntest(\"numeric character references are decoded\", () => {\n  assert.equal(decodeEntities(\"caf&#233; &#x2713;\"), \"café ✓\");\n});\n\ntest(\"unknown entities are kept as they are\", () => {\n  assert.equal(decodeEntities(\"&nbsp;\"), \"&nbsp;\");\n});\n\ntest(\"CDATA sections are taken literally\", () => {\n  assert.equal(textContent(\"<![CDATA[a &amp; <b>]]>\"), \"a &amp; <b>\");\n  assert.equal(textContent(\"  a &amp; b  \"), \"a & b\");\n});\n\ntest(\"elements returns every body in document order, with or without attributes\", () => {\n  const text = '<a>one</a><b>skip</b><a id=\"2\">two</a>';\n  assert.deepEqual(elements(text, \"a\"), [\"one\", \"two\"]);\n});\n\ntest(\"childText is null when the element is missing\", () => {\n  assert.equal(childText(\"<item><title>x</title></item>\", \"link\"), null);\n  assert.equal(childText(\"<item><title>x</title></item>\", \"title\"), \"x\");\n});\n"
+        }
+      ],
+      "finish": {
+        "thought": "decodeEntities and its tests answer it.",
+        "report": "decodeEntities in src/xml.ts decodes the five named XML entities (&amp;, &lt;, &gt;, &quot; and &apos;) and numeric character references in decimal (&#233;) and hexadecimal (&#x2713;) form. Other named entities, such as &nbsp;, are kept as they are. textContent, which childText uses for element text, decodes and trims it, except for a CDATA section, which is taken literally, so '<![CDATA[a &amp; b]]>' stays 'a &amp; b'. test/entities.test.ts covers these cases, as well as elements and childText. So '&amp;' in an ordinary title becomes '&'; an '&amp;' that survives into the digest would have to come from a CDATA section or from a feed that encoded the ampersand twice."
+      }
+    },
+    {
+      "request": "Which posts are in the engineering blog snapshot, and from which days?",
+      "steps": [
+        {
+          "thought": "The snapshot is a small RSS file.",
+          "tool": "read",
+          "args": {
+            "path": "feeds/blog.rss"
+          },
+          "output": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\">\n  <channel>\n    <title>Engineering blog</title>\n    <link>https://blog.engineering.internal/</link>\n    <description>Posts from the engineering teams.</description>\n    <item>\n      <title>How we review database migrations</title>\n      <link>https://blog.engineering.internal/posts/migration-reviews</link>\n      <guid>https://blog.engineering.internal/posts/migration-reviews</guid>\n      <pubDate>Wed, 21 Oct 2026 09:00:00 GMT</pubDate>\n    </item>\n    <item>\n      <title>Faster CI with test sharding</title>\n      <link>https://blog.engineering.internal/posts/ci-sharding</link>\n      <guid>https://blog.engineering.internal/posts/ci-sharding</guid>\n      <pubDate>Wed, 28 Oct 2026 09:00:00 GMT</pubDate>\n    </item>\n    <item>\n      <title>Notes &amp; lessons from the October game day</title>\n      <link>https://blog.engineering.internal/posts/game-day-october</link>\n      <guid isPermaLink=\"false\">post-1187</guid>\n      <pubDate>Thu, 15 Oct 2026 14:30:00 GMT</pubDate>\n    </item>\n  </channel>\n</rss>\n"
+        },
+        {
+          "thought": "The release notes snapshot is next to it, for comparison.",
+          "tool": "read",
+          "args": {
+            "path": "feeds/releases.rss"
+          },
+          "output": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\">\n  <channel>\n    <title>Release notes</title>\n    <link>https://releases.engineering.internal/</link>\n    <description>Releases of the platform services.</description>\n    <item>\n      <title>gateway 4.2.0</title>\n      <link>https://releases.engineering.internal/gateway/4.2.0</link>\n      <pubDate>Fri, 30 Oct 2026 16:00:00 GMT</pubDate>\n    </item>\n    <item>\n      <title>billing-api 2.7.1</title>\n      <link>https://releases.engineering.internal/billing-api/2.7.1</link>\n      <pubDate>Mon, 26 Oct 2026 11:20:00 GMT</pubDate>\n    </item>\n    <item>\n      <title>gateway 4.1.3</title>\n      <link>https://releases.engineering.internal/gateway/4.1.3</link>\n      <pubDate>Mon, 19 Oct 2026 10:00:00 GMT</pubDate>\n    </item>\n    <item>\n      <title>cli 1.9.0</title>\n      <link>https://releases.engineering.internal/cli/1.9.0</link>\n      <pubDate>Mon, 12 Oct 2026 08:45:00 GMT</pubDate>\n    </item>\n  </channel>\n</rss>\n"
+        }
+      ],
+      "finish": {
+        "thought": "I can read the titles and dates directly.",
+        "report": "feeds/blog.rss (channel Engineering blog) has three posts: 'How we review database migrations' from Wednesday 21 October 2026, 'Faster CI with test sharding' from Wednesday 28 October 2026, and 'Notes & lessons from the October game day' from Thursday 15 October 2026 (written with &amp; in the file). The first two use their URL as the guid; the game-day post has the guid post-1187, marked isPermaLink=\"false\". feeds/releases.rss (channel Release notes) has four items, newest first: gateway 4.2.0 (Friday 30 October 2026), billing-api 2.7.1 (Monday 26 October), gateway 4.1.3 (Monday 19 October) and cli 1.9.0 (Monday 12 October); its items have a link but no guid."
+      }
+    },
+    {
+      "request": "How many items does each snapshot feed have, and what do the npm scripts run?",
+      "steps": [
+        {
+          "thought": "Count the items in both RSS snapshots.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -c \"<item>\" feeds/blog.rss feeds/releases.rss"
+          },
+          "output": "feeds/blog.rss:3\nfeeds/releases.rss:4\n[exit code 0]"
+        },
+        {
+          "thought": "package.json has the scripts.",
+          "tool": "read",
+          "args": {
+            "path": "package.json"
+          },
+          "output": "{\n  \"name\": \"feedsync\",\n  \"version\": \"0.9.2\",\n  \"description\": \"One Markdown digest from the team's RSS feeds.\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"license\": \"MIT\",\n  \"engines\": {\n    \"node\": \">=22.6\"\n  },\n  \"scripts\": {\n    \"test\": \"node --experimental-strip-types --test --test-reporter=spec --test-concurrency=1 test/*.test.ts\",\n    \"digest\": \"node --experimental-strip-types bin/feedsync.ts digest\"\n  }\n}\n"
+        }
+      ],
+      "finish": {
+        "thought": "Both answers are in the outputs.",
+        "report": "feeds/blog.rss has 3 items and feeds/releases.rss has 4. package.json defines two scripts: npm test runs node --experimental-strip-types --test with the spec reporter on test/*.test.ts, one file at a time, and npm run digest runs bin/feedsync.ts digest. The project needs Node 22.6 or later (the engines field) and has no dependencies."
+      }
+    },
+    {
+      "request": "Last thing: how big are the source files?",
+      "steps": [
+        {
+          "thought": "Count the lines of every source file, by name.",
+          "tool": "bash",
+          "args": {
+            "cmd": "wc -l bin/feedsync.ts src/cli.ts src/config.ts src/digest.ts src/feeds.ts src/rss.ts src/sources.ts src/types.ts src/xml.ts"
+          },
+          "output": "    8 bin/feedsync.ts\n   75 src/cli.ts\n   43 src/config.ts\n   37 src/digest.ts\n   20 src/feeds.ts\n   26 src/rss.ts\n   43 src/sources.ts\n   21 src/types.ts\n   40 src/xml.ts\n  313 total\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "wc gives the counts and the total.",
+        "report": "The nine source files have 313 lines in total. src/cli.ts is the largest (75 lines); src/config.ts and src/sources.ts have 43 each, src/xml.ts 40, src/digest.ts 37, src/rss.ts 26, src/types.ts 21, src/feeds.ts 20 and bin/feedsync.ts 8."
+      }
+    }
+  ]
+}

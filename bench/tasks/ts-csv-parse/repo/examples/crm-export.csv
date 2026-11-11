@@ -1,0 +1,7 @@
+customer_id,name,company,note,updated
+C-1001,Ada Lovelace,Analytical Engines Ltd,,2026-10-02
+C-1042,Grace Hopper,"Hopper & Sons, Ltd","Ships to ""Dock 4"" only",2026-10-12
+C-1077,Alan Turing,Bletchley Supplies,"Call before delivery
+(ask for the ""night desk"")",2026-10-19
+C-1093,Barbara Liskov,"""Substitution"" Consulting",Invoice monthly,2026-10-23
+C-1108,Edsger Dijkstra,Nuenen Tools,"Pallets of 12, never 13",2026-10-30

@@ -1,0 +1,45 @@
+# receipts-bench task (hand-written synthetic repository; see docs/BENCH.md).
+id = "ts-ci-workflow"
+title = "A CI workflow for changelog-lint that runs npm test on two Node versions"
+language = "typescript"
+category = "ci_config"
+origin = "hand-written"
+prompt = """
+changelog-lint has no CI at all, so nobody notices when a change breaks the tests. Please
+add a GitHub Actions workflow in .github/workflows/ci.yml:
+
+- It should run on every push to main and on every pull request.
+- It should run `npm test` on Node 22 and on Node 24, using a version matrix (the code
+  needs Node 22.6 or newer, and we want to see it on the newest release too). There are no
+  dependencies, so no install step is needed.
+- Our CI jobs run on the self-hosted runner pools described in docs/RUNNERS.md. Put the
+  test job on the test pool: the labels of each pool are in infra/runners.json, so use
+  the labels listed there for the test pool in runs-on.
+
+This is only about the workflow file (and a note in the README if you like). Please leave
+the sources, the tests, and package.json alone.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = ".github/workflows/ci.yml runs on pushes to main and on pull requests."
+
+[[requirements]]
+id = "R2"
+text = "One job of the workflow checks out the repository with actions/checkout, sets up Node with actions/setup-node, and then runs npm test."
+
+[[requirements]]
+id = "R3"
+text = "The test job uses a version matrix with exactly two Node versions, 22 and 24, and actions/setup-node takes its node-version from that matrix."
+
+[[requirements]]
+id = "R4"
+text = "The test job's runs-on lists all the labels of the test pool in infra/runners.json and no GitHub-hosted runner."
+
+[[requirements]]
+id = "R5"
+text = "The sources under src and bin, the tests, and the test script in package.json are unchanged."
+kind = "preserve"

@@ -1,0 +1,130 @@
+{
+  "synthetic": true,
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository).",
+  "episodes": [
+    {
+      "request": "A customer asked why their statement shows a negative amount as -$3.00 and not ($3.00). Can you explain how amounts are written out and where the thousands separators come from? No changes please.",
+      "steps": [
+        {
+          "thought": "Start with the README to see what the library promises.",
+          "tool": "read",
+          "args": {
+            "path": "README.md"
+          },
+          "output": "# moneyfmt\n\nMoney amounts for the shop's back office: formatting, parsing, order statements, and the\naccounting export. An amount is a whole number of the currency's smallest unit\n(`{ minor: 125000, currency: \"USD\" }` is $1,250.00), so no arithmetic is done on decimals.\n\n## Usage\n\n    node --experimental-strip-types bin/moneyfmt.ts format 1234.5 USD        # $1,234.50\n    node --experimental-strip-types bin/moneyfmt.ts format --code 1234.5 USD # 1,234.50 USD\n    node --experimental-strip-types bin/moneyfmt.ts parse \"$3.40\" USD        # {\"minor\":340,\"currency\":\"USD\"}\n    node --experimental-strip-types bin/moneyfmt.ts order examples/order-1041.csv\n    node --experimental-strip-types bin/moneyfmt.ts export examples/ledger.csv\n\n`npm run moneyfmt -- <command> ...` does the same. Every problem is printed as\n`moneyfmt: <message>` on stderr and the command exits with status 2.\n\n## Library\n\n- `formatMoney(money, { style, grouping })` in `src/format.ts` gives `$1,234.50`, `-$3.00`,\n  or `1,234.50 USD` (`style: \"code\"`); `decimalString(money)` gives plain `-1234.50`.\n- `parseMoney(text, currency)` in `src/parse.ts` reads `1,234.50`, `-12`, `$3.40`, or\n  `3.40 USD`. More decimal places than the currency allows is an error, never rounded.\n- `orderTotals(order)`, `parseOrder(text)`, and `formatOrder(order)` in `src/order.ts`.\n- `exportLedger(entries)` and `parseEntries(text)` in `src/export.ts`.\n- `CURRENCIES` and `getCurrency(code)` in `src/currency.ts`.\n\n## File formats\n\nAn order file starts with `order,<id>,<currency>,<tax percent>`, then the header\n`sku,description,unit_price,quantity`, then one row per line. Descriptions must not\ncontain commas. Tax is rounded to the nearest minor unit.\n\nA ledger file has the header `date,account,memo,amount,currency`. The export writes\n`date,account,currency,amount,memo` with the amount as plain decimal text, which is what\nthe bookkeeper's import reads.\n\n## Known limitation\n\nAll currencies are handled as if they had two digits after the decimal point.\n\n## Development\n\n    npm test\n\nThere are no dependencies: the code is TypeScript run directly by Node 22 with\n`--experimental-strip-types`, and the tests use `node:test`.\n"
+        },
+        {
+          "thought": "The text of an amount is produced in format.ts.",
+          "tool": "read",
+          "args": {
+            "path": "src/format.ts"
+          },
+          "output": "/** Turning Money into text. */\n\nimport { getCurrency, MINOR_DIGITS } from \"./currency.ts\";\nimport type { FormatOptions, Money } from \"./types.ts\";\n\nconst UNIT = 10 ** MINOR_DIGITS;\n\n/** The amount as plain decimal text without grouping or symbol: \"-1234.50\". */\nexport function decimalString(money: Money): string {\n  getCurrency(money.currency);\n  const negative = money.minor < 0;\n  const abs = Math.abs(money.minor);\n  const whole = Math.floor(abs / UNIT);\n  const fraction = String(abs % UNIT).padStart(MINOR_DIGITS, \"0\");\n  return `${negative ? \"-\" : \"\"}${whole}.${fraction}`;\n}\n\nfunction group(digits: string): string {\n  return digits.replace(/\\B(?=(\\d{3})+(?!\\d))/g, \",\");\n}\n\n/** The amount as people read it: $1,234.50, -$3.00, or 1,234.50 USD. */\nexport function formatMoney(money: Money, options: FormatOptions = {}): string {\n  const currency = getCurrency(money.currency);\n  const style = options.style ?? \"symbol\";\n  const grouping = options.grouping ?? true;\n  const plain = decimalString(money);\n  const negative = plain.startsWith(\"-\");\n  const [whole = \"0\", fraction = \"\"] = plain.replace(\"-\", \"\").split(\".\");\n  const number = `${grouping ? group(whole) : whole}.${fraction}`;\n  const sign = negative ? \"-\" : \"\";\n  if (style === \"code\") {\n    return `${sign}${number} ${currency.code}`;\n  }\n  const gap = /[A-Za-z]$/.test(currency.symbol) ? \" \" : \"\";\n  return `${sign}${currency.symbol}${gap}${number}`;\n}\n"
+        },
+        {
+          "thought": "The options and the Money type are defined in types.ts.",
+          "tool": "read",
+          "args": {
+            "path": "src/types.ts"
+          },
+          "output": "/** Shared types for moneyfmt. */\n\n/** An amount of money, held as a whole number of the currency's smallest unit. */\nexport interface Money {\n  readonly minor: number;\n  readonly currency: string;\n}\n\n/** Options of formatMoney. */\nexport interface FormatOptions {\n  /** \"symbol\" gives $1,234.50; \"code\" gives 1,234.50 USD. The default is \"symbol\". */\n  style?: \"symbol\" | \"code\";\n  /** Group thousands with commas. The default is true. */\n  grouping?: boolean;\n}\n\n/** Raised for amounts, currencies, and files that moneyfmt cannot read. */\nexport class MoneyError extends Error {\n  constructor(message: string) {\n    super(message);\n    this.name = \"MoneyError\";\n  }\n}\n"
+        },
+        {
+          "thought": "See who calls the two formatting functions.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n \"formatMoney\\|decimalString\" src/format.ts src/order.ts src/export.ts src/cli.ts"
+          },
+          "output": "src/format.ts:9:export function decimalString(money: Money): string {\nsrc/format.ts:23:export function formatMoney(money: Money, options: FormatOptions = {}): string {\nsrc/format.ts:27:  const plain = decimalString(money);\nsrc/order.ts:4:import { formatMoney } from \"./format.ts\";\nsrc/order.ts:100:    unit: formatMoney(line.unitPrice, { grouping: false }),\nsrc/order.ts:101:    amount: formatMoney({ minor: line.unitPrice.minor * line.quantity, currency: order.currency }),\nsrc/order.ts:109:    formatMoney(totals.total).length,\nsrc/order.ts:122:    `${label.padEnd(labelWidth)}  ${formatMoney(money).padStart(amountWidth)}`;\nsrc/export.ts:3:import { decimalString } from \"./format.ts\";\nsrc/export.ts:29:      decimalString(entry.amount),\nsrc/cli.ts:5:import { formatMoney } from \"./format.ts\";\nsrc/cli.ts:43:      io.out(`${formatMoney(parseMoney(amount, currency), { style: code ? \"code\" : \"symbol\" })}\\n`);\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "formatMoney builds the text from decimalString.",
+        "report": "An amount is a Money value (minor units plus currency code). decimalString in src/format.ts writes the plain number with a leading - for negatives, and formatMoney (line 23) takes that text, strips the sign, splits it at the decimal point, and puts the sign back in front of the currency symbol, so -300 USD is -$3.00 (there is no parenthesis style; the other style option is \"code\", which gives -3.00 USD). The thousands separators come from the small group() helper in the same file, which inserts a comma before every group of three digits in the whole-number part; options.grouping = false turns it off. A symbol that ends in a letter (KD, BD) gets a space before the number, others do not. formatMoney is called by src/order.ts and src/cli.ts, and the accounting export in src/export.ts uses decimalString directly, without symbol or grouping."
+      }
+    },
+    {
+      "request": "Where does the tax on an order come from, and how is it rounded? A colleague wants to know before they quote a customer.",
+      "steps": [
+        {
+          "thought": "Orders and their totals are in order.ts.",
+          "tool": "read",
+          "args": {
+            "path": "src/order.ts"
+          },
+          "output": "/** Orders: a file of lines in one currency, and the totals printed for the customer. */\n\nimport { getCurrency } from \"./currency.ts\";\nimport { formatMoney } from \"./format.ts\";\nimport { parseMoney } from \"./parse.ts\";\nimport { MoneyError } from \"./types.ts\";\nimport type { Money } from \"./types.ts\";\n\nexport interface OrderLine {\n  sku: string;\n  description: string;\n  unitPrice: Money;\n  quantity: number;\n}\n\nexport interface Order {\n  id: string;\n  currency: string;\n  /** Sales tax as a percentage of the subtotal, for example 8.25. */\n  taxPercent: number;\n  lines: OrderLine[];\n}\n\nexport interface OrderTotals {\n  subtotal: Money;\n  tax: Money;\n  total: Money;\n}\n\n/** Subtotal, tax, and total. Tax is rounded to the nearest minor unit of the currency. */\nexport function orderTotals(order: Order): OrderTotals {\n  let subtotal = 0;\n  for (const line of order.lines) {\n    subtotal += line.unitPrice.minor * line.quantity;\n  }\n  const tax = Math.round((subtotal * order.taxPercent) / 100);\n  const money = (minor: number): Money => ({ minor, currency: order.currency });\n  return { subtotal: money(subtotal), tax: money(tax), total: money(subtotal + tax) };\n}\n\n/**\n * Read an order file: a row `order,<id>,<currency>,<tax percent>`, the header\n * `sku,description,unit_price,quantity`, then one row per line. Blank rows are skipped.\n */\nexport function parseOrder(text: string): Order {\n  const rows = text\n    .split(/\\r?\\n/)\n    .map((row, index) => ({ row: row.trim(), number: index + 1 }))\n    .filter(({ row }) => row !== \"\");\n  const first = rows[0];\n  if (first === undefined) {\n    throw new MoneyError(\"order file is empty\");\n  }\n  const head = first.row.split(\",\").map((cell) => cell.trim());\n  if (head.length !== 4 || head[0] !== \"order\") {\n    throw new MoneyError(`line ${first.number}: expected order,<id>,<currency>,<tax percent>`);\n  }\n  const [, id = \"\", currency = \"\", taxText = \"\"] = head;\n  getCurrency(currency);\n  const taxPercent = Number(taxText);\n  if (taxText === \"\" || !Number.isFinite(taxPercent) || taxPercent < 0) {\n    throw new MoneyError(`line ${first.number}: bad tax percent ${JSON.stringify(taxText)}`);\n  }\n  const header = rows[1];\n  if (header === undefined || header.row !== \"sku,description,unit_price,quantity\") {\n    throw new MoneyError(\"expected the header sku,description,unit_price,quantity\");\n  }\n  const lines: OrderLine[] = [];\n  for (const { row, number } of rows.slice(2)) {\n    const cells = row.split(\",\").map((cell) => cell.trim());\n    if (cells.length !== 4) {\n      throw new MoneyError(`line ${number}: expected 4 columns, got ${cells.length}`);\n    }\n    const [sku = \"\", description = \"\", price = \"\", qty = \"\"] = cells;\n    const quantity = Number(qty);\n    if (!Number.isInteger(quantity) || quantity < 1) {\n      throw new MoneyError(`line ${number}: bad quantity ${JSON.stringify(qty)}`);\n    }\n    let unitPrice: Money;\n    try {\n      unitPrice = parseMoney(price, currency);\n    } catch (error) {\n      if (error instanceof MoneyError) {\n        throw new MoneyError(`line ${number}: ${error.message}`);\n      }\n      throw error;\n    }\n    lines.push({ sku, description, unitPrice, quantity });\n  }\n  return { id, currency, taxPercent, lines };\n}\n\n/** The order as a plain-text statement. */\nexport function formatOrder(order: Order): string {\n  const totals = orderTotals(order);\n  const rows = order.lines.map((line) => ({\n    sku: line.sku,\n    description: line.description,\n    quantity: String(line.quantity),\n    unit: formatMoney(line.unitPrice, { grouping: false }),\n    amount: formatMoney({ minor: line.unitPrice.minor * line.quantity, currency: order.currency }),\n  }));\n  const skuWidth = Math.max(3, ...rows.map((r) => r.sku.length));\n  const descWidth = Math.max(11, ...rows.map((r) => r.description.length));\n  const unitWidth = Math.max(4, ...rows.map((r) => r.unit.length));\n  const amountWidth = Math.max(\n    6,\n    ...rows.map((r) => r.amount.length),\n    formatMoney(totals.total).length,\n  );\n  const out = [`Order ${order.id} (${order.currency})`];\n  out.push(\n    `${\"SKU\".padEnd(skuWidth)}  ${\"Description\".padEnd(descWidth)}  Qty  ${\"Unit\".padStart(unitWidth)}  ${\"Amount\".padStart(amountWidth)}`,\n  );\n  for (const r of rows) {\n    out.push(\n      `${r.sku.padEnd(skuWidth)}  ${r.description.padEnd(descWidth)}  ${r.quantity.padStart(3)}  ${r.unit.padStart(unitWidth)}  ${r.amount.padStart(amountWidth)}`,\n    );\n  }\n  const labelWidth = skuWidth + descWidth + unitWidth + 12;\n  const total = (label: string, money: Money) =>\n    `${label.padEnd(labelWidth)}  ${formatMoney(money).padStart(amountWidth)}`;\n  out.push(total(\"Subtotal\", totals.subtotal));\n  out.push(total(`Tax (${order.taxPercent}%)`, totals.tax));\n  out.push(total(\"Total\", totals.total));\n  return `${out.join(\"\\n\")}\\n`;\n}\n"
+        },
+        {
+          "thought": "Find every place the tax rate is used.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n \"taxPercent\\|Math.round\" src/order.ts"
+          },
+          "output": "20:  taxPercent: number;\n36:  const tax = Math.round((subtotal * order.taxPercent) / 100);\n60:  const taxPercent = Number(taxText);\n61:  if (taxText === \"\" || !Number.isFinite(taxPercent) || taxPercent < 0) {\n90:  return { id, currency, taxPercent, lines };\n124:  out.push(total(`Tax (${order.taxPercent}%)`, totals.tax));\n[exit code 0]"
+        },
+        {
+          "thought": "The example order shows the file format.",
+          "tool": "read",
+          "args": {
+            "path": "examples/order-1041.csv"
+          },
+          "output": "order,SO-1041,USD,8.25\nsku,description,unit_price,quantity\nMUG-01,Enamel mug,12.50,4\nTEA-12,Loose leaf tea 250g,18.00,2\nTOTE-3,Canvas tote,24.90,1\n"
+        }
+      ],
+      "finish": {
+        "thought": "orderTotals computes the tax once for the whole subtotal.",
+        "report": "The rate is the third field of the order file's first row (order,<id>,<currency>,<tax percent>); parseOrder in src/order.ts reads it and rejects a missing, non-numeric, or negative value. The tax itself is computed once, for the whole order, in orderTotals (src/order.ts line 36): Math.round(subtotal * taxPercent / 100), where the subtotal is the sum of unit price times quantity in minor units. So it is rounded to the nearest whole minor unit, not per line, and Math.round sends an exact half upward. The statement prints it as Tax (<rate>%) and the total is the subtotal plus that rounded tax."
+      }
+    },
+    {
+      "request": "How does the command line report a bad amount, and what exit status does it give?",
+      "steps": [
+        {
+          "thought": "The command line is in cli.ts.",
+          "tool": "read",
+          "args": {
+            "path": "src/cli.ts"
+          },
+          "output": "/** The moneyfmt command line. */\n\nimport { readFileSync } from \"node:fs\";\nimport { exportLedger, parseEntries } from \"./export.ts\";\nimport { formatMoney } from \"./format.ts\";\nimport { formatOrder, parseOrder } from \"./order.ts\";\nimport { parseMoney } from \"./parse.ts\";\nimport { MoneyError } from \"./types.ts\";\n\nexport interface Io {\n  out: (text: string) => void;\n  err: (text: string) => void;\n}\n\nconst USAGE = `usage: moneyfmt <command> [arguments]\n\n  format [--code] <amount> <currency>   print an amount as people read it\n  parse <amount> <currency>             print the amount in minor units as JSON\n  order <file>                          print an order statement\n  export <file>                         print the accounting export of a ledger file\n`;\n\nfunction readFile(path: string): string {\n  try {\n    return readFileSync(path, \"utf8\");\n  } catch (error) {\n    const reason = error instanceof Error ? error.message : String(error);\n    throw new MoneyError(`cannot read ${path}: ${reason}`);\n  }\n}\n\n/** Run the command line; returns the exit status (0, or 2 for any problem). */\nexport function run(argv: readonly string[], io: Io): number {\n  const [command, ...args] = argv;\n  try {\n    if (command === \"format\") {\n      const code = args[0] === \"--code\";\n      const rest = code ? args.slice(1) : args;\n      if (rest.length !== 2) {\n        throw new MoneyError(\"format needs an amount and a currency\");\n      }\n      const [amount = \"\", currency = \"\"] = rest;\n      io.out(`${formatMoney(parseMoney(amount, currency), { style: code ? \"code\" : \"symbol\" })}\\n`);\n      return 0;\n    }\n    if (command === \"parse\") {\n      if (args.length !== 2) {\n        throw new MoneyError(\"parse needs an amount and a currency\");\n      }\n      const [amount = \"\", currency = \"\"] = args;\n      io.out(`${JSON.stringify(parseMoney(amount, currency))}\\n`);\n      return 0;\n    }\n    if (command === \"order\" || command === \"export\") {\n      if (args.length !== 1) {\n        throw new MoneyError(`${command} needs one file`);\n      }\n      const text = readFile(args[0] ?? \"\");\n      io.out(command === \"order\" ? formatOrder(parseOrder(text)) : exportLedger(parseEntries(text)));\n      return 0;\n    }\n    io.err(USAGE);\n    return 2;\n  } catch (error) {\n    if (error instanceof MoneyError) {\n      io.err(`moneyfmt: ${error.message}\\n`);\n      return 2;\n    }\n    throw error;\n  }\n}\n"
+        },
+        {
+          "thought": "The entry script only calls run.",
+          "tool": "read",
+          "args": {
+            "path": "bin/moneyfmt.ts"
+          },
+          "output": "import { run } from \"../src/cli.ts\";\n\nprocess.exitCode = run(process.argv.slice(2), {\n  out: (text) => process.stdout.write(text),\n  err: (text) => process.stderr.write(text),\n});\n"
+        },
+        {
+          "thought": "List where MoneyError is raised and caught.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n \"MoneyError\" src/cli.ts src/parse.ts src/types.ts"
+          },
+          "output": "src/cli.ts:8:import { MoneyError } from \"./types.ts\";\nsrc/cli.ts:28:    throw new MoneyError(`cannot read ${path}: ${reason}`);\nsrc/cli.ts:40:        throw new MoneyError(\"format needs an amount and a currency\");\nsrc/cli.ts:48:        throw new MoneyError(\"parse needs an amount and a currency\");\nsrc/cli.ts:56:        throw new MoneyError(`${command} needs one file`);\nsrc/cli.ts:65:    if (error instanceof MoneyError) {\nsrc/parse.ts:4:import { MoneyError } from \"./types.ts\";\nsrc/parse.ts:19:    throw new MoneyError(\"empty amount\");\nsrc/parse.ts:35:    throw new MoneyError(`cannot read amount ${JSON.stringify(text)}`);\nsrc/parse.ts:39:    throw new MoneyError(\nsrc/parse.ts:46:    throw new MoneyError(`amount out of range: ${JSON.stringify(text)}`);\nsrc/types.ts:18:export class MoneyError extends Error {\nsrc/types.ts:21:    this.name = \"MoneyError\";\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "All problems become MoneyError and exit 2.",
+        "report": "Every problem the library detects is a MoneyError (src/types.ts line 18): parseMoney raises empty amount, cannot read amount, too many decimal places, and amount out of range, and cli.ts raises it for missing arguments and files it cannot read. run() in src/cli.ts catches MoneyError (line 65), prints moneyfmt: <message> on stderr, and returns 2; an unknown command prints the usage text and also returns 2. Any other kind of error is rethrown. bin/moneyfmt.ts only passes run's result to process.exitCode, so a bad amount ends the process with status 2."
+      }
+    },
+    {
+      "request": "Last question: how many tests are there for parsing and for orders?",
+      "steps": [
+        {
+          "thought": "Both files use top-level test() calls, so counting them is enough.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -c \"^test(\" test/parse.test.ts test/order.test.ts"
+          },
+          "output": "test/parse.test.ts:10\ntest/order.test.ts:7\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "The counts answer the question.",
+        "report": "17 tests: 10 in test/parse.test.ts and 7 in test/order.test.ts."
+      }
+    }
+  ]
+}

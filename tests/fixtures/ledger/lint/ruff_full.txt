@@ -1,0 +1,30 @@
+[hand-written fixture modeled on ruff 0.12 check (full output format); not captured from a real run]
+F401 [*] `os` imported but unused
+ --> src/app.py:1:8
+  |
+1 | import os
+  |        ^^
+2 | import sys
+  |
+help: Remove unused import: `os`
+
+E711 Comparison to `None` should be `cond is None`
+ --> src/app.py:9:12
+  |
+8 | def check(x):
+9 |     if x == None:
+  |            ^^^^
+  |
+help: Replace with `cond is None`
+
+F841 [*] Local variable `tmp` is assigned to but never used
+  --> src/util.py:14:5
+   |
+13 | def run():
+14 |     tmp = 1
+   |     ^^^
+   |
+help: Remove assignment to unused variable `tmp`
+
+Found 3 errors.
+[*] 2 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).

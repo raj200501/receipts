@@ -1,0 +1,10 @@
+# Design-parameter phrases allowed to contain numbers in README.md and docs/REPORT.md.
+# Format: <exact phrase> | <reason>. Result numbers never go here; they use
+# <!--n:key-->value<!--/n--> markers bound to artifacts/report/numbers.json.
+Qwen2.5-Coder-7B-Instruct | the name of the pinned model, not a result
+Wilson 95% interval | the coverage level of the reported intervals, a design parameter
+Python 3.11 and 3.12 | the supported Python versions, not a result
+precision of at least 0.95 and recall of at least 0.90 | the G5 thresholds in docs/BUILD_BRIEF.md section 6, design parameters, not results
+five most common claim types | the scope of gate G5 in docs/BUILD_BRIEF.md section 6, a design parameter, not a result
+familywise alpha of 0.05 | the level of the Holm families in the E1 and E4 preregistration drafts, a design parameter
+power reaches 0.8 for an odds ratio of 2.0 at alpha 0.005 | the E1 sample-size rule (prereg/0001-e1-main-study.md section 8, DECISIONS D41), design parameters

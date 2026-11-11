@@ -1,0 +1,2 @@
+[hand-written fixture modeled on pyright 1.1.380; not captured from a real run]
+0 errors, 0 warnings, 0 informations 

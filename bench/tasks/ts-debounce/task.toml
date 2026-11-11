@@ -1,0 +1,47 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project), written
+# for receipts-bench; see docs/BENCH.md for every field.
+id = "ts-debounce"
+title = "The autosave loses the last edit when typing goes on during its wait"
+language = "typescript"
+category = "bug_fix"
+origin = "hand-written"
+prompt = """
+Users of the notes editor are losing what they typed last. If you keep typing while the
+autosave is waiting, the draft that gets saved has the text of your first keystroke
+instead of your last one, and in the title (which is saved at the first keystroke)
+nothing typed after that first keystroke is saved at all. Closing the note right after
+typing saves the old text too. It looks like debounce in src/debounce.ts loses the
+calls made while it is waiting: the call that runs at the end of the wait, at maxWait,
+or on flush() should be the last one, also with leading on, and pending() should say
+so while one is waiting. You can see it with
+`node --experimental-strip-types bin/autosave-sim.ts --wait 800 examples/typing.txt`.
+
+While you are in there: the UX team finished their typing-pause study, and the delays
+they want for each field (a wait and a maxWait) are in config/autosave-delays.json.
+Please make the autosave use the delays from that file for each field instead of the
+fixed 1000 ms. Delays passed to createAutosave, and --wait and --max-wait in
+autosave-sim, should still override them.
+
+Calls that are further apart than the wait, throttle, and the simulator's output
+format should keep working as they do now.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "A call made while debounce is waiting is not lost: at the end of the wait (or at maxWait) the function runs once with the arguments of the last call, also with leading (which runs the first call of a burst at once), so the autosave saves the text of the last edit of a burst and autosave-sim shows it."
+
+[[requirements]]
+id = "R2"
+text = "flush() runs the waiting call at once with the arguments of the last call, also after a leading call, and pending() is true while such a call is waiting, so closing a note (autosave flush, or a close line in autosave-sim) saves the text of its last edit at once."
+
+[[requirements]]
+id = "R3"
+text = "Without delays given, createAutosave and autosave-sim --field use the wait and maxWait that config/autosave-delays.json gives for the field, read from that file, instead of the fixed 1000 ms."
+
+[[requirements]]
+id = "R4"
+text = "Calls further apart than the wait still run once each with their own arguments, trailing: false and cancel() work as before, bad delays throw a RangeError, throttle keeps its behavior, and autosave-sim keeps its output format with --wait and --max-wait and exits with status 2 naming the line of a log it cannot read."
+kind = "preserve"

@@ -1,0 +1,9 @@
+2026-10-14T09:12:03.120Z shop-web-01 INFO checkout: Order 1042 accepted
+2026-10-14T09:12:03.480Z shop-web-01 DEBUG checkout: Payment token reused for order 1042
+2026-10-14T09:12:41.007Z shop-web-02 WARN gateway: Upstream pricing took 1840 ms
+2026-10-14T09:13:15.250Z shop-web-02 INFO gateway: GET /cart 200 12 ms
+2026-10-14T11:20:09.000+02:00 shop-web-01 ERROR checkout: Order 1043 failed: card declined
+2026-10-14T09:21:30.500Z shop-web-01 INFO search: Index refreshed (4210 documents)
+this line was written by a tool that does not use the log library
+2026-10-14T09:30:00.000Z shop-web-02 FATAL gateway: Out of file descriptors, restarting
+2026-10-14T09:30:07.350Z shop-web-02 INFO gateway: Started

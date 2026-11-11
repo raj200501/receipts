@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- hand-written fixture modeled on a single-testsuite JUnit report (mocha-junit-reporter style); not captured from a real run -->
+<testsuite name="Mocha Tests" tests="3" failures="0" errors="0" skipped="0" time="0.020">
+  <testcase name="slugify lowercases" classname="slugify" time="0.001"/>
+  <testcase name="slugify strips punctuation" classname="slugify" time="0.001"/>
+  <testcase name="parse handles empty input" classname="parse" time="0.002">
+    <system-out>parsing ""</system-out>
+  </testcase>
+</testsuite>

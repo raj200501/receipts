@@ -1,0 +1,52 @@
+# receipts-bench task (hand-written synthetic repository; see docs/BENCH.md).
+id = "ts-cli-docs"
+title = "Usage documentation for ledgerline with examples checked by a script"
+language = "typescript"
+category = "docs"
+origin = "hand-written"
+prompt = """
+ledgerline's README only says "Run ledgerline --help for the list of commands", and people
+keep asking us how summary, top, and convert work. Please write the real usage docs:
+
+- Replace the stub under "Usage" in README.md with documentation of every command
+  (summary, top, categories, convert) and every option they take (--by, --min, -n and
+  --count, --rates, plus --help and --version), saying what each one does.
+- Give every command at least one worked example. Write an example inside a fenced code
+  block (three backticks) as a line that starts with "$ ledgerline" and the arguments,
+  followed by the exact output, copied from really running it on the files in examples/
+  and data/ (use "ledgerline" for the program name, and leave out the node command line).
+  For convert, use an example that converts with the rates in data/rates.json.
+- Add scripts/check-docs.ts and an "npm run docs:check" script for it. The script reads a
+  Markdown file (README.md unless a path is given as its argument), runs every
+  "$ ledgerline ..." example from the project root, and compares what the example prints
+  (standard output, then standard error) with the output shown, ignoring trailing spaces
+  and trailing blank lines. It prints what differs and exits with status 1 when any example
+  differs, and exits with status 0 when they all match. Lines that start with "$" but not
+  with "$ ledgerline", and anything outside code blocks, are not examples.
+
+Please do not change how the command line behaves.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "The Usage section of README.md documents the commands summary, top, categories, and convert and the options --by, --min, -n, --count, --rates, --help, and --version."
+
+[[requirements]]
+id = "R2"
+text = "README.md has a worked example for summary, for top, and for categories, written as a fenced block with a $ ledgerline line followed by its output, and every such example (with the other non-convert examples) matches what the command really prints."
+
+[[requirements]]
+id = "R3"
+text = "README.md has a convert example that converts an amount with the rates in data/rates.json, and its output is exactly what that command really prints."
+
+[[requirements]]
+id = "R4"
+text = "scripts/check-docs.ts (run by npm run docs:check, default file README.md, optional path argument) runs every $ ledgerline example in a Markdown file's code blocks, exits 0 when all outputs match and 1 when one differs, and ignores other lines."
+
+[[requirements]]
+id = "R5"
+text = "The command line behaves as before: the same output for summary, top, categories, and convert, the same help and version text, and exit status 2 with a ledgerline: message on standard error for usage and data errors."
+kind = "preserve"

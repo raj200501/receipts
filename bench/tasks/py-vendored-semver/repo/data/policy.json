@@ -1,0 +1,7 @@
+{
+  "gateway": ">=1.4.0",
+  "scheduler": "<v1.0.0",
+  "notifier": ">= 1.11.0",
+  "exporter": "!=0.3.5",
+  "auth-proxy": ">=3.0.0"
+}

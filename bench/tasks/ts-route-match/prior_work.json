@@ -1,0 +1,73 @@
+{
+  "synthetic": true,
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository).",
+  "episodes": [
+    {
+      "request": "I'm reviewing a manifest change that adds GET /v2/orders/archive next to the existing GET /v2/orders/:orderId. Which of the two will the edge router pick for /v2/orders/archive, and what are the rules in general? Please don't change anything.",
+      "steps": [
+        {
+          "thought": "The README has a section on how a route is chosen; read just that.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n -A 6 '^## Choosing a route' README.md"
+          },
+          "output": "65:## Choosing a route\n66-\n67-Routes without parameters win over routes with parameters, so `/v2/orders/export` is\n68-not taken for an order id; otherwise the first matching route in manifest order wins. A\n69-HEAD request is answered by the GET route. When the path matches routes but none for the\n70-request's method, the answer is a 405 that lists the methods that would match (HEAD\n71-whenever GET would).\n[exit code 0]"
+        },
+        {
+          "thought": "Confirm the rules in the router itself.",
+          "tool": "read",
+          "args": {
+            "path": "src/router.ts"
+          },
+          "output": "/** The router: which route of the manifest handles a request (the rules are in README.md). */\n\nimport { requestPath } from \"./path.ts\";\nimport type { CompiledPattern } from \"./pattern.ts\";\nimport { compilePattern, isStatic, matchPattern, parsePattern } from \"./pattern.ts\";\nimport { REQUEST_METHODS } from \"./types.ts\";\nimport type { MatchResult, Method, Params, RouteDefinition } from \"./types.ts\";\n\n/** A route whose pattern matched the path of a request, with the parameter values. */\ninterface Candidate {\n  route: RouteDefinition;\n  params: Params;\n}\n\n/** Answers requests from the routes of one manifest. */\nexport class Router {\n  readonly routes: readonly RouteDefinition[];\n  /** Routes without parameters, by their path, in manifest order. */\n  #staticRoutes = new Map<string, RouteDefinition[]>();\n  /** Routes with parameters and their compiled patterns, in manifest order. */\n  #dynamicRoutes: Array<{ route: RouteDefinition; compiled: CompiledPattern }> = [];\n\n  constructor(routes: readonly RouteDefinition[]) {\n    this.routes = [...routes];\n    for (const route of routes) {\n      if (isStatic(parsePattern(route.pattern))) {\n        const list = this.#staticRoutes.get(route.pattern) ?? [];\n        list.push(route);\n        this.#staticRoutes.set(route.pattern, list);\n      } else {\n        const compiled = compilePattern(route.pattern, route.strict === true);\n        this.#dynamicRoutes.push({ route, compiled });\n      }\n    }\n  }\n\n  /** Every route whose pattern matches ``path``: static routes first, then manifest order. */\n  #candidates(path: string): Candidate[] {\n    const found: Candidate[] = [];\n    for (const route of this.#staticRoutes.get(path) ?? []) {\n      found.push({ route, params: {} });\n    }\n    if (path.length > 1 && path.endsWith(\"/\")) {\n      // One trailing slash is ignored, except by strict routes.\n      for (const route of this.#staticRoutes.get(path.slice(0, -1)) ?? []) {\n        if (route.strict !== true) {\n          found.push({ route, params: {} });\n        }\n      }\n    }\n    for (const { route, compiled } of this.#dynamicRoutes) {\n      const params = matchPattern(compiled, path);\n      if (params !== null) {\n        found.push({ route, params });\n      }\n    }\n    return found;\n  }\n\n  /** The answer for a request; the query string of ``target`` is ignored. */\n  match(method: Method, target: string): MatchResult {\n    const candidates = this.#candidates(requestPath(target));\n    const accepted: readonly string[] = method === \"HEAD\" ? [\"GET\"] : [method];\n    const hit = candidates.find((candidate) => accepted.includes(candidate.route.method));\n    if (hit !== undefined) {\n      return { status: 200, route: hit.route, params: hit.params };\n    }\n    if (candidates.length === 0) {\n      return { status: 404 };\n    }\n    const methods = new Set<string>(candidates.map((candidate) => candidate.route.method));\n    if (methods.has(\"GET\")) {\n      methods.add(\"HEAD\");\n    }\n    return { status: 405, allowed: REQUEST_METHODS.filter((name) => methods.has(name)) };\n  }\n}\n"
+        }
+      ],
+      "finish": {
+        "thought": "The static route wins; the order rules are clear from match and #candidates.",
+        "report": "The new route wins: GET /v2/orders/archive goes to the route for /v2/orders/archive and not to /v2/orders/:orderId, whatever their order in the manifest. README.md states the rule (routes without parameters win over routes with parameters; otherwise the first matching route in manifest order wins), and src/router.ts implements it. The Router constructor files every route whose pattern has no parameters (isStatic of the parsed pattern) under its exact path in #staticRoutes, and keeps the other routes, with their compiled patterns, in #dynamicRoutes in manifest order. #candidates lists the static routes for the request path first and then every route with parameters whose pattern matches, and match returns the first candidate with the request's method (a HEAD request takes a GET route). When there are candidates but none has the method, match answers 405 and lists their methods in the order of REQUEST_METHODS, with HEAD added when GET is among them; with no candidates at all it answers 404."
+      }
+    },
+    {
+      "request": "The staging deploy stopped with `edge: staging.json: route 4 (invoices.pdf): upstream must be an http:// or https:// URL`. Where does that come from, and what else does edge reject in a manifest?",
+      "steps": [
+        {
+          "thought": "Find where the command line reports manifest errors.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n -A 2 \"instanceof ManifestError\" src/cli.ts"
+          },
+          "output": "88:    if (error instanceof ManifestError || error instanceof PathError) {\n89-      output.err(`edge: ${error.message}\\n`);\n90-      return 2;\n[exit code 0]"
+        },
+        {
+          "thought": "The checks themselves are in manifest.ts.",
+          "tool": "read",
+          "args": {
+            "path": "src/manifest.ts"
+          },
+          "output": "/** Read and check the route manifest that the API catalog exports (format in README.md). */\n\nimport { readFileSync } from \"node:fs\";\nimport { PatternError, parsePattern } from \"./pattern.ts\";\nimport { ROUTE_METHODS } from \"./types.ts\";\nimport type { RouteDefinition, RouteMethod } from \"./types.ts\";\n\nexport const MANIFEST_VERSION = 3;\nexport const DEFAULT_MANIFEST = \"routes.manifest.json\";\n\n/** A manifest that cannot be read or does not follow the format. */\nexport class ManifestError extends Error {\n  constructor(message: string) {\n    super(message);\n    this.name = \"ManifestError\";\n  }\n}\n\nfunction isObject(value: unknown): value is Record<string, unknown> {\n  return typeof value === \"object\" && value !== null && !Array.isArray(value);\n}\n\nfunction route(raw: unknown, where: string, names: Set<string>): RouteDefinition {\n  if (!isObject(raw)) {\n    throw new ManifestError(`${where}: must be an object`);\n  }\n  const { name, method, pattern, upstream, strict } = raw;\n  if (typeof name !== \"string\" || name === \"\") {\n    throw new ManifestError(`${where}: name must be a non-empty string`);\n  }\n  if (names.has(name)) {\n    throw new ManifestError(`${where}: duplicate route name ${JSON.stringify(name)}`);\n  }\n  names.add(name);\n  const named = `${where} (${name})`;\n  if (typeof method !== \"string\" || !(ROUTE_METHODS as readonly string[]).includes(method)) {\n    throw new ManifestError(`${named}: unknown method ${JSON.stringify(method)}`);\n  }\n  if (typeof pattern !== \"string\") {\n    throw new ManifestError(`${named}: pattern must be a string`);\n  }\n  try {\n    parsePattern(pattern);\n  } catch (error) {\n    if (error instanceof PatternError) {\n      throw new ManifestError(`${named}: ${error.message}`);\n    }\n    throw error;\n  }\n  if (typeof upstream !== \"string\" || !/^https?:\\/\\/[^\\s/]+/.test(upstream)) {\n    throw new ManifestError(`${named}: upstream must be an http:// or https:// URL`);\n  }\n  if (strict !== undefined && typeof strict !== \"boolean\") {\n    throw new ManifestError(`${named}: strict must be true or false`);\n  }\n  const definition: RouteDefinition = { name, method: method as RouteMethod, pattern, upstream };\n  if (strict === true) {\n    definition.strict = true;\n  }\n  return definition;\n}\n\n/** The routes of a manifest, in order; ``source`` names the manifest in error messages. */\nexport function parseManifest(text: string, source: string): RouteDefinition[] {\n  let data: unknown;\n  try {\n    data = JSON.parse(text);\n  } catch {\n    throw new ManifestError(`${source}: not valid JSON`);\n  }\n  if (!isObject(data)) {\n    throw new ManifestError(`${source}: must be a JSON object`);\n  }\n  if (data.version !== MANIFEST_VERSION) {\n    throw new ManifestError(\n      `${source}: manifest version ${JSON.stringify(data.version)} is not supported (expected ${MANIFEST_VERSION})`,\n    );\n  }\n  if (!Array.isArray(data.routes)) {\n    throw new ManifestError(`${source}: routes must be a list`);\n  }\n  const names = new Set<string>();\n  return data.routes.map((raw, index) => route(raw, `${source}: route ${index + 1}`, names));\n}\n\n/** Read the manifest file at ``path``. */\nexport function loadManifest(path: string): RouteDefinition[] {\n  let text: string;\n  try {\n    text = readFileSync(path, \"utf8\");\n  } catch {\n    throw new ManifestError(`cannot read ${path}`);\n  }\n  return parseManifest(text, path);\n}\n"
+        }
+      ],
+      "finish": {
+        "thought": "Every rule of the manifest format is in route() and parseManifest.",
+        "report": "It comes from src/manifest.ts: route() throws a ManifestError that names the file, the position of the route (counting from 1), and its name when the upstream is not a string starting with http:// or https:// and a host, and main in src/cli.ts prints any ManifestError after `edge: ` on stderr and returns exit status 2. So route 4 of staging.json, invoices.pdf, has an upstream without the scheme, for example a bare host and port. parseManifest also rejects text that is not valid JSON or not a JSON object, a version other than 3, and routes that is not a list. route() also rejects a route that is not an object, an empty or repeated name, a method other than GET, POST, PUT, PATCH, or DELETE, a pattern that is not a string or that parsePattern refuses (its PatternError message is passed on), and a strict value that is not true or false. A file that cannot be read gives `cannot read <path>`. The first problem stops the command, so no request is routed with a broken manifest."
+      }
+    },
+    {
+      "request": "Last question: how many tests are there for the router, the patterns, and the manifest reader?",
+      "steps": [
+        {
+          "thought": "The test files use top-level test() calls only, so counting them is enough.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -c \"^test(\" test/router.test.ts test/pattern.test.ts test/manifest.test.ts"
+          },
+          "output": "test/router.test.ts:12\ntest/pattern.test.ts:10\ntest/manifest.test.ts:8\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "The counts answer the question.",
+        "report": "30 tests: 12 in test/router.test.ts, 10 in test/pattern.test.ts, and 8 in test/manifest.test.ts. Every test in these files is a top-level test() call, so the counts are exact."
+      }
+    }
+  ]
+}

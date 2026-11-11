@@ -1,0 +1,19 @@
+[hand-written fixture modeled on npx jest --verbose (Jest 29); not captured from a real run]
+ FAIL  src/calc.test.js
+  Calculator
+    ✓ adds numbers (2 ms)
+    ✕ divides by zero (4 ms)
+
+  ● Calculator › divides by zero
+
+    expect(received).toThrow()
+
+    Received function did not throw
+
+      at Object.toThrow (src/calc.test.js:12:29)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 passed, 2 total
+Snapshots:   0 total
+Time:        0.6 s
+Ran all test suites.

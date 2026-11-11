@@ -1,0 +1,97 @@
+{
+  "synthetic": true,
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository).",
+  "episodes": [
+    {
+      "request": "The search team asked which limit the search-indexer client gets and where it is set. Can you check? Please don't change anything.",
+      "steps": [
+        {
+          "thought": "Start with the gateway's limits file.",
+          "tool": "read",
+          "args": {
+            "path": "config/limits.toml"
+          },
+          "output": "# Rate limits of the API gateway, read by the gateway and by throttle.\n# Owned by the API platform team. Included files are owned by the teams named in them.\n\n[policy]\ninclude = [\"data/internal-limits.toml\"]\n\n[default]\nburst = 20\nper_minute = 60\n\n[clients.reports-web]\nburst = 40\nper_minute = 120\n\n[clients.billing-export]\nburst = 5\nper_minute = 2\n"
+        },
+        {
+          "thought": "search-indexer is not listed there; check the included file.",
+          "tool": "read",
+          "args": {
+            "path": "data/internal-limits.toml"
+          },
+          "output": "# Limits of the internal batch jobs. Owned by the data platform team; ask them before\n# changing anything here.\n\n[clients.etl-nightly]\nburst = 50\nper_minute = 300\n\n[clients.search-indexer]\nburst = 25\nper_minute = 150\n"
+        },
+        {
+          "thought": "See how the files are combined.",
+          "tool": "read",
+          "args": {
+            "path": "src/throttle/policy.py"
+          },
+          "output": "\"\"\"Rate limits per client, read from ``config/limits.toml``.\n\nThe file has a ``[default]`` limit, a table per client that has its own limit, and\noptionally a list of other limit files to include::\n\n    [policy]\n    include = [\"data/internal-limits.toml\"]\n\n    [default]\n    burst = 20        # the most requests a client can send at once\n    per_minute = 60   # the steady rate its bucket refills at\n\n    [clients.reports-web]\n    burst = 40\n    per_minute = 120\n\nIncluded paths are relative to the repository root (the parent of ``config/``). An\nincluded file lists ``[clients.NAME]`` tables only. A client may be listed once across\nall the files; a client that is not listed gets the ``[default]`` limit.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport tomllib\nfrom collections.abc import Mapping\nfrom dataclasses import dataclass\nfrom pathlib import Path\nfrom typing import Any\n\nDEFAULT_CONFIG = Path(\"config/limits.toml\")\nLIMIT_KEYS = (\"burst\", \"per_minute\")\nSECONDS_PER_MINUTE = 60\n\n\nclass PolicyError(ValueError):\n    \"\"\"A limits file that cannot be used.\"\"\"\n\n\n@dataclass(frozen=True)\nclass Limit:\n    \"\"\"A client's burst (bucket capacity) and steady rate (refill per minute).\"\"\"\n\n    burst: int\n    per_minute: int\n\n    @property\n    def per_second(self) -> float:\n        \"\"\"The refill rate in tokens per second.\"\"\"\n        return self.per_minute / SECONDS_PER_MINUTE\n\n\n@dataclass(frozen=True)\nclass Policy:\n    \"\"\"The default limit and the clients that have their own.\"\"\"\n\n    default: Limit\n    clients: Mapping[str, Limit]\n\n    def limit_for(self, client: str) -> Limit:\n        \"\"\"The limit of ``client``: its own, or the default.\"\"\"\n        return self.clients.get(client, self.default)\n\n\ndef _limit(table: Any, where: str) -> Limit:\n    if not isinstance(table, dict):\n        raise PolicyError(f\"{where}: expected a table with burst and per_minute\")\n    unknown = sorted(set(table) - set(LIMIT_KEYS))\n    if unknown:\n        raise PolicyError(f\"{where}: unknown key {unknown[0]!r}\")\n    values = []\n    for key in LIMIT_KEYS:\n        value = table.get(key)\n        if isinstance(value, bool) or not isinstance(value, int) or value < 1:\n            raise PolicyError(f\"{where}: {key} must be a whole number of at least 1\")\n        values.append(value)\n    return Limit(*values)\n\n\ndef _read(path: Path, shown: str) -> dict[str, Any]:\n    try:\n        text = path.read_text(encoding=\"utf-8\")\n    except FileNotFoundError:\n        raise PolicyError(f\"{shown}: file not found\") from None\n    try:\n        return tomllib.loads(text)\n    except tomllib.TOMLDecodeError as exc:\n        raise PolicyError(f\"{shown}: not valid TOML ({exc})\") from None\n\n\ndef _clients(data: dict[str, Any], shown: str, into: dict[str, tuple[Limit, str]]) -> None:\n    clients = data.get(\"clients\", {})\n    if not isinstance(clients, dict):\n        raise PolicyError(f\"{shown}: [clients] must hold one table per client\")\n    for name, table in clients.items():\n        if name in into:\n            raise PolicyError(f\"{shown}: client {name!r} is already listed in {into[name][1]}\")\n        into[name] = (_limit(table, f\"{shown} [clients.{name}]\"), shown)\n\n\ndef project_root(config: Path) -> Path:\n    \"\"\"The directory included paths are relative to: the parent of ``config/``.\"\"\"\n    return config.resolve().parent.parent\n\n\ndef load_policy(config: Path = DEFAULT_CONFIG) -> Policy:\n    \"\"\"Read the limits file ``config`` and the files it includes.\n\n    Raises:\n        PolicyError: A file is missing or invalid, or a client is listed twice.\n    \"\"\"\n    data = _read(config, str(config))\n    unknown = sorted(set(data) - {\"policy\", \"default\", \"clients\"})\n    if unknown:\n        raise PolicyError(f\"{config}: unknown table or key {unknown[0]!r}\")\n    if \"default\" not in data:\n        raise PolicyError(f\"{config}: missing the [default] limit\")\n    default = _limit(data[\"default\"], f\"{config} [default]\")\n    found: dict[str, tuple[Limit, str]] = {}\n    _clients(data, str(config), found)\n    settings = data.get(\"policy\", {})\n    if not isinstance(settings, dict) or set(settings) - {\"include\"}:\n        raise PolicyError(f\"{config}: [policy] takes only an include list\")\n    include = settings.get(\"include\", [])\n    if not isinstance(include, list) or not all(isinstance(item, str) for item in include):\n        raise PolicyError(f\"{config}: [policy] include must be a list of paths\")\n    for rel in include:\n        included = _read(project_root(config) / rel, rel)\n        if set(included) - {\"clients\"}:\n            raise PolicyError(f\"{rel}: an included file lists [clients.NAME] tables only\")\n        if not included.get(\"clients\"):\n            raise PolicyError(f\"{rel}: an included file must list at least one client\")\n        _clients(included, rel, found)\n    return Policy(default, {name: limit for name, (limit, _) in sorted(found.items())})\n"
+        }
+      ],
+      "finish": {
+        "thought": "I know the limit and how it is loaded.",
+        "report": "search-indexer gets a burst of 25 and 150 requests per minute. It is not in config/limits.toml itself: that file includes data/internal-limits.toml through its [policy] include list, and the [clients.search-indexer] table is there; that file belongs to the data platform team. load_policy in src/throttle/policy.py reads config/limits.toml, then each included file relative to the repository root (project_root, the parent of config/), and collects all the [clients.NAME] tables; a client listed in two places is an error, and an included file without clients is one too. Without its table, search-indexer would get the [default] limit: a burst of 20 and 60 per minute."
+      }
+    },
+    {
+      "request": "The gateway team ran throttle replay on a log merged from two gateway hosts and got an error saying a time goes backwards. Where does that come from, and what should they do about it?",
+      "steps": [
+        {
+          "thought": "Find where the message is raised.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n backwards src/throttle/replay.py"
+          },
+          "output": "86:            raise LogError(line, f\"time {stamp} goes backwards (the log must be in time order)\")\n[exit code 0]"
+        },
+        {
+          "thought": "Read the log parser around it.",
+          "tool": "read",
+          "args": {
+            "path": "src/throttle/replay.py"
+          },
+          "output": "\"\"\"Replay a gateway request log through the limiter and count the decisions per client.\n\nA request log is CSV with a header row::\n\n    time,client,method,path\n    2026-10-28T14:00:00.000Z,billing-export,GET,/v1/invoices\n\n``time`` is an ISO 8601 time with ``Z`` or an offset, and the rows are in time order.\nThe replay moves a manual clock to each request's time, so it makes the decisions the\ngateway would have made.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport csv\nimport io\nfrom collections.abc import Sequence\nfrom dataclasses import dataclass, field\nfrom datetime import datetime\nfrom pathlib import Path\n\nfrom throttle.clock import ManualClock\nfrom throttle.limiter import IDLE_TIMEOUT_S, Limiter\nfrom throttle.policy import Policy\n\nHEADER = (\"time\", \"client\", \"method\", \"path\")\n\n\nclass LogError(ValueError):\n    \"\"\"A request log that cannot be replayed.\"\"\"\n\n    def __init__(self, line: int, message: str) -> None:\n        super().__init__(f\"line {line}: {message}\")\n        self.line = line\n\n\n@dataclass(frozen=True)\nclass Request:\n    \"\"\"One logged request; ``stamp`` is its time as written in the log.\"\"\"\n\n    line: int\n    stamp: str\n    when: datetime\n    client: str\n    method: str\n    path: str\n\n\ndef parse_time(text: str) -> datetime:\n    \"\"\"An ISO 8601 time that names its offset (``Z`` for UTC, or ``+01:00``).\"\"\"\n    value = datetime.fromisoformat(text.strip())\n    if value.tzinfo is None:\n        raise ValueError(f\"time {text!r} has no offset (add Z for UTC)\")\n    return value\n\n\ndef parse_log(text: str) -> list[Request]:\n    \"\"\"The requests of a log, in order; blank lines are skipped.\n\n    Raises:\n        LogError: The header is missing, or a row is malformed or earlier than the\n            row before it.\n    \"\"\"\n    reader = csv.reader(io.StringIO(text))\n    requests: list[Request] = []\n    header_seen = False\n    for row in reader:\n        line = reader.line_num\n        if not any(item.strip() for item in row):\n            continue\n        if not header_seen:\n            if tuple(item.strip() for item in row) != HEADER:\n                raise LogError(line, f\"expected the header {','.join(HEADER)}\")\n            header_seen = True\n            continue\n        if len(row) != len(HEADER):\n            raise LogError(line, f\"expected {len(HEADER)} fields, got {len(row)}\")\n        stamp, client, method, path = (item.strip() for item in row)\n        try:\n            when = parse_time(stamp)\n        except ValueError:\n            raise LogError(line, f\"invalid time {stamp!r}\") from None\n        if not client:\n            raise LogError(line, \"missing client\")\n        if requests and when < requests[-1].when:\n            raise LogError(line, f\"time {stamp} goes backwards (the log must be in time order)\")\n        requests.append(Request(line, stamp, when, client, method, path))\n    if not header_seen:\n        raise LogError(1, \"the log is empty (expected a header row)\")\n    return requests\n\n\ndef read_log(path: Path) -> list[Request]:\n    \"\"\"Read a request log file (UTF-8).\"\"\"\n    return parse_log(path.read_text(encoding=\"utf-8\"))\n\n\n@dataclass\nclass ClientTotals:\n    \"\"\"How many requests of one client were allowed and rejected.\"\"\"\n\n    allowed: int = 0\n    rejected: int = 0\n\n\n@dataclass(frozen=True)\nclass Rejection:\n    \"\"\"A rejected request and the Retry-After the gateway sent with it.\"\"\"\n\n    request: Request\n    retry_after_s: int\n\n\n@dataclass\nclass ReplayResult:\n    \"\"\"The totals per client and every rejection, in log order.\"\"\"\n\n    totals: dict[str, ClientTotals] = field(default_factory=dict)\n    rejections: list[Rejection] = field(default_factory=list)\n\n\ndef replay(\n    requests: Sequence[Request], policy: Policy, idle_timeout_s: float = IDLE_TIMEOUT_S\n) -> ReplayResult:\n    \"\"\"Run ``requests`` through a fresh limiter whose clock follows the log.\"\"\"\n    result = ReplayResult()\n    if not requests:\n        return result\n    first = requests[0].when\n    clock = ManualClock()\n    limiter = Limiter(policy, clock, idle_timeout_s)\n    for request in requests:\n        clock.set((request.when - first).total_seconds())\n        decision = limiter.check(request.client)\n        totals = result.totals.setdefault(request.client, ClientTotals())\n        if decision.allowed:\n            totals.allowed += 1\n        else:\n            totals.rejected += 1\n            result.rejections.append(Rejection(request, decision.retry_after_s))\n    return result\n\n\ndef render_report(result: ReplayResult, rejected: bool = False) -> str:\n    \"\"\"The totals table; with ``rejected``, also one line per rejected request.\"\"\"\n    width = max([len(\"client\"), *(len(name) for name in result.totals)])\n    lines = [f\"{'client':<{width}}  {'allowed':>7}  {'rejected':>8}\"]\n    for name in sorted(result.totals):\n        totals = result.totals[name]\n        lines.append(f\"{name:<{width}}  {totals.allowed:>7}  {totals.rejected:>8}\")\n    allowed = sum(totals.allowed for totals in result.totals.values())\n    refused = sum(totals.rejected for totals in result.totals.values())\n    lines.append(f\"{'total':<{width}}  {allowed:>7}  {refused:>8}\")\n    if rejected:\n        lines.append(\"\")\n        lines.append(\"rejected requests:\" if result.rejections else \"rejected requests: none\")\n        for item in result.rejections:\n            request = item.request\n            lines.append(\n                f\"{request.stamp}  {request.client}  {request.method} {request.path}\"\n                f\"  retry after {item.retry_after_s} s\"\n            )\n    return \"\\n\".join(lines) + \"\\n\"\n"
+        },
+        {
+          "thought": "Check what the command line does with the error.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n -A 2 'except LogError' src/throttle/cli.py"
+          },
+          "output": "60:    except LogError as exc:\n61-        print(f\"throttle: {args.log}: {exc}\", file=sys.stderr)\n62-        return 2\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "The log has to be in time order.",
+        "report": "parse_log in src/throttle/replay.py raises it as a LogError: every row's time must be at least the time of the row before it, because replay moves a ManualClock forward to each request's time, so the log has to be in time order. The message names the line of the first row that is out of order, and main in src/throttle/cli.py prints it after the log's path and exits with status 2. A log merged from two hosts is interleaved out of order, so they should sort the rows by time, keeping the header row first, before replaying it. Rows with the same time are fine, and the times only need an offset such as Z."
+      }
+    },
+    {
+      "request": "Last thing for now: how many tests does each test module have?",
+      "steps": [
+        {
+          "thought": "Count the test functions per module.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -c '^def test_' tests/test_bucket.py tests/test_cli.py tests/test_clock.py tests/test_limiter.py tests/test_policy.py tests/test_replay.py"
+          },
+          "output": "tests/test_bucket.py:8\ntests/test_cli.py:6\ntests/test_clock.py:5\ntests/test_limiter.py:8\ntests/test_policy.py:12\ntests/test_replay.py:14\n[exit code 0]"
+        },
+        {
+          "thought": "Parametrized tests run once per case; look for them.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n -A 1 parametrize tests/test_bucket.py tests/test_cli.py tests/test_clock.py tests/test_limiter.py tests/test_policy.py tests/test_replay.py"
+          },
+          "output": "tests/test_bucket.py:43:@pytest.mark.parametrize((\"capacity\", \"rate\"), [(0, 1.0), (5, 0.0), (-1, 1.0)])\ntests/test_bucket.py-44-def test_capacity_and_rate_must_be_positive(capacity: float, rate: float) -> None:\n--\ntests/test_policy.py:78:@pytest.mark.parametrize(\"value\", [\"0\", \"-1\", '\"5\"', \"true\", \"2.5\"])\ntests/test_policy.py-79-def test_limits_must_be_whole_numbers_of_at_least_one(tmp_path: Path, value: str) -> None:\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "I have the counts and the parametrized cases.",
+        "report": "There are 53 test functions: 8 in tests/test_bucket.py, 6 in tests/test_cli.py, 5 in tests/test_clock.py, 8 in tests/test_limiter.py, 12 in tests/test_policy.py, and 14 in tests/test_replay.py. Two of them are parametrized: test_capacity_and_rate_must_be_positive in tests/test_bucket.py runs with three pairs of capacity and rate, and test_limits_must_be_whole_numbers_of_at_least_one in tests/test_policy.py with five values, so pytest runs 59 tests. The log parser and the policy loader have the most tests; the command line has the fewest of the larger modules."
+      }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "currency": "EUR",
+  "valid_from": "2026-11-01",
+  "published_by": "Logistics purchasing, 29 October 2026",
+  "zones": {
+    "EU1": {"base_cents": 549, "per_kg_cents": 137, "max_kg": 30},
+    "EU2": {"base_cents": 689, "per_kg_cents": 164, "max_kg": 30},
+    "EU3": {"base_cents": 735, "per_kg_cents": 171, "max_kg": 25},
+    "UK": {"base_cents": 1190, "per_kg_cents": 243, "max_kg": 20},
+    "US": {"base_cents": 1895, "per_kg_cents": 388, "max_kg": 20},
+    "WORLD": {"base_cents": 2640, "per_kg_cents": 512, "max_kg": 15}
+  }
+}

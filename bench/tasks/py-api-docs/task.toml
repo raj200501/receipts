@@ -1,0 +1,48 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project); see
+# docs/BENCH.md for every field.
+id = "py-api-docs"
+title = "Document the public API of the tariffs package in its README"
+language = "python"
+category = "docs"
+origin = "hand-written"
+prompt = """
+The tariffs package is now imported by the finance and warehouse tools, but its README
+only describes the command line, so people read the source to find out what the
+functions do and what they raise. Please add an API reference to README.md.
+
+- It should cover everything the package exports (tariffs.__all__): give each name its
+  own subsection with what it does, its arguments, what it returns, and what it raises.
+- Every function and class should have an example that can be run as written: a code
+  block in the style of a Python prompt (>>> lines) with the output shown, one
+  self-contained block per example, imports included.
+- Show the errors with their real messages, for an unknown country or zone, an
+  unreadable rate file, and a weight that cannot be priced.
+- Add a worked example for the rate card we ship, data/rates.json: load it with the
+  library and show its zones and what they charge.
+
+Leave the code in src/ alone and keep the existing README sections as they are.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 180
+
+[[requirements]]
+id = "R1"
+text = "README.md has an API reference section with its own heading for every name in tariffs.__all__."
+
+[[requirements]]
+id = "R2"
+text = "Each of quote, load_rates, zone_for, format_money, RateTable, and ZoneRate has at least one example in the README (a code block with >>> prompts) that runs as written, with imports included, and prints the output shown."
+
+[[requirements]]
+id = "R3"
+text = "The README shows, as runnable examples with the real error message, an UnknownZoneError, a RateFileError, and the ValueError that quote raises for a weight that cannot be priced."
+
+[[requirements]]
+id = "R4"
+text = "The README has a worked example that loads data/rates.json with load_rates and shows at least three of its zones with what they charge; running the example prints what the README shows."
+
+[[requirements]]
+id = "R5"
+text = "The code under src/ is unchanged, and the README keeps its existing sections (command line, rate file, development)."
+kind = "preserve"

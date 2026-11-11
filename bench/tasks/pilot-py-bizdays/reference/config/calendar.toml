@@ -1,0 +1,4 @@
+# Closure calendars used by the bizdays command line.
+# Managed by the operations team. Local development reads the bundled files.
+[calendar]
+sources = ["data/closures.json", "data/closures-2027.json"]

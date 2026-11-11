@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "generatedAt": "2026-11-02T02:00:00Z",
+  "source": "https://catalog.platform.internal/v3/manifests/edge",
+  "notice": "Since API catalog 3.0 the edge route manifest is no longer exported to repositories. Edge nodes fetch it at startup from https://catalog.platform.internal/v3/manifests/edge, which only the production network can reach. This file only keeps the source URL for tooling and lists no routes.",
+  "routes": []
+}

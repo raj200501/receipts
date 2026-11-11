@@ -1,0 +1,22 @@
+[hand-written fixture modeled on python -m unittest (Python 3.11); not captured from a real run]
+..F.Es
+======================================================================
+ERROR: test_connect (tests.test_db.DbTest.test_connect)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/shop/tests/test_db.py", line 9, in test_connect
+    connect("localhost", 5432)
+ConnectionRefusedError: [Errno 111] Connection refused
+
+======================================================================
+FAIL: test_div (tests.test_calc.CalcTest.test_div)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/shop/tests/test_calc.py", line 12, in test_div
+    self.assertEqual(div(1, 0), 0)
+AssertionError: inf != 0
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.004s
+
+FAILED (failures=1, errors=1, skipped=1)

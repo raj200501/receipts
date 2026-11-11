@@ -1,0 +1,4 @@
+[hand-written fixture modeled on flake8 7; not captured from a real run]
+./src/app.py:1:1: F401 'os' imported but unused
+./src/app.py:10:80: E501 line too long (88 > 79 characters)
+./src/util.py:4:1: W391 blank line at end of file

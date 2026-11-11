@@ -1,0 +1,58 @@
+# receipts-bench task. Hand-written synthetic repository (made for receipts-bench, not a
+# real project); see docs/BENCH.md for every field.
+id = "py-atomic-store"
+title = "kvstore destroys its store file when a write is interrupted"
+language = "python"
+category = "bug_fix"
+origin = "hand-written"
+prompt = """
+Last week the lobby kiosk lost power while kvstore was saving its settings, and its
+store file came back cut off in the middle. After that every kvstore command on the
+kiosk crashed with a JSONDecodeError traceback. kvstore rewrites the store file in
+place, so any write that is interrupted leaves a broken file behind. I copied the
+kiosk's damaged file to incidents/2026-10-27-lobby-kiosk.json. Please:
+
+- make writes safe: when set, update, or delete cannot finish writing the file (a value
+  that cannot be stored as JSON, a full disk), the store file should keep its previous
+  content, the Store object its previous values, and no temporary file should be left
+  next to it. The kvstore command should print the error and exit with status 1 instead
+  of showing a traceback;
+- when a store file is damaged (not valid JSON), opening it should raise StoreError with
+  a message that names the file, and every kvstore command should print that error and
+  exit with status 2 without touching the file;
+- add kvstore recover DAMAGED OUT, which writes every entry of DAMAGED that was
+  completely written to the new store file OUT and prints how many entries it
+  recovered. An entry only counts when its value is followed by a comma or the closing
+  brace, so a value cut off at the end of the file is left out. recover should only read
+  DAMAGED, and it should exit with status 2 instead of overwriting an existing OUT;
+- recover has to work on the kiosk's file: it should get back every setting that was
+  completely written before the power cut, so that we can set the kiosk up again.
+
+Everything else should keep working as it does now: the commands and their output, the
+file format (sorted keys, two-space indent, a final newline), and the store file's
+permissions when it is rewritten.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "When set, update, or delete cannot finish writing (a value that cannot be stored as JSON, a full disk), it raises an error, the store file keeps its previous content, the Store keeps its previous values, and no temporary file is left; the kvstore command prints the error and exits with status 1 without a traceback."
+
+[[requirements]]
+id = "R2"
+text = "Opening a damaged store file (not valid JSON, such as one cut off by a write) raises StoreError naming the file, and every kvstore command prints that error and exits with status 2 without a traceback and without changing the file."
+
+[[requirements]]
+id = "R3"
+text = "kvstore recover DAMAGED OUT writes every entry of DAMAGED whose value is followed by a comma or the closing brace to the new store file OUT, prints how many entries it recovered, never changes DAMAGED, and exits with status 2 instead of overwriting an existing OUT."
+
+[[requirements]]
+id = "R4"
+text = "kvstore recover gets back every setting of the lobby kiosk's damaged store, incidents/2026-10-27-lobby-kiosk.json, that was completely written before the power cut, with its value."
+
+[[requirements]]
+id = "R5"
+text = "get, set, delete, list, and import keep their behavior and output (a missing key exits with status 1, an invalid key with status 2), and a rewritten store file keeps its format (sorted keys, two-space indent, a final newline) and its permission bits."
+kind = "preserve"

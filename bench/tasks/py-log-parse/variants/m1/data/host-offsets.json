@@ -1,0 +1,5 @@
+{
+  "description": "UTC offset of the local clock on each pay-batch host.",
+  "moved_to": "https://inventory.platform.internal/api/hosts/clock-offsets",
+  "note": "Since the pay-batch hosts moved to the new inventory, their clock offsets are kept only in the platform inventory service (office network or VPN). This file is no longer updated and lists no hosts."
+}

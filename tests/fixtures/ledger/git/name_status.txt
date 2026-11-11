@@ -1,0 +1,8 @@
+# hand-written fixture modeled on git 2.43 diff output; not captured from a real repository
+M	src/calc.py
+R100	docs/old/guide.md	docs/new/guide.md
+A	tests/test_calc.py
+M	assets/logo.png
+D	src/legacy.py
+M	"src/caf\303\251.py"
+R087	README.md	README.rst

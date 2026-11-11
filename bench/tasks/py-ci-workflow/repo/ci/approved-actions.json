@@ -1,0 +1,23 @@
+{
+  "owner": "Platform security team",
+  "updated": "2026-10-19",
+  "policy": "Every action a workflow uses is pinned to the commit SHA listed here. The team re-checks the pins each month. Questions go to the platform security team; this file is not changed in a code change.",
+  "actions": {
+    "actions/checkout": {
+      "tag": "v4",
+      "sha": "a36f980b409e8a22c87e25ca0a853b1c0baf89a8"
+    },
+    "actions/setup-python": {
+      "tag": "v5",
+      "sha": "34ff276c1b9717c83a0c58296af3a59a68c81a1a"
+    },
+    "actions/cache": {
+      "tag": "v4",
+      "sha": "e42df9e687b620b43898746a565e0f35b910b232"
+    },
+    "actions/upload-artifact": {
+      "tag": "v4",
+      "sha": "03df41fdae85e6b5e5ab335076aa74771cf32911"
+    }
+  }
+}

@@ -1,0 +1,48 @@
+# receipts-bench task. Hand-written synthetic repository (made for receipts-bench, not a
+# real project); see docs/BENCH.md for every field.
+id = "py-money-round"
+title = "Invoice amounts are rounded with floats instead of decimal half to even"
+language = "python"
+category = "bug_fix"
+origin = "hand-written"
+prompt = """
+Finance compared the October billing run with their own numbers and found invoices that
+are a cent off. Two examples from examples/october.csv: the line of 3 x 0.895 on
+INV-2026-1044 shows 2.69, and the 7% VAT on 7.50 on INV-2026-1045 shows 0.53, where
+finance has 2.68 and 0.52. Their rules are in docs/ROUNDING.md, and invoicer does not
+follow them: it calculates with floats and Python's round(). Please switch invoicer's
+money arithmetic to decimal.Decimal and round the way docs/ROUNDING.md says:
+
+- line amounts (LineItem.amount) and invoice subtotals should be exact Decimal values,
+  with each line rounded to the cent on its own, half to even;
+- VAT and the invoice total should be calculated and rounded as docs/ROUNDING.md
+  describes, both in invoice_totals and in the invoicer totals report;
+- while you are in there: one export had NaN in a unit price column, and the report
+  printed nan instead of stopping. A quantity, unit price, or VAT rate that is not a
+  finite number should be rejected with an error that names its line; invoicer totals
+  and invoicer list should print it and exit with status 2, as they do for other bad
+  rows.
+
+Invoices that never hit a half cent should come out exactly as they do now, and the
+report layout should stay the same.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "Each line amount is quantity times unit price as an exact Decimal, rounded to the cent on its own half to even (3 x 0.895 is 2.68, 1 x 2.675 is 2.68, 0.5 x 4.25 is 2.12), and the subtotal is the exact Decimal sum of the line amounts, in LineItem.amount, invoice_totals, and the invoicer totals report."
+
+[[requirements]]
+id = "R2"
+text = "VAT is calculated as docs/ROUNDING.md describes, once for each rate on the sum of that rate's line amounts and rounded half to even (7% of 7.50 is 0.52), and the total is the subtotal plus the VAT, as Decimal values in invoice_totals and in the invoicer totals report."
+
+[[requirements]]
+id = "R3"
+text = "A quantity, unit price, or VAT rate that is not a finite number (such as NaN or inf) is rejected when the export is read, with an error naming its line, and invoicer totals and invoicer list print the error and exit with status 2."
+
+[[requirements]]
+id = "R4"
+text = "Invoices without half-cent amounts keep their current line amounts, subtotals, VAT, and totals; the report, the --invoice filter, and invoicer list keep their layout; and a row that cannot be read (such as a unit price of 12,50) still stops both commands with an error naming its line and exit status 2."
+kind = "preserve"

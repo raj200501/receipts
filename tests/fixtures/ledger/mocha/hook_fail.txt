@@ -1,0 +1,24 @@
+[hand-written fixture modeled on Mocha 10 with a failing hook and a top-level test; not captured from a real run]
+
+
+  ✔ top level works
+  db
+    1) "before all" hook for "reads rows"
+
+  2) top level fails
+
+
+  1 passing (12ms)
+  2 failing
+
+  1) db
+       "before all" hook for "reads rows":
+     Error: connect ECONNREFUSED 127.0.0.1:5432
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1555:16)
+
+  2) top level fails:
+     AssertionError [ERR_ASSERTION]: false == true
+      at Context.<anonymous> (test/top.test.js:9:5)
+
+
+

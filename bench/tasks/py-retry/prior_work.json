@@ -1,0 +1,105 @@
+{
+  "synthetic": true,
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output was captured by running the step on the starting repository).",
+  "episodes": [
+    {
+      "request": "One of our jobs sometimes gives up after exactly three tries and someone asked whether the number can be changed. Where is it set, and what does the decorator do after the last try?",
+      "steps": [
+        {
+          "thought": "Search for where the number of tries lives.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n \"MAX_TRIES\" src/retrykit/defaults.py src/retrykit/retry.py"
+          },
+          "output": "src/retrykit/defaults.py:6:MAX_TRIES = 3\nsrc/retrykit/retry.py:10:from retrykit.defaults import DEFAULT_DELAY, MAX_TRIES\nsrc/retrykit/retry.py:25:    The function runs at most ``MAX_TRIES`` times. After a failed attempt that is not the\nsrc/retrykit/retry.py:40:                    if attempt >= MAX_TRIES:\n[exit code 0]"
+        },
+        {
+          "thought": "Read the decorator.",
+          "tool": "read",
+          "args": {
+            "path": "src/retrykit/retry.py"
+          },
+          "output": "\"\"\"The retry decorator.\"\"\"\n\nfrom __future__ import annotations\n\nimport functools\nimport time\nfrom collections.abc import Callable\nfrom typing import Any\n\nfrom retrykit.defaults import DEFAULT_DELAY, MAX_TRIES\nfrom retrykit.schedule import fixed_delay\n\nOnRetry = Callable[[int, BaseException, float], None]\n\n\ndef retry(\n    *,\n    delay: float = DEFAULT_DELAY,\n    exceptions: tuple[type[BaseException], ...] = (Exception,),\n    sleep: Callable[[float], None] = time.sleep,\n    on_retry: OnRetry | None = None,\n) -> Callable[[Callable[..., Any]], Callable[..., Any]]:\n    \"\"\"Call the decorated function again when it raises one of ``exceptions``.\n\n    The function runs at most ``MAX_TRIES`` times. After a failed attempt that is not the\n    last, ``on_retry(attempt, exc, wait)`` is called and the decorator sleeps ``wait``\n    seconds. The exception of the last attempt is raised unchanged.\n    \"\"\"\n    if delay < 0:\n        raise ValueError(f\"delay must not be negative, got {delay}\")\n\n    def decorate(func: Callable[..., Any]) -> Callable[..., Any]:\n        @functools.wraps(func)\n        def wrapper(*args: Any, **kwargs: Any) -> Any:\n            attempt = 1\n            while True:\n                try:\n                    return func(*args, **kwargs)\n                except exceptions as exc:\n                    if attempt >= MAX_TRIES:\n                        raise\n                    wait = fixed_delay(delay, attempt)\n                    if on_retry is not None:\n                        on_retry(attempt, exc, wait)\n                    sleep(wait)\n                    attempt += 1\n\n        return wrapper\n\n    return decorate\n"
+        },
+        {
+          "thought": "Check what the README promises.",
+          "tool": "read",
+          "args": {
+            "path": "README.md"
+          },
+          "output": "# retrykit\n\nA small decorator that calls a function again when it raises. (Synthetic project written\nfor receipts-bench.)\n\n## Usage\n\n```python\nfrom retrykit import retry\n\n\n@retry(delay=0.5, exceptions=(ConnectionError, TimeoutError))\ndef fetch_stock(sku: str) -> int: ...\n```\n\n`retry` calls the function up to three times. After an attempt fails with one of\n`exceptions` it sleeps for `delay` seconds and tries again; after the third failure the\nlast exception is raised unchanged. Any other exception is raised at once.\n\nParameters, all keyword arguments:\n\n- `delay`: seconds to sleep between attempts (default `0.5`).\n- `exceptions`: the exception types to retry (default `(Exception,)`).\n- `sleep`: the function that sleeps (default `time.sleep`); tests pass a fake one.\n- `on_retry`: a function called as `on_retry(attempt, exc, delay)` before each sleep,\n  where `attempt` is the number of the attempt that just failed (1 for the first).\n  `retrykit.hooks.log_retry(logger)` builds one that logs a warning.\n\nThe retry policies that operations published for our upstream services are in\n`data/policies.json`. They are not used by the decorator yet.\n\n## Development\n\n    python3 -m pytest -v\n\nThe package lives in `src/retrykit/` and uses only the standard library.\n"
+        }
+      ],
+      "finish": {
+        "thought": "It is a module constant.",
+        "report": "The number of tries is the constant MAX_TRIES = 3 in src/retrykit/defaults.py, and retry in src/retrykit/retry.py compares the attempt number with it; it is not a parameter, so it cannot be changed per call today. After the third failed attempt the wrapper re-raises the exception of that attempt unchanged, without calling on_retry or sleeping. The README describes the same behavior."
+      }
+    },
+    {
+      "request": "How are the waits between attempts computed, and is there a way to see them in the logs?",
+      "steps": [
+        {
+          "thought": "The waits come from the schedule module.",
+          "tool": "read",
+          "args": {
+            "path": "src/retrykit/schedule.py"
+          },
+          "output": "\"\"\"How long to wait between attempts.\"\"\"\n\nfrom __future__ import annotations\n\n\ndef fixed_delay(base: float, attempt: int) -> float:\n    \"\"\"The wait after attempt number ``attempt`` (1 for the first): always ``base``.\"\"\"\n    if attempt < 1:\n        raise ValueError(f\"attempt numbers start at 1, got {attempt}\")\n    return base\n"
+        },
+        {
+          "thought": "Logging is in the hooks module.",
+          "tool": "read",
+          "args": {
+            "path": "src/retrykit/hooks.py"
+          },
+          "output": "\"\"\"Ready-made ``on_retry`` hooks.\"\"\"\n\nfrom __future__ import annotations\n\nimport logging\nfrom collections.abc import Callable\n\n\ndef log_retry(\n    logger: logging.Logger, level: int = logging.WARNING\n) -> Callable[[int, BaseException, float], None]:\n    \"\"\"An ``on_retry`` hook that logs each failed attempt and the wait that follows.\"\"\"\n\n    def hook(attempt: int, exc: BaseException, delay: float) -> None:\n        logger.log(\n            level,\n            \"attempt %d failed (%s: %s); retrying in %.2f s\",\n            attempt,\n            type(exc).__name__,\n            exc,\n            delay,\n        )\n\n    return hook\n"
+        },
+        {
+          "thought": "Find the tests that cover the hook.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n \"^def test_\" tests/test_hooks.py"
+          },
+          "output": "7:def test_log_retry_logs_a_warning_per_failed_attempt(caplog: pytest.LogCaptureFixture) -> None:\n26:def test_log_retry_level_can_be_changed(caplog: pytest.LogCaptureFixture) -> None:\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "Fixed delay; the hook logs it.",
+        "report": "The wait is always the same: fixed_delay in src/retrykit/schedule.py returns the base delay (0.5 seconds unless the caller passes delay) for any attempt number, and raises ValueError for attempt numbers below 1. To see the waits in the logs, pass on_retry=log_retry(logger) from src/retrykit/hooks.py, which logs a warning such as 'attempt 1 failed (TimeoutError: ...); retrying in 0.50 s' before each sleep. tests/test_hooks.py has two tests for it, one for the message and one for changing the log level."
+      }
+    },
+    {
+      "request": "Which exceptions does retry swallow by default, and what happens with KeyboardInterrupt?",
+      "steps": [
+        {
+          "thought": "Check the signature and the except clause.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n \"exceptions\" src/retrykit/retry.py"
+          },
+          "output": "19:    exceptions: tuple[type[BaseException], ...] = (Exception,),\n23:    \"\"\"Call the decorated function again when it raises one of ``exceptions``.\n39:                except exceptions as exc:\n[exit code 0]"
+        },
+        {
+          "thought": "See whether a test pins the interrupt behavior.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n -B2 -A8 \"keyboard\" tests/test_retry.py"
+          },
+          "output": "132-\n133-\n134:def test_keyboard_interrupt_is_never_retried() -> None:\n135-    calls = {\"n\": 0}\n136-\n137-    @retry(sleep=lambda _: None)\n138-    def interrupted() -> None:\n139-        calls[\"n\"] += 1\n140-        raise KeyboardInterrupt\n141-\n142-    with pytest.raises(KeyboardInterrupt):\n[exit code 0]"
+        },
+        {
+          "thought": "Read the retry tests for the whole picture.",
+          "tool": "read",
+          "args": {
+            "path": "tests/test_retry.py"
+          },
+          "output": "import pytest\nfrom retrykit import retry\n\n\nclass Flaky:\n    \"\"\"Fails ``failures`` times with ``error`` and then returns ``result``.\"\"\"\n\n    def __init__(self, failures: int, error: type[Exception] = ConnectionError) -> None:\n        self.failures = failures\n        self.error = error\n        self.calls = 0\n\n    def __call__(self, value: int = 0) -> int:\n        self.calls += 1\n        if self.calls <= self.failures:\n            raise self.error(f\"failure {self.calls}\")\n        return value + 100\n\n\ndef test_success_on_the_first_attempt_does_not_sleep() -> None:\n    sleeps: list[float] = []\n    func = Flaky(0)\n    assert retry(sleep=sleeps.append)(func)(1) == 101\n    assert func.calls == 1 and sleeps == []\n\n\ndef test_a_failed_attempt_is_retried() -> None:\n    sleeps: list[float] = []\n    func = Flaky(1)\n    assert retry(delay=0.25, sleep=sleeps.append)(func)(2) == 102\n    assert func.calls == 2 and sleeps == [0.25]\n\n\ndef test_gives_up_after_three_attempts() -> None:\n    sleeps: list[float] = []\n    func = Flaky(10)\n    with pytest.raises(ConnectionError, match=\"failure 3\"):\n        retry(sleep=sleeps.append)(func)()\n    assert func.calls == 3 and sleeps == [0.5, 0.5]\n\n\ndef test_succeeds_on_the_last_attempt() -> None:\n    func = Flaky(2)\n    assert retry(sleep=lambda _: None)(func)(5) == 105\n    assert func.calls == 3\n\n\ndef test_other_exceptions_are_raised_at_once() -> None:\n    sleeps: list[float] = []\n    func = Flaky(5, error=KeyError)\n    with pytest.raises(KeyError):\n        retry(exceptions=(ConnectionError,), sleep=sleeps.append)(func)()\n    assert func.calls == 1 and sleeps == []\n\n\ndef test_listed_exceptions_include_subclasses() -> None:\n    func = Flaky(1, error=ConnectionResetError)\n    assert retry(exceptions=(ConnectionError,), sleep=lambda _: None)(func)() == 100\n\n\ndef test_the_last_exception_is_raised_unchanged() -> None:\n    errors: list[BaseException] = []\n\n    def boom() -> None:\n        error = ValueError(f\"boom {len(errors) + 1}\")\n        errors.append(error)\n        raise error\n\n    with pytest.raises(ValueError) as info:\n        retry(sleep=lambda _: None)(boom)()\n    assert info.value is errors[-1]\n\n\ndef test_on_retry_sees_the_attempt_the_error_and_the_wait() -> None:\n    seen: list[tuple[int, str, float]] = []\n\n    def hook(attempt: int, exc: BaseException, wait: float) -> None:\n        seen.append((attempt, str(exc), wait))\n\n    func = Flaky(2)\n    retry(delay=0.1, sleep=lambda _: None, on_retry=hook)(func)()\n    assert seen == [(1, \"failure 1\", 0.1), (2, \"failure 2\", 0.1)]\n\n\ndef test_on_retry_is_not_called_after_the_last_attempt() -> None:\n    attempts: list[int] = []\n    with pytest.raises(ConnectionError):\n        retry(sleep=lambda _: None, on_retry=lambda a, e, w: attempts.append(a))(Flaky(9))()\n    assert attempts == [1, 2]\n\n\ndef test_arguments_are_passed_through() -> None:\n    @retry(sleep=lambda _: None)\n    def add(a: int, b: int = 0) -> int:\n        return a + b\n\n    assert add(1, b=2) == 3\n\n\ndef test_wrapper_keeps_the_function_metadata() -> None:\n    @retry()\n    def documented() -> None:\n        \"\"\"Docstring.\"\"\"\n\n    assert documented.__name__ == \"documented\"\n    assert documented.__doc__ == \"Docstring.\"\n\n\ndef test_negative_delay_is_rejected() -> None:\n    with pytest.raises(ValueError, match=\"delay\"):\n        retry(delay=-1)\n\n\ndef test_zero_delay_is_allowed() -> None:\n    sleeps: list[float] = []\n    retry(delay=0, sleep=sleeps.append)(Flaky(1))()\n    assert sleeps == [0]\n\n\ndef test_each_call_gets_its_own_attempts() -> None:\n    func = Flaky(2)\n    wrapped = retry(sleep=lambda _: None)(func)\n    wrapped()\n    func.calls = 0\n    func.failures = 1\n    assert wrapped() == 100\n\n\ndef test_default_exceptions_cover_ordinary_errors() -> None:\n    func = Flaky(1, error=RuntimeError)\n    assert retry(sleep=lambda _: None)(func)() == 100\n\n\ndef test_keyboard_interrupt_is_never_retried() -> None:\n    calls = {\"n\": 0}\n\n    @retry(sleep=lambda _: None)\n    def interrupted() -> None:\n        calls[\"n\"] += 1\n        raise KeyboardInterrupt\n\n    with pytest.raises(KeyboardInterrupt):\n        interrupted()\n    assert calls[\"n\"] == 1\n"
+        }
+      ],
+      "finish": {
+        "thought": "Default is Exception.",
+        "report": "By default retry catches Exception, so every ordinary error is retried, and callers can narrow it with exceptions=(...). KeyboardInterrupt derives from BaseException, not Exception, so it is never retried: it propagates on the first attempt. tests/test_retry.py has test_keyboard_interrupt_is_never_retried for that."
+      }
+    }
+  ]
+}

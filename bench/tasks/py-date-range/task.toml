@@ -1,0 +1,50 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project); see
+# docs/BENCH.md for every field.
+id = "py-date-range"
+title = "dateseq list drops the last day of a range; add a step option"
+language = "python"
+category = "bug_fix"
+origin = "hand-written"
+prompt = """
+dateseq list drops the last day of every range. Our March backfill ran
+
+    for day in $(python3 -m dateseq list 2026-03); do ./load_day.sh "$day"; done
+
+and never loaded 31 March: dateseq count 2026-03 says 31, but dateseq list 2026-03
+prints 30 dates, and dateseq list 2026-03-05 prints nothing at all. The README and
+the docstring of date_range both say that the end date is included. Please fix
+date_range so that it includes the end date, and dateseq list with it.
+
+While you are in there, the weekly reports need a step:
+
+- date_range should take a step argument, the number of days from one date to the
+  next (1 by default);
+- dateseq list should take --step N for every Nth day, or --step Nw for every Nth
+  week, starting at the start date and never going past the end date;
+- a step of zero, a negative step, or anything that is not a whole number of days or
+  weeks (such as 1.5 or 3x) should make dateseq list print an error and exit with
+  status 2, and make date_range raise ValueError.
+
+Everything else should keep working as it does now: the periods (months and ISO
+weeks), --weekdays, the formats, dateseq count, and the tests we already have.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "date_range and dateseq list include the end date, so a range from a date to itself has that one date and dateseq list prints as many dates as dateseq count reports, and the tests in tests/test_ranges.py that the repository started with keep passing."
+
+[[requirements]]
+id = "R2"
+text = "date_range takes a step argument (whole days, 1 by default) and dateseq list takes --step N (every Nth day) or --step Nw (every Nth week), giving dates from the start date that many days apart and never a date after the end date."
+
+[[requirements]]
+id = "R3"
+text = "A step of zero, a negative step, or a step that is not a whole number of days or weeks (such as 1.5 or 3x) makes dateseq list print an error and exit with status 2 without printing dates, and makes date_range raise ValueError."
+
+[[requirements]]
+id = "R4"
+text = "Without --step, dateseq keeps everything else it does today: dates one day apart from the start date, month and ISO week periods, --weekdays, the output formats, nothing listed when the end is before the start, dateseq count, and exit status 2 for an invalid date or period."
+kind = "preserve"

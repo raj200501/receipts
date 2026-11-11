@@ -1,0 +1,51 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project); see
+# docs/BENCH.md for every field.
+id = "py-rate-limiter"
+title = "Token buckets refill too fast after a client has been idle"
+language = "python"
+category = "bug_fix"
+origin = "hand-written"
+prompt = """
+After a quiet minute, clients get their whole burst back, even when their limit says
+the bucket should take much longer to refill. billing-export has a burst of 5 and 2
+requests per minute. Yesterday it used up its burst at 14:00:00, sent nothing until
+14:01:10, and then got 5 requests through at once; at 2 per minute it should have had
+2. examples/gateway-2026-10-28.csv is that part of the gateway log, and throttle
+replay shows 10 allowed requests for billing-export where there should be 7.
+
+Please fix the limiter so that a client never gets back more tokens than its bucket
+refills while it is idle (and never more than its burst). It should still forget idle
+clients, so that its memory stays bounded.
+
+Two more things while you are at it:
+
+- Rejected requests sometimes come back with retry_after_s of 0, so clients retry at
+  once and are rejected again. retry_after_s should be the number of seconds until the
+  request would be allowed, rounded up to a whole second.
+- The partner integrations team published the limits they agreed with our partners in
+  data/partner-limits.toml. throttle limits and throttle replay with our configuration
+  should apply them to the partner clients.
+
+Clients that are not idle that long should get exactly the decisions they get today,
+and the output of throttle replay and throttle limits should keep its layout.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "A client that was idle gets back only the tokens its bucket refills in that time, never more than its burst, even after the limiter forgot it, in Limiter.check and in throttle replay; a client idle for 60 seconds whose bucket is full again is still forgotten (Limiter.tracked_clients)."
+
+[[requirements]]
+id = "R2"
+text = "A rejected request's retry_after_s, and the retry after value that throttle replay --rejected lists, is the number of seconds until the client's bucket has a token, rounded up to a whole second, so it is never 0."
+
+[[requirements]]
+id = "R3"
+text = "With the repository's own configuration, throttle limits and throttle replay give the partner clients the limits the partner integrations team published in data/partner-limits.toml, and every other client keeps its limit."
+
+[[requirements]]
+id = "R4"
+text = "Clients that are not idle long enough to be forgotten before their bucket is full get the same allow and reject decisions as before, throttle replay and throttle limits keep their output layout, and an unreadable limits file or log still stops throttle with exit status 2."
+kind = "preserve"

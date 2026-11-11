@@ -1,0 +1,17 @@
+# Rate limits of the API gateway, read by the gateway and by throttle.
+# Owned by the API platform team. Included files are owned by the teams named in them.
+
+[policy]
+include = ["data/internal-limits.toml"]
+
+[default]
+burst = 20
+per_minute = 60
+
+[clients.reports-web]
+burst = 40
+per_minute = 120
+
+[clients.billing-export]
+burst = 5
+per_minute = 2

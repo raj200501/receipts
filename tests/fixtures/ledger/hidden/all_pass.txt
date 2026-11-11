@@ -1,0 +1,3 @@
+[hand-written fixture modeled on the hidden-check output contract; not captured from a real run]
+{"checks": [{"name": "slug_lowercases", "passed": true, "requirement": "R1"}, {"name": "slug_strips", "passed": true, "requirement": "R2"}]}
+

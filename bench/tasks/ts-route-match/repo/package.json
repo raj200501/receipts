@@ -1,0 +1,16 @@
+{
+  "name": "edge-router",
+  "version": "3.4.1",
+  "description": "Request routing for the edge proxy: which route of the manifest handles a request.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test --test-reporter=spec --test-concurrency=1 test/*.test.ts",
+    "match": "node --experimental-strip-types bin/edge.ts match",
+    "routes": "node --experimental-strip-types bin/edge.ts routes"
+  }
+}

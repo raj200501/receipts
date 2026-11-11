@@ -1,0 +1,6 @@
+{
+  "owner": "team leads",
+  "updated": "2026-10-12",
+  "comment": "Tag priority for weekly planning, highest priority first. Maintained by the team leads; the planning scripts read this file too.",
+  "order": ["sev-followup", "audit-2026", "q4-launch", "customer-ask", "cleanup", "someday"]
+}

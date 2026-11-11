@@ -1,0 +1,24 @@
+{
+  "version": 3,
+  "generatedAt": "2026-10-30T02:00:00Z",
+  "source": "api-catalog nightly export, edge profile",
+  "routes": [
+    {"name": "health.live", "method": "GET", "pattern": "/healthz", "upstream": "http://edge-health.prod.internal:8080", "strict": true},
+    {"name": "customers.search", "method": "GET", "pattern": "/v2/customers", "upstream": "http://crm-search.prod.internal:9200"},
+    {"name": "customers.get", "method": "GET", "pattern": "/v2/customers/:customerId", "upstream": "http://crm-api.prod.internal:8080"},
+    {"name": "customers.update", "method": "PATCH", "pattern": "/v2/customers/:customerId", "upstream": "http://crm-api.prod.internal:8080"},
+    {"name": "orders.list", "method": "GET", "pattern": "/v2/orders", "upstream": "http://orders-api.prod.internal:8080"},
+    {"name": "orders.create", "method": "POST", "pattern": "/v2/orders", "upstream": "http://orders-api.prod.internal:8080"},
+    {"name": "orders.export", "method": "GET", "pattern": "/v2/orders/export", "upstream": "http://orders-batch.prod.internal:8080"},
+    {"name": "orders.get", "method": "GET", "pattern": "/v2/orders/:orderId", "upstream": "http://orders-api.prod.internal:8080"},
+    {"name": "orders.cancel", "method": "POST", "pattern": "/v2/orders/:orderId/cancel", "upstream": "http://orders-api.prod.internal:8080", "strict": true},
+    {"name": "orders.lines", "method": "GET", "pattern": "/v2/orders/:orderId/items", "upstream": "http://order-lines.prod.internal:8081"},
+    {"name": "orders.line", "method": "GET", "pattern": "/v2/orders/:orderId/items/:lineNo", "upstream": "http://order-lines.prod.internal:8081"},
+    {"name": "reports.overview", "method": "GET", "pattern": "/v2/reports/:period?", "upstream": "https://reporting.prod.internal:8443"},
+    {"name": "reports.export", "method": "POST", "pattern": "/v2/reports/:period/export", "upstream": "https://reporting.prod.internal:8443"},
+    {"name": "files.download", "method": "GET", "pattern": "/v2/files/*path", "upstream": "http://files-api.prod.internal:8080"},
+    {"name": "files.upload", "method": "PUT", "pattern": "/v2/files/*path", "upstream": "http://files-api.prod.internal:8080"},
+    {"name": "webhooks.receive", "method": "POST", "pattern": "/v2/webhooks/:provider", "upstream": "http://hooks-ingest.prod.internal:8080", "strict": true},
+    {"name": "docs.page", "method": "GET", "pattern": "/docs/:section?/:page?", "upstream": "http://docs-site.prod.internal:3000"}
+  ]
+}

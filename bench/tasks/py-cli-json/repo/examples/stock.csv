@@ -1,0 +1,9 @@
+sku,name,qty,unit_price,location,reorder_at,updated
+A-100,Hex bolt M8,240,0.12,aisle-3,100,2026-02-27
+A-101,Hex nut M8,90,0.05,aisle-3,150,2026-02-27
+A-140,Washer 8 mm,1200,0.02,aisle-3,400,2026-02-20
+B-210,Cable tie 200 mm,35,4.50,aisle-7,40,2026-03-02
+B-215,Cable tie 360 mm,60,6.25,aisle-7,,2026-03-02
+C-300,Safety gloves L,18,3.75,dock,24,2026-03-01
+C-301,Safety gloves M,44,3.75,dock,24,2026-03-01
+D-020,Pallet label roll,12,11.90,office,5,2026-02-15

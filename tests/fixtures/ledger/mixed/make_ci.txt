@@ -1,0 +1,10 @@
+[hand-written fixture modeled on make ci running ruff, mypy and pytest; not captured from a real run]
+uv run --no-sync ruff check .
+All checks passed!
+uv run --no-sync ruff format --check .
+14 files already formatted
+uv run --no-sync mypy --strict
+Success: no issues found in 9 source files
+uv run --no-sync pytest -q
+..........                                                               [100%]
+10 passed in 0.44s

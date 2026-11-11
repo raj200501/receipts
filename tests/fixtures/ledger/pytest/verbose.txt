@@ -1,0 +1,23 @@
+[hand-written fixture modeled on pytest 8.3 -v output; not captured from a real run]
+============================= test session starts ==============================
+platform linux -- Python 3.11.9, pytest-8.3.2, pluggy-1.5.0 -- /work/slug/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /work/slug
+collecting ... collected 4 items
+
+tests/test_slug.py::test_basic PASSED                                    [ 25%]
+tests/test_slug.py::test_unicode FAILED                                  [ 50%]
+tests/test_slug.py::test_long[a b] PASSED                                [ 75%]
+tests/test_slug.py::test_windows SKIPPED (windows only)                  [100%]
+
+=================================== FAILURES ===================================
+_________________________________ test_unicode _________________________________
+
+    def test_unicode():
+>       assert slug("café") == "cafe"
+E       AssertionError: assert 'caf' == 'cafe'
+
+tests/test_slug.py:9: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_slug.py::test_unicode - AssertionError: assert 'caf' == 'cafe'
+==================== 1 failed, 2 passed, 1 skipped in 0.04s ====================

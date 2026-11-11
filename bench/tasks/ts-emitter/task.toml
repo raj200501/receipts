@@ -1,0 +1,44 @@
+# receipts-bench task. Hand-written synthetic repository written for receipts-bench (not
+# a real project); see docs/BENCH.md for every field.
+id = "ts-emitter"
+title = "once, off, and listener counts for the dashboard event bus"
+language = "typescript"
+category = "feature"
+origin = "hand-written"
+prompt = """
+Plugin authors keep asking for once and off on the dashboard's event bus. How they
+behave, and how listenerCount counts, was agreed with them in the plugin API review and
+is written down in docs/EVENTS.md. The plugin host's leak warning is going to rely on
+listenerCount, so the counts need to be exactly what that document says.
+
+Please add these methods to Emitter in src/emitter.ts:
+
+- once(event, listener): the listener runs on the next emit of the event only;
+- off(event, listener): removes a listener that was added with on or once;
+- listenerCount(event), and listenerCount() for all events, counting listeners as
+  docs/EVENTS.md describes.
+
+docs/EVENTS.md also covers the details, such as a function that is registered twice or
+a listener that is removed while an event is being emitted. on, emit, waitFor, and
+forward should keep working as they do now.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "once(event, listener) registers a listener for the next emit of that event only: the registration is removed just before the listener runs, so it runs at most once even when it emits the event itself or throws, and the function once returns removes that registration if it has not run yet."
+
+[[requirements]]
+id = "R2"
+text = "off(event, listener) removes the most recently added registration of that function for that event, whether it was added with on or once, and returns true, or returns false and changes nothing when there is none; a registration removed during an emit is not called later in that emit."
+
+[[requirements]]
+id = "R3"
+text = "listenerCount(event) counts the registrations of one event and listenerCount() those of all events exactly as docs/EVENTS.md describes, including how registrations added with once and functions registered twice are counted."
+
+[[requirements]]
+id = "R4"
+text = "on and the function it returns, emit (registration order, the payload, the number of listeners called, listeners added during an emit first called by the next one, an EmitError after all listeners ran when some threw), waitFor, and forward work as before."
+kind = "preserve"

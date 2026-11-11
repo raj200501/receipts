@@ -1,0 +1,16 @@
+{
+  "name": "ticketcast",
+  "version": "1.6.0",
+  "description": "Forecast daily support ticket volume from a CSV history with a least-squares model.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test --test-reporter=spec --test-concurrency=1 test/*.test.ts",
+    "fit": "node --experimental-strip-types bin/ticketcast.ts fit",
+    "forecast": "node --experimental-strip-types bin/ticketcast.ts forecast"
+  }
+}

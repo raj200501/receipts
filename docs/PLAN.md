@@ -1,0 +1,74 @@
+# Plan
+
+Milestones mapped to the Definition-of-Done gates in docs/BUILD_BRIEF.md section 6,
+with risks, environment-dependent fallbacks, usage estimates, and the artifact contract
+that `tools/ship_check.py` verifies. Design numbers here (caps, sample sizes, thresholds)
+are parameters, not results.
+
+## Milestones
+
+| Milestone | What gets built | Gates it moves | Tag |
+| --- | --- | --- | --- |
+| M0 Bootstrap | Scaffold, `make doctor`, gate harness (`tools/ship_check.py`), integrity tools (prereg, claimcheck, freshness, citecheck, secrets-scan, budget, review), CLAUDE.md, subagents | G2, G14 | |
+| M1 Ledger and offline demo | `receipts.ledger`: local sandbox executor, append-only hash-chained JSONL ledger, parsers (pytest, JUnit XML, npm test, git diff, ruff/eslint/mypy). `receipts.claims`: deterministic extractors. `receipts.verify`: claim-type checkers with evidence events. Recorded fixtures, `make demo` with golden output, CLI. | G1 (partly), G3, G4 | v0.1 |
+| M2 Benchmark | `bench/tasks/`: 30 or more small Python and TypeScript repositories with hidden checks, reference solutions, and manipulation manifests (M1 to M5); reference validation artifact | G6 (without smoke) | |
+| M3 Drivers and smoke runs | `minimal-agent` (bash, read, write, edit, run_tests, finish) over Ollama or llama.cpp; `claude-code` driver with PreToolUse/PostToolUse hooks via `--settings`; the client wrapper (caps, usage ledger, response cache, billing guard); smoke run of every task; claim type counts | G6, input to G5 | |
+| M4 E0 instrument validity | Seeded reports written by a subagent that has not seen `src/receipts/claims/`; held-out half frozen by manifest before evaluation; model extractor with strict JSON schema; ledger completeness on validation runs | G5 | |
+| M5 Preregistration | Power analysis under the caps, factorial design for M1 to M5, hypotheses with frozen thresholds for E1 to E4, `prereg/0001-*` frozen | G11 (needs data) | |
+| M6 Main study and analysis | E1 runs (Claude tiers, local family, scaffold control), `receipts.analysis` (mixed-effects logistic models with task random effects, cluster bootstrap), E2 mechanism classification, E3 judge validity | G7, G8 | v0.5 |
+| M7 Mitigation | `receipts-hook` (Claude Code Stop hook and CLI wrapper), latency measurement, scripted demo transcript, E4 on held-out tasks | G9 | |
+| M8 Report | `make report` (SVG figures, tables, numbers registry), docs/REPORT.md, the real README (section 11), verified citations | G10, G13 | |
+| M9 Ship | Independent review, final sequence (section 10.6) | G12, all | v1.0 |
+
+Critical path: M1, M2, M3, M4 can proceed in this container. M5 to M7 need model
+subjects at scale; their Claude arms need the Claude backend (see Risks).
+
+## Risks and fallbacks
+
+| Risk | Effect | Fallback |
+| --- | --- | --- |
+| Billing guard tripped in this container (`ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_CCR_V2` are set by the Claude Code on the web runtime) | No Claude children: no Claude subject arms (E1 needs at least two Claude tiers), no headless `make review` | Pipeline jobs use Claude Code subagents; reviewer subagent writes the review; local models for subject runs; Claude arms wait for a machine with a clean Max-plan login (Needs Raj) |
+| No Docker daemon, no bubblewrap | Executor cannot confine filesystem writes | `unshare -rn` network isolation, scrubbed environment, rlimits, temp workspace; only this project's generated tasks run there (section 8). Try installing bubblewrap in M1 |
+| No local model server, CPU only (4 cores, about 16 GB RAM) | Local subject runs are slow | Install Ollama, pin a 7B to 8B 4-bit coder model with hash, measure tokens per second before planning E1 sample sizes |
+| Ephemeral cloud container and `ALLOW_PUSH` unset | Local commits are lost when the container is reclaimed | Needs Raj: set `ALLOW_PUSH=1` or move to a persistent machine |
+| Plan usage shared with Raj's other work | Caps limit runs per day | Schedule Claude arms early once the preregistration is frozen; haiku for bulk, sonnet for main arms, opus for small confirmatory slices |
+| Verifier precision on free-form claims | G5 thresholds missed for some claim types | Deterministic checkers first; model extractor only for the long tail; never relax G5 |
+| LLM judges look reliable but are invalid | E3 conclusions | Judges are always scored against ledger ground truth |
+
+## Usage estimates (design, to be refined by the power analysis in M5)
+
+- Smoke runs (M3): one run per task, 30 to 60 agent runs. With Claude unavailable here,
+  these use the local backend.
+- E1: at least 60 included runs for each of at least 3 configurations. Two Claude tiers
+  give at least 120 Claude agent runs, at most 30 per day (15 with `CAP_SHARE=0.5`), so
+  at least 4 days (8 shared). The scaffold control adds at least 60 more.
+- E3: claims batched 20 to 50 per single call; two or three judge configurations.
+- E4: held-out tasks, three mitigation arms plus control; sized by the power analysis.
+- `make review`: at most 6 per day; one per milestone plus the final sequence.
+- Local model runs: limited by CPU speed; measured in M3 before E1 is sized.
+
+## Artifact contract
+
+`tools/ship_check.py` reads exactly these files from a fresh clone and recomputes what it
+can. Every artifact carries `provenance` with at least `git_sha`, `command`, and
+`created`, plus config hash, model IDs and revisions, seeds, environment, and usage
+where they apply.
+
+| Gate | Files | What is recomputed or checked |
+| --- | --- | --- |
+| G1 | coverage JSON from `make test`; `pyproject.toml` | package coverage and each of `ledger`, `claims`, `verify`, `analysis`, `hook` at or above 85%; omissions only with `tests/contract/test_<stem>.py` using `tests/fixtures/recorded/` |
+| G2 | tracked `*.py` | ruff, ruff format, mypy strict; every `type: ignore[code]` followed by `# reason` |
+| G3 | `.github/workflows/ci.yml` | `run: make ci`, matrix with 3.11 and 3.12 used by setup; `make ci` passes |
+| G4 | `tests/golden/demo_output.txt`, `artifacts/usage/ledger.jsonl` | `make demo` exits 0 under `unshare -rn` with `RECEIPTS_OFFLINE=1` in under 180 s; `tools/demo.py` stdout equals the golden file; usage ledger unchanged |
+| G5 | `artifacts/e0/claim_type_counts.json` (`counts`, `source_runs`), `artifacts/e0/seeded_eval.json` (`split: heldout`, `heldout_manifest`, `items[]` with `report_id`, `claim_type`, `gold_verdict`, `pred_verdict`), `artifacts/e0/heldout_manifest.json` (`reports: {id: sha256}`), `artifacts/e0/seeded/heldout/<id>.json`, `artifacts/e0/ledger_completeness.json` (`runs[]` with `transcript_commands`, `ledger_commands`) | top five types from real smoke runs; per type P = correct / predicted and R = correct / gold with Wilson 95% intervals, P at least 0.95 and R at least 0.90; manifest committed strictly before the evaluation and hashes unchanged; zero commands missing from ledgers |
+| G6 | `bench/tasks/<id>/{task.toml, hidden/, reference/, manifest.json}`, `artifacts/bench/reference_validation.json` (`tasks: {id: {tree_sha256, hidden_passed}}`), `artifacts/bench/smoke_runs.json` (`runs[]` with `run_id`, `task_id`, `agent`, `synthetic`) | at least 30 tasks; tree hashes match current task files; every task has a non-synthetic smoke run by a real agent |
+| G7 | `artifacts/e1/results.json` (`confirmatory`, `prereg`, `prereg_sha256`, `runs.missing_run_ids`, `configs: {id: {n_runs, false_success_rate, contradicted_claim_rate}}` each with `estimate`, `ci_low`, `ci_high`, `provenance.inputs`), `artifacts/e1/runs.jsonl` (`run_id`, `config_id`, `model_family`, `task_id`, `conditions`, `seed`, `included`, `synthetic`, `false_success`, `ground_truth_success`, `report_sha256`, `claims[]` with `claim_id`, `verdict`, `instrument` with `commit`, `trees`, `dirty`, `uncommitted`, `instrument_dirty`), `artifacts/studies/e1/plan.json` (`arms[]` with `config_id`, `driver`, `model`, `family`; `runs[]`), `artifacts/studies/e1/runs/<run_id>/` (`run.json`, `ledger.jsonl`), the cited prereg and `prereg/LOCK.json`, `artifacts/e0/seeded_eval.json` (`split`, `instrument`) | results confirmatory, citing a prereg frozen in a commit, unchanged since, with its locked SHA-256; every file under `artifacts/e1/` and `artifacts/studies/e1/runs/` first committed after the freeze; the prereg's first `plan_sha256:` line is the SHA-256 of the plan file's bytes and its first `planned_runs_per_config:` line the planned runs of every arm; every row a distinct planned run with its planned task, arm, family, conditions, and seed, banked (hash chain, its own `run_start`, not synthetic) by its planned arm's driver and model, launched from the freeze commit or a later one, and agreeing with its `run.json` (arm, family, conditions, seed, inclusion, report hash); `ground_truth_success` true, false, or null and a false success only with a failed hidden check; every row from the evaluated instrument: the held-out evaluation ran a clean instrument at a commit of the repository, each row's `instrument.trees` equal its trees, the row is not `instrument_dirty` and its record shows no uncommitted change, and git holds the same trees of the instrument paths at the banking commit as at the evaluated commit; the results computed from the committed rows and evaluation (`provenance.inputs`); the missing planned runs listed; at least 3 configurations, 2 families, and 60 banked runs per configuration; per configuration with included runs, `n_runs`, `false_success_rate` over the included runs with a hidden-check result, and `contradicted_claim_rate` over every claim of the included runs (0 without trials) recompute with their Wilson 95% intervals |
+| G8 | `artifacts/e2/mechanism.json` (`claims[]` with `run_id`, `claim_id`, `class`), `artifacts/e3/judges.json` (`judges[]` with `judge_id`, `per_type: {type: {tp, fp, fn, tn}}`; `sample` with `sample_runs`, `seed`, `sampled_run_ids`; `runs` with `complete`, `excluded`; `items[]` with `run_id`, `claim_id`, `truth`; `calls[]` with `judge_id`, `run_id`, `served`; `provenance.inputs`), `artifacts/e1/runs.jsonl`, docs/REPORT.md | E2 classifies each E1 contradicted claim of an included run exactly once, with a known class; at least 2 distinct judges with non-negative counts, not all zero; E3 says `runs.complete` and the gate counts it again: E3 was computed from the committed rows, its sample is the prereg 0003 section 3 draw from them with its recorded K (a positive multiple of 4) and seed, the excluded runs are sampled runs, the items are every claim of exactly the other sampled runs with their rows' verdicts, and every judge has a served call for each of those runs; REPORT.md has E2 and E3 sections with content |
+| G9 | `artifacts/e4/results.json` (`confirmatory`, `prereg`, `prereg_sha256`, `tasks`, `rows[]` with `run_id`, `task_id`, `config_id`, `mitigation`, `conditions`, `seed`, `synthetic`, `has_report`, `z1_false_claim`, `report_sha256`, `instrument.trees`, `instrument_dirty`; `outcomes.Z1.descriptive.by_mitigation.<m>.wilson`; `provenance.inputs`), `artifacts/e4/runs.jsonl`, `artifacts/studies/e4/plan.json`, `artifacts/studies/e4/runs/<run_id>/`, the cited prereg and `prereg/LOCK.json`, `artifacts/studies/e1/plan.json` (`notes` with `e1_tasks`, `e4_tasks`), `artifacts/e1/runs.jsonl`, `artifacts/e0/seeded_eval.json`, `pyproject.toml` script `receipts-hook`, docs/HOOK.md (Install section), `artifacts/hook/latency.json` (`samples_s`, at least 20), `artifacts/hook/demo_transcript.txt` (first line names its generating script) | results confirmatory, citing a frozen prereg with its locked SHA-256, whose first `plan_sha256:` line is the SHA-256 of the plan file's bytes and whose first `planned_runs_per_cell:` line N gives every (configuration, mitigation) cell N runs on one identical list of (task, conditions, seed) triples; the plan is the 2 x 4 design of prereg 0002 section 3 (`ma-qwen7b` and `ma-granite8b`, each with `none`, `honesty`, `evidence`, and `hook`), and every planned mitigation ran; every row a distinct planned run, banked by its planned arm's agent and agreeing with its `run.json` (arm, seed, conditions, mitigation, report, report hash); the tasks are the runs' tasks, benchmark tasks and no pilot tasks, and the banked and planned tasks are outside E1's tasks and inside the split the E1 plan records, both lists known and non-empty; the Z1 rates recompute; every row from the evaluated instrument (the results' rows and the banked rows, checked as in G7); the results computed from the committed rows and evaluation; the hook entry point resolves; an install section; median latency under 5 s; the demo transcript reproduces offline within 30 s |
+| G10 | README.md, docs/REPORT.md, `artifacts/report/numbers.json` | `make claimcheck` and `make freshness` pass and cover both documents |
+| G11 | `prereg/`, `prereg/LOCK.json`, confirmatory artifacts | `make prereg-verify` passes and at least one confirmatory artifact exists |
+| G12 | `artifacts/review/latest.json`, docs/REVIEW_LOG.md | SHIP, zero blocking, reviewed commit differs from HEAD only in `artifacts/review/`, STATUS.md, docs/LOG.md; non-blocking IDs listed in the review log |
+| G13 | README.md, docs/REPORT.md, `artifacts/report/manifest.json` (`figures`), `artifacts/citecheck.json` | section 11 structure; headline SVG generated by `make report`; REPORT.md sections and 4,000 to 8,000 words; no em dashes or hype words; `make citecheck` passes |
+| G14 | original checkout; `artifacts/private_manifest.json` if present | clean tree, nothing under private/ tracked, private/ ignored, manifest hashes; `make secrets-scan` clean; `make budget` prints `cash_usd = 0` and passes; LICENSE, CITATION.cff, SECURITY.md, CONTRIBUTING.md exist |
+
+Banked beside these, and not read by the gates: `artifacts/e1/runs.provenance.json` and `artifacts/e4/runs.provenance.json` (how `tools/bank_study.py` banked the rows: the commit, the instrument record, and the SHA-256 of the rows and of the held-out evaluation), `artifacts/studies/<study>/failures.jsonl` (the banked failure log of each study, every key but the traceback), and `artifacts/e3/replies.jsonl` (every raw judge reply).

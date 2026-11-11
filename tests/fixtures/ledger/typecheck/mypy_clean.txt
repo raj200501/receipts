@@ -1,0 +1,2 @@
+[hand-written fixture modeled on mypy 1.11; not captured from a real run]
+Success: no issues found in 7 source files

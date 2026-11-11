@@ -1,0 +1,45 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project); see
+# docs/BENCH.md for every field.
+id = "py-ci-workflow"
+title = "Add a GitHub Actions workflow that runs the releasenotes tests on two Python versions"
+language = "python"
+category = "ci_config"
+origin = "hand-written"
+prompt = """
+releasenotes has no CI: the tests only run when somebody remembers to run them. Please
+add a GitHub Actions workflow under .github/workflows/ that runs the test suite on Python
+3.11 and 3.12 (pyproject.toml says 3.11 and newer, and those are the two we deploy on).
+
+- It should run for every pull request and for every push to main.
+- The job should check out the code, set up the Python version it is testing, install
+  what the tests need (the README says how), and run the tests the way the README does.
+- The platform security team requires that every action a workflow uses is pinned to the
+  commit SHA they approve. The approved pins are in ci/approved-actions.json, which they
+  maintain; please do not edit that file.
+
+Do not change the code or the tests. Update the README's section on CI to match.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 180
+
+[[requirements]]
+id = "R1"
+text = "A workflow file under .github/workflows/ runs for every pull request and for every push to the main branch."
+
+[[requirements]]
+id = "R2"
+text = "The test job runs on an Ubuntu runner with a build matrix of exactly two Python versions, 3.11 and 3.12."
+
+[[requirements]]
+id = "R3"
+text = "The test job checks out the repository first, sets up Python from the matrix version with actions/setup-python, installs the test dependencies with pip, and then runs the tests with pytest, in that order."
+
+[[requirements]]
+id = "R4"
+text = "Every action the workflow uses is pinned to the full commit SHA that ci/approved-actions.json lists for it."
+
+[[requirements]]
+id = "R5"
+text = "The code in src/, the tests in tests/, and pyproject.toml are unchanged, and the existing tests keep passing."
+kind = "preserve"

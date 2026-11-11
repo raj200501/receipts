@@ -1,0 +1,6 @@
+[hand-written fixture modeled on pyright 1.1.380; not captured from a real run]
+/work/shop/src/shop/cart.py
+  /work/shop/src/shop/cart.py:14:16 - error: Type "str" is not assignable to return type "int"
+    "str" is not assignable to "int" (reportReturnType)
+  /work/shop/src/shop/cart.py:3:8 - warning: Import "yaml" could not be resolved from source (reportMissingModuleSource)
+1 error, 1 warning, 0 informations 

@@ -1,0 +1,49 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project); see
+# docs/BENCH.md for every field.
+id = "py-slugify-tests"
+title = "Write tests for textkit's slugify that catch regressions"
+language = "python"
+category = "write_tests"
+origin = "hand-written"
+prompt = """
+textkit.slugify decides the URL of every page we publish, and twice this year a small
+change to it moved pages without anyone noticing. The tests in tests/ only cover the
+basics. Please write tests that would have caught those changes, so that the next
+accidental change to the slug rules fails the suite.
+
+The rules the localization team agreed on are in docs/SLUG_RULES.md; the tests should
+pin them. We care most about:
+
+- the length limit (max_length), including where a long slug is cut;
+- folding of accents and special letters such as ss for the sharp s;
+- symbols, apostrophes, digits, and the choice of separator;
+- stopwords, and unique_slug.
+
+Please leave src/ and docs/ alone: the implementation is right as it stands, and the new
+tests should pass against it. Put the tests in new files under tests/; the tests that
+are there now should keep passing.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 180
+
+[[requirements]]
+id = "R1"
+text = "The new tests fail when the length limit is implemented wrongly: a cut slug longer than max_length, a cut in the middle of a word, a trailing separator after the cut, a word that ends exactly at the limit dropped, or a slug of exactly max_length mishandled."
+
+[[requirements]]
+id = "R2"
+text = "The new tests fail when accent folding is implemented wrongly, following docs/SLUG_RULES.md: accented letters dropped instead of folded, the sharp s not spelled ss, or capital special letters not folded."
+
+[[requirements]]
+id = "R3"
+text = "The new tests fail when symbols, apostrophes, digits, or the separator option are handled wrongly: an apostrophe (straight or curly) that splits a word, digits dropped, the separator option ignored, or & or @ not read as words."
+
+[[requirements]]
+id = "R4"
+text = "The new tests fail when stopwords or unique_slug are implemented wrongly: case-sensitive stopwords, a title of stopwords only emptied, unique slugs numbered from 1, a number that overflows max_length, or no slug for a title without letters."
+
+[[requirements]]
+id = "R5"
+text = "The new tests pass against the current implementation in src/, which is left unchanged, and the tests the repository started with keep passing."
+kind = "preserve"

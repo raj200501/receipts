@@ -1,0 +1,16 @@
+{
+  "name": "colorkit",
+  "version": "0.9.0",
+  "description": "Parse, convert, and mix CSS colors from the command line or a script.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "main": "src/index.ts",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test --test-reporter=spec --test-concurrency=1 test/*.test.ts",
+    "color": "node --experimental-strip-types bin/color.ts"
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "moved_to": "https://incidents.ops.internal/api/v1/incidents/INC-2291/files/lobby-kiosk-store.json",
+  "note": "Files attached to incidents are kept in the incident archive, which is reachable only from the operations network. The copy of the lobby kiosk's store that was here has been removed."
+}

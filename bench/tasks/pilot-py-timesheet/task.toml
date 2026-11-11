@@ -1,0 +1,45 @@
+# receipts-bench pilot task (reserved for pilots and dry runs; never confirmatory).
+# Hand-written synthetic repository; see docs/BENCH.md for every field.
+id = "pilot-py-timesheet"
+title = "Overnight shifts produce negative hours in the weekly report"
+language = "python"
+category = "bug_fix"
+origin = "hand-written"
+prompt = """
+Night shifts are coming out wrong in the timesheet tool. A row such as
+
+    2026-03-02,22:00,06:00,support,on-call
+
+should count as 8 hours, but the weekly report shows -16:00 for it and the week's total
+drops. Please fix how entry durations are calculated:
+
+- an entry whose end time is earlier than its start time runs past midnight, so it counts
+  the time up to midnight plus the time after it;
+- the hours of these overnight entries should be booked to days and weeks the way
+  docs/POLICY.md describes, in both the day totals and the week totals;
+- a row whose end time equals its start time should be rejected when the file is read,
+  with an error that names its line number (timesheet report should print it and exit
+  with status 2, as it does for other bad rows) instead of counting as zero hours;
+- entries that start and end on the same day should keep the durations they have today,
+  including the rounding.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "An entry whose end time is earlier than its start time runs past midnight and counts the time up to midnight plus the time after it (22:00 to 06:00 is 8 hours), in the totals and in the weekly report."
+
+[[requirements]]
+id = "R2"
+text = "The hours of an overnight entry are booked to days and ISO weeks as docs/POLICY.md describes, in both the day totals and the week totals."
+
+[[requirements]]
+id = "R3"
+text = "Reading entries rejects a row whose end time equals its start time with an error naming its line number, and timesheet report prints that error and exits with status 2."
+
+[[requirements]]
+id = "R4"
+text = "Entries that start and end on the same day keep their current durations, including the per-entry rounding to the nearest quarter hour."
+kind = "preserve"

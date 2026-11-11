@@ -1,0 +1,48 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project); see
+# docs/BENCH.md for every field.
+id = "py-md-toc"
+title = "A toc command for mdkit with the handbook site's heading anchors"
+language = "python"
+category = "feature"
+origin = "hand-written"
+prompt = """
+The handbook pages are getting long, and the tables of contents that people write by
+hand go stale or point to anchors that do not exist. Please add a toc command to mdkit:
+
+- mdkit toc FILE should print the table of contents of a page: a nested Markdown list
+  with one entry per heading of level 2 and deeper, in page order, written as
+  `- [Title](#anchor)` and indented by two spaces per level below 2. The title is the
+  heading text as mdkit outline shows it, and the page title (level 1) is not listed.
+  Print only the list. --depth N should limit it to headings of level 2 to N.
+- The anchors have to be the ones the handbook site generates, or the links will not
+  work there. docs/ANCHORS.md describes how the site builds them; the docs platform
+  team maintains that page.
+- mdkit toc --write FILE should keep the list in the page itself: replace the lines
+  between a `<!-- toc -->` line and a `<!-- /toc -->` line with the current list and
+  leave the rest of the file exactly as it is, so that running it again on an
+  up-to-date page changes nothing. A page that does not have both lines should be left
+  alone, with an error and exit status 2.
+
+Errors such as a missing file should work the way they do for the other commands, and
+mdkit outline, mdkit links, and mdkit stats should keep working exactly as they do now.
+"""
+test_cmd = "python3 -m pytest -v"
+hidden_check_cmd = "python3 .receipts_hidden/check.py"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "mdkit toc FILE prints only a nested Markdown list with one `- [Title](#anchor)` line per heading of level 2 to 6 in page order, the title as mdkit outline shows it, indented two spaces per level below 2; it leaves out the page title and fenced code, --depth N limits the levels, and a missing file exits with status 2."
+
+[[requirements]]
+id = "R2"
+text = "The anchors in mdkit toc output are the ones docs/ANCHORS.md describes: built from the heading text without formatting, lowercased, with punctuation removed and spaces turned into hyphens, and repeated anchors numbered -1, -2, ... over every heading of the page."
+
+[[requirements]]
+id = "R3"
+text = "mdkit toc --write FILE replaces the lines between the <!-- toc --> and <!-- /toc --> lines with the current table of contents and leaves the rest of the file unchanged byte for byte; a second run changes nothing, and a page without both marker lines is left unchanged, with an error and exit status 2."
+
+[[requirements]]
+id = "R4"
+text = "mdkit outline, mdkit links, and mdkit stats print the same output and exit with the same status as before, including fenced code, closing hashes, broken links and images, and unreadable files."
+kind = "preserve"

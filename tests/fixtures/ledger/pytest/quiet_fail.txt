@@ -1,0 +1,15 @@
+[hand-written fixture modeled on pytest 8.3 -q output; not captured from a real run]
+..F..s.                                                                  [100%]
+=================================== FAILURES ===================================
+________________________________ test_roundtrip ________________________________
+
+    def test_roundtrip(tmp_path):
+        path = tmp_path / "x.bin"
+        write(path, b"ab")
+>       assert read(path) == b"ab"
+E       AssertionError: assert b'a' == b'ab'
+
+tests/test_io.py:22: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_io.py::test_roundtrip - AssertionError: assert b'a' == b'ab'
+1 failed, 5 passed, 1 skipped in 0.10s

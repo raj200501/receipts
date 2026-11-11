@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- hand-written fixture modeled on pytest 8.3 junitxml output for a collection error; not captured from a real run -->
+<testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="0.120" timestamp="2026-10-23T10:00:00.000000+00:00" hostname="work"><testcase classname="" name="tests.test_cart" time="0.000"><error message="collection failure">ImportError while importing test module '/work/shop/tests/test_cart.py'.</error></testcase></testsuite></testsuites>

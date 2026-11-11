@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- hand-written fixture modeled on pytest 8.3 junitxml output; not captured from a real run -->
+<testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="1" skipped="1" tests="5" time="0.210" timestamp="2026-10-23T10:00:00.000000+00:00" hostname="work"><testcase classname="tests.test_calc" name="test_add" time="0.001" /><testcase classname="tests.test_calc" name="test_div" time="0.002"><failure message="ZeroDivisionError: division by zero">def test_div():
+&gt;       assert div(1, 0) == 0
+E       ZeroDivisionError: division by zero
+
+tests/test_calc.py:12: ZeroDivisionError</failure></testcase><testcase classname="tests.test_calc" name="test_neg" time="0.001" /><testcase classname="tests.test_db" name="test_connect" time="0.001"><error message="failed on setup with &quot;ConnectionRefusedError: [Errno 111] Connection refused&quot;">tests/conftest.py:8: ConnectionRefusedError</error></testcase><testcase classname="tests.test_net" name="test_fetch" time="0.000"><skipped type="pytest.skip" message="needs network">/work/calc/tests/test_net.py:5: needs network</skipped></testcase></testsuite></testsuites>

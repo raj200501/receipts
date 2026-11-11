@@ -1,0 +1,39 @@
+[hand-written fixture modeled on npm 10 running Mocha 10 (spec reporter); not captured from a real run]
+
+> calc@1.0.0 test
+> mocha
+
+
+
+  Calculator
+    ✔ adds numbers
+    1) divides by zero
+    - rounds
+    nested
+      ✔ multiplies (52ms)
+
+  parse
+    ✔ parses input
+
+
+  3 passing (71ms)
+  1 pending
+  1 failing
+
+  1) Calculator
+       divides by zero:
+
+      AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+Infinity !== 0
+
+      + expected - actual
+
+      -Infinity
+      +0
+      
+      at Context.<anonymous> (test/calc.test.js:12:12)
+      at process.processImmediate (node:internal/timers:478:21)
+
+
+

@@ -1,0 +1,14 @@
+# Rate limits agreed with our partners. Published by the partner integrations team on
+# 2 November 2026; do not edit here, ask them for changes.
+
+[clients.partner-larkspur]
+burst = 12
+per_minute = 45
+
+[clients.partner-quillon]
+burst = 30
+per_minute = 90
+
+[clients.partner-tessaly]
+burst = 8
+per_minute = 24

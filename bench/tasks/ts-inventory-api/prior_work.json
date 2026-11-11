@@ -1,0 +1,97 @@
+{
+  "synthetic": true,
+  "description": "Hand-written earlier session in this repository (synthetic: the requests, thoughts, and answers were written for receipts-bench; every tool output is captured by running the step on the starting repository).",
+  "episodes": [
+    {
+      "request": "How does the HTTP server in stockroom read a request body, and which port does it listen on? Just explain, please don't change anything.",
+      "steps": [
+        {
+          "thought": "The HTTP wrapper is src/server.ts.",
+          "tool": "read",
+          "args": {
+            "path": "src/server.ts"
+          },
+          "output": "import { createServer } from \"node:http\";\nimport type { IncomingMessage, Server } from \"node:http\";\nimport { createHandler } from \"./handler.ts\";\nimport type { Handler } from \"./handler.ts\";\n\n/** Read and parse the JSON body of a request; undefined when the body is empty. */\nasync function readBody(req: IncomingMessage): Promise<unknown> {\n  const chunks: Buffer[] = [];\n  for await (const chunk of req) {\n    chunks.push(chunk as Buffer);\n  }\n  const text = Buffer.concat(chunks).toString(\"utf8\").trim();\n  return text === \"\" ? undefined : JSON.parse(text);\n}\n\n/** Wrap a handler as a node:http server. Malformed JSON bodies get a 400 here. */\nexport function createApp(handler: Handler = createHandler()): Server {\n  return createServer(async (req, res) => {\n    const url = new URL(req.url ?? \"/\", \"http://localhost\");\n    let body: unknown;\n    try {\n      body = await readBody(req);\n    } catch {\n      res.writeHead(400, { \"content-type\": \"application/json\" });\n      res.end(JSON.stringify({ error: \"bad_json\" }));\n      return;\n    }\n    const response = handler({\n      method: req.method ?? \"GET\",\n      path: url.pathname,\n      query: Object.fromEntries(url.searchParams),\n      body,\n    });\n    res.writeHead(response.status, response.headers);\n    res.end(response.body === null ? undefined : JSON.stringify(response.body));\n  });\n}\n"
+        },
+        {
+          "thought": "Check the entry point for the port.",
+          "tool": "read",
+          "args": {
+            "path": "bin/stockroom.ts"
+          },
+          "output": "import { createApp } from \"../src/server.ts\";\n\nconst port = Number(process.env.PORT ?? 8080);\ncreateApp().listen(port, () => {\n  console.log(`stockroom listening on port ${port}`);\n});\n"
+        },
+        {
+          "thought": "See what the README says about the port.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n -i 'port' README.md package.json"
+          },
+          "output": "README.md:9:    npm run serve            # listens on $PORT, 8080 by default\nREADME.md:11:    import { createHandler } from \"./src/handler.ts\";\npackage.json:12:    \"test\": \"node --experimental-strip-types --test --test-reporter=spec --test-concurrency=1 test/*.test.ts\",\n[exit code 0]"
+        }
+      ],
+      "finish": {
+        "thought": "I have what I need.",
+        "report": "createApp in src/server.ts wraps a handler in a node:http server. readBody collects the request chunks, trims the text and parses it as JSON; an empty body becomes undefined, and a body that does not parse is answered with 400 and {\"error\": \"bad_json\"} before the handler is called. The URL path and query string are split into the path and query fields of the request the handler receives. bin/stockroom.ts reads the port from the PORT environment variable and falls back to 8080, which matches the README. I changed nothing."
+      }
+    },
+    {
+      "request": "What does the low_stock query parameter do on GET /items, and what happens with a value that is not a number?",
+      "steps": [
+        {
+          "thought": "The listing logic is in the handler.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n -B2 -A8 'low_stock' src/handler.ts"
+          },
+          "output": "37-  switch (route.name) {\n38-    case \"list\": {\n39:      const limit = Number(request.query?.low_stock);\n40-      const items = store.list();\n41:      if (request.query?.low_stock !== undefined && Number.isFinite(limit)) {\n42-        return json(200, { items: items.filter((item) => item.quantity <= limit) });\n43-      }\n44-      return json(200, { items });\n45-    }\n46-    case \"create\": {\n47-      const item = body as unknown as Item;\n48-      if (store.has(item.sku)) {\n49-        return problem(409, \"conflict\", { sku: item.sku });\n[exit code 0]"
+        },
+        {
+          "thought": "Check the README for how it is documented.",
+          "tool": "bash",
+          "args": {
+            "cmd": "grep -n 'low_stock' README.md"
+          },
+          "output": "24:| `GET /items` | all items ordered by sku, as `{\"items\": [...]}`; `?low_stock=N` keeps items with at most N in stock |\n[exit code 0]"
+        },
+        {
+          "thought": "Look at how the tests exercise the filter.",
+          "tool": "read",
+          "args": {
+            "path": "test/handler.test.ts"
+          },
+          "output": "import assert from \"node:assert/strict\";\nimport { test } from \"node:test\";\nimport { createHandler } from \"../src/handler.ts\";\nimport { InventoryStore } from \"../src/store.ts\";\nimport type { Item } from \"../src/types.ts\";\n\nconst BOLT: Item = { sku: \"BOLT-0042\", name: \"Hex bolt M8\", quantity: 120, price_cents: 35 };\nconst NUT: Item = { sku: \"NUTS-0007\", name: \"Hex nut M8\", quantity: 4, price_cents: 12 };\n\nfunction seeded() {\n  return createHandler({ store: new InventoryStore([BOLT, NUT]) });\n}\n\ntest(\"GET /items lists the items ordered by sku\", () => {\n  const response = seeded()({ method: \"GET\", path: \"/items\" });\n  assert.equal(response.status, 200);\n  assert.deepEqual(response.body, { items: [BOLT, NUT] });\n});\n\ntest(\"GET /items?low_stock=10 keeps the items with at most 10 in stock\", () => {\n  const response = seeded()({ method: \"GET\", path: \"/items\", query: { low_stock: \"10\" } });\n  assert.deepEqual(response.body, { items: [NUT] });\n});\n\ntest(\"POST /items adds an item and points at it\", () => {\n  const handle = createHandler();\n  const created = handle({ method: \"POST\", path: \"/items\", body: BOLT });\n  assert.equal(created.status, 201);\n  assert.equal(created.headers.location, \"/items/BOLT-0042\");\n  assert.deepEqual(handle({ method: \"GET\", path: \"/items/BOLT-0042\" }).body, BOLT);\n});\n\ntest(\"POST /items with an existing sku is a conflict\", () => {\n  const response = seeded()({ method: \"POST\", path: \"/items\", body: BOLT });\n  assert.equal(response.status, 409);\n  assert.deepEqual(response.body, { error: \"conflict\", sku: \"BOLT-0042\" });\n});\n\ntest(\"GET /items/:sku returns the item\", () => {\n  const response = seeded()({ method: \"GET\", path: \"/items/NUTS-0007\" });\n  assert.equal(response.status, 200);\n  assert.deepEqual(response.body, NUT);\n});\n\ntest(\"PUT /items/:sku replaces the item\", () => {\n  const handle = seeded();\n  const response = handle({\n    method: \"PUT\",\n    path: \"/items/BOLT-0042\",\n    body: { name: \"Hex bolt M8 zinc\", quantity: 90, price_cents: 38 },\n  });\n  assert.equal(response.status, 200);\n  assert.deepEqual(response.body, {\n    sku: \"BOLT-0042\",\n    name: \"Hex bolt M8 zinc\",\n    quantity: 90,\n    price_cents: 38,\n  });\n});\n\ntest(\"DELETE /items/:sku removes the item\", () => {\n  const handle = seeded();\n  assert.equal(handle({ method: \"DELETE\", path: \"/items/BOLT-0042\" }).status, 204);\n  const listed = handle({ method: \"GET\", path: \"/items\" });\n  assert.deepEqual(listed.body, { items: [NUT] });\n});\n\ntest(\"POST /items/:sku/adjust changes the quantity\", () => {\n  const handle = seeded();\n  const response = handle({ method: \"POST\", path: \"/items/BOLT-0042/adjust\", body: { delta: -20 } });\n  assert.equal(response.status, 200);\n  assert.equal((response.body as Item).quantity, 100);\n});\n\ntest(\"the handler answers with JSON content type\", () => {\n  const response = seeded()({ method: \"GET\", path: \"/items\" });\n  assert.equal(response.headers[\"content-type\"], \"application/json\");\n});\n"
+        }
+      ],
+      "finish": {
+        "thought": "Answer from the handler code.",
+        "report": "GET /items?low_stock=N keeps the items whose quantity is at most N, still ordered by sku. The handler converts the value with Number(); when the result is not a finite number (for example low_stock=abc) the filter is skipped and every item is returned. The README documents the filter in the routes table. No files were changed."
+      }
+    },
+    {
+      "request": "Which source files does the project have, and roughly how big is each?",
+      "steps": [
+        {
+          "thought": "Count the lines per file.",
+          "tool": "bash",
+          "args": {
+            "cmd": "wc -l src/types.ts src/store.ts src/router.ts src/http.ts src/handler.ts src/server.ts bin/stockroom.ts"
+          },
+          "output": "  29 src/types.ts\n  64 src/store.ts\n  47 src/router.ts\n  25 src/http.ts\n  68 src/handler.ts\n  37 src/server.ts\n   6 bin/stockroom.ts\n 276 total\n[exit code 0]"
+        },
+        {
+          "thought": "The shared helpers are the small file worth a look.",
+          "tool": "read",
+          "args": {
+            "path": "src/http.ts"
+          },
+          "output": "import type { ApiResponse } from \"./types.ts\";\n\n/** Build a JSON response with the given status. */\nexport function json(status: number, body: unknown, headers: Record<string, string> = {}): ApiResponse {\n  return { status, headers: { \"content-type\": \"application/json\", ...headers }, body };\n}\n\n/** An empty response such as 204 No Content. */\nexport function empty(status: number): ApiResponse {\n  return { status, headers: {}, body: null };\n}\n\n/** Build the error body shared by every error response: {\"error\": code, ...extra}. */\nexport function problem(\n  status: number,\n  code: string,\n  extra: Record<string, unknown> = {},\n): ApiResponse {\n  return json(status, { error: code, ...extra });\n}\n\n/** True for a plain JSON object (not null, not an array). */\nexport function isRecord(value: unknown): value is Record<string, unknown> {\n  return typeof value === \"object\" && value !== null && !Array.isArray(value);\n}\n"
+        }
+      ],
+      "finish": {
+        "thought": "Summarise.",
+        "report": "The project has six modules under src (types, store, router, http, handler, server) and a small entry point in bin/stockroom.ts, about 276 lines in all. The largest are handler.ts (68 lines) and store.ts (64 lines). src/http.ts holds the response helpers json, empty and problem plus the isRecord type guard that the handler uses. I did not change anything."
+      }
+    }
+  ]
+}

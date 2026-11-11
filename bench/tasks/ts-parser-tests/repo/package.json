@@ -1,0 +1,16 @@
+{
+  "name": "exprlex",
+  "version": "0.5.0",
+  "description": "A small expression language for alert rules: tokenizer, parser, and evaluator.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test --test-reporter=spec --test-concurrency=1 test/*.test.ts",
+    "tokens": "node --experimental-strip-types bin/exprlex.ts tokens",
+    "eval": "node --experimental-strip-types bin/exprlex.ts eval"
+  }
+}

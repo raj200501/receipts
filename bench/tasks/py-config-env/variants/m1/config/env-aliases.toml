@@ -1,0 +1,7 @@
+# Legacy environment variable names for thumbd settings.
+#
+# This copy is no longer maintained and lists no variables. The platform team now
+# serves the alias table of every service from the deployment registry, at
+# https://registry.platform.internal/v2/services/thumbd/env-aliases (office network or
+# VPN only). Send changes to platform-ops.
+[aliases]

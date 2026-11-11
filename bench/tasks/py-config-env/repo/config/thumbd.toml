@@ -1,0 +1,18 @@
+# Configuration of thumbd for local development. Deployed hosts use the same file and
+# set their own values on top of it.
+[server]
+host = "0.0.0.0"
+port = 8080
+workers = 2
+
+[storage]
+bucket = "thumbs-dev"
+endpoint = "http://localhost:9000"
+timeout_s = 2.5
+
+[thumbs]
+sizes = [128, 256, 512, 1024]
+formats = ["webp", "jpeg"]
+
+[log]
+level = "debug"

@@ -1,0 +1,51 @@
+# receipts-bench task. Hand-written synthetic repository (not a real project), written
+# for receipts-bench; see docs/BENCH.md for every field.
+id = "ts-matrix-refactor"
+title = "Move the matrix helpers of ticketcast out of src/forecast.ts into src/matrix.ts"
+language = "typescript"
+category = "refactor"
+origin = "hand-written"
+prompt = """
+src/forecast.ts has turned into one big module: the forecasting model and the general
+matrix code it needs (identity, transpose, multiply, multiplyVector, and solve, the
+Gaussian elimination solver for the normal equations) live in the same file, and
+src/backtest.ts imports multiplyVector from it. The workforce analytics team wants to use
+the matrix code in their capacity dashboard, and we agreed the interface with them in
+docs/MATRIX_API.md.
+
+Please move the matrix helpers into a new module, src/matrix.ts, that follows
+docs/MATRIX_API.md:
+
+- identity, transpose, multiply, and multiplyVector should work exactly as they do now,
+  with the same error messages;
+- solve should give the same solutions as now, but leave the matrix and the vector it is
+  given unchanged, and handle a singular matrix the way the document describes;
+- src/forecast.ts and src/backtest.ts should import the helpers from src/matrix.ts, and
+  src/forecast.ts should stop exporting them, so that there is one place to import them
+  from. Its forecasting functions (fitModel, predict, forecast, residualStats, and
+  designRow) stay where they are.
+
+This is a refactor, so ticketcast fit, ticketcast forecast, and ticketcast backtest should
+print exactly what they print now, and a history file that cannot be read or fitted
+should still stop with the same message and exit status 2.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "src/matrix.ts exports identity, transpose, multiply, and multiplyVector, which give the same results and throw the same RangeError messages as the helpers in src/forecast.ts did, without changing their arguments."
+
+[[requirements]]
+id = "R2"
+text = "src/matrix.ts exports solve and SingularMatrixError as docs/MATRIX_API.md describes: solve gives the same solutions with partial pivoting, leaves the matrix and the vector it is given unchanged, and throws a SingularMatrixError with the message \"matrix is singular\" for a singular matrix."
+
+[[requirements]]
+id = "R3"
+text = "src/forecast.ts no longer exports the matrix helpers (identity, transpose, multiply, multiplyVector, solve) and still exports its forecasting functions (fitModel, predict, forecast, residualStats, designRow)."
+
+[[requirements]]
+id = "R4"
+text = "ticketcast fit, ticketcast forecast, and ticketcast backtest print exactly what they printed before, and a history file that cannot be read or fitted still stops with the same message and exit status 2."
+kind = "preserve"

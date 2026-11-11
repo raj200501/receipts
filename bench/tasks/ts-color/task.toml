@@ -1,0 +1,55 @@
+# receipts-bench task (hand-written, synthetic repository; see docs/BENCH.md for every field).
+id = "ts-color"
+title = "HSL conversion and contrast ratio for the color utility"
+language = "typescript"
+category = "feature"
+origin = "hand-written"
+prompt = """
+Design asked for two things in colorkit, HSL support and a contrast check:
+
+- HSL conversion. Add `rgbToHsl` and `hslToRgb`, exported from src/index.ts. `rgbToHsl`
+  takes the `{ r, g, b }` colors we already use and returns `{ h, s, l }` with the hue in
+  degrees (0 up to, not including, 360) and saturation and lightness in percent, each
+  rounded to one decimal place. `hslToRgb` goes the other way and returns whole channels;
+  it takes the hue modulo 360 and throws a `ColorError` when saturation or lightness is
+  outside 0 to 100.
+- HSL in text. `parseColor` should read `hsl(120, 50%, 50%)` (percent signs required), a
+  new `formatHsl` should write a color as `hsl(h, s%, l%)` with whole numbers, and
+  `color convert COLOR --to hsl` should print that.
+- Contrast. Add `contrastRatio(a, b)` and `meetsContrast(foreground, background, level,
+  size)`, where the colors are strings or `{ r, g, b }`, the level is `"AA"` or `"AAA"`,
+  and the size is `"normal"` (the default) or `"large"`. How the ratio is computed and
+  what each level needs is defined in docs/CONTRAST.md, so please follow that document.
+  `contrastRatio` returns the ratio rounded to two decimals. Also add
+  `color contrast FOREGROUND BACKGROUND`, which prints the ratio and the four results,
+  for example:
+
+      ratio 4.54:1
+      AA normal pass
+      AA large pass
+      AAA normal fail
+      AAA large pass
+
+The existing parsing of `#rgb`, `#rrggbb`, and `rgb()`, and the convert and mix commands,
+should keep working as they do now.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "rgbToHsl returns { h, s, l } with the hue from 0 up to 360 and saturation and lightness in percent, rounded to one decimal; hslToRgb returns whole channels, takes the hue modulo 360, and throws a ColorError for saturation or lightness outside 0 to 100."
+
+[[requirements]]
+id = "R2"
+text = "parseColor reads hsl(h, s%, l%) strings and rejects ones without percent signs or out of range, formatHsl writes hsl(h, s%, l%) with whole numbers, and color convert COLOR --to hsl prints that."
+
+[[requirements]]
+id = "R3"
+text = "contrastRatio and meetsContrast follow docs/CONTRAST.md (relative luminance, the ratio rounded to two decimals, the AA and AAA thresholds, comparison with the exact ratio), and color contrast FOREGROUND BACKGROUND prints the ratio and the four AA and AAA results."
+
+[[requirements]]
+id = "R4"
+text = "Parsing of #rgb, #rrggbb, and rgb() colors, the convert and mix commands, and the error messages with exit status 2 stay as they were."
+kind = "preserve"

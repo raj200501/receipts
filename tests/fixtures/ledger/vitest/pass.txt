@@ -1,0 +1,12 @@
+[hand-written fixture modeled on Vitest 2.1; not captured from a real run]
+
+ RUN  v2.1.4 /work/calc
+
+ ✓ src/calc.test.ts (4 tests | 1 skipped) 3ms
+ ✓ src/util.test.ts (2 tests) 1ms
+
+ Test Files  2 passed (2)
+      Tests  5 passed | 1 skipped (6)
+   Start at  09:00:00
+   Duration  301ms (transform 25ms, setup 0ms, collect 31ms, tests 4ms, environment 0ms, prepare 98ms)
+

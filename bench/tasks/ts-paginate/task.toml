@@ -1,0 +1,56 @@
+# receipts-bench task (hand-written, synthetic repository; see docs/BENCH.md for every field).
+id = "ts-paginate"
+title = "Cursor-based pages for the pager helpers"
+language = "typescript"
+category = "feature"
+origin = "hand-written"
+prompt = """
+Our list endpoints are starting to page through tables that change while people read
+them, and page numbers repeat or skip rows when that happens. Please add cursor-based
+pages to the pager package, next to the page-number helpers, and export everything
+from src/index.ts:
+
+- `paginateCursor(items, { limit, cursor })` returns `{ items, nextCursor, hasMore }`.
+  The rows have a numeric `id`. The page holds the rows with the lowest ids after the
+  cursor, in ascending id order (the first rows when there is no cursor), whatever the
+  order of the input. `nextCursor` is null on the last page, and `hasMore` says whether
+  there is a next page.
+- A cursor is an opaque URL-safe string that stands for the last id the caller saw, not
+  a position, so rows added or removed between two requests do not make the next page
+  repeat or skip rows. Text that is not a cursor from `paginateCursor` is rejected with
+  an `InvalidCursorError`, which should be exported too.
+- `limit` follows the same page size rules as page-number pagination: 20 by default, 100
+  at most (larger values are cut down to 100), and a value that is not a whole number of
+  at least 1 is a `RangeError`. Add `parseCursorParams(query)`, which reads `cursor` and
+  `limit` strings from a query the way `parsePageParams` reads `page` and `per_page`:
+  no cursor gives `null`, and a bad `limit` is a `PageParamsError`.
+- A query with both `page` and `cursor` is ambiguous, so `parsePageParams` should reject
+  it with a `PageParamsError`. The tests the repository started with should keep passing.
+
+The page-number helpers (`paginate`, `parsePageParams`, `pageLinks`, `linkHeader`) should
+keep working as they do now.
+"""
+test_cmd = "npm test"
+hidden_check_cmd = "node .receipts_hidden/check.mjs"
+timeout_s = 120
+
+[[requirements]]
+id = "R1"
+text = "paginateCursor(items, { limit, cursor }) returns { items, nextCursor, hasMore }: the rows with the lowest ids after the cursor in ascending id order whatever the input order, a null nextCursor and hasMore false on the last page and for an empty list, and following nextCursor visits every row once."
+
+[[requirements]]
+id = "R2"
+text = "Cursors are opaque URL-safe strings that stand for the last id returned, not a position, so rows added or removed between requests do not repeat or skip rows; text that is not a cursor is rejected with an exported InvalidCursorError."
+
+[[requirements]]
+id = "R3"
+text = "The limit defaults to 20, is cut down to 100 when larger, and throws a RangeError when it is not a whole number of at least 1; parseCursorParams(query) reads cursor (null when missing) and limit strings and throws a PageParamsError for a bad limit."
+
+[[requirements]]
+id = "R4"
+text = "parsePageParams throws a PageParamsError for a query that has both page and cursor, and the tests the repository started with (test/params.test.ts) keep passing."
+
+[[requirements]]
+id = "R5"
+text = "The page-number helpers behave as before: paginate, parsePageParams without a cursor, pageLinks, and linkHeader return what they returned, and the existing size rules (default 20, at most 100) stay."
+kind = "preserve"

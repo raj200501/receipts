@@ -1,0 +1,6 @@
+{
+  "feeds": [
+    {"name": "Engineering blog", "source": "feeds/blog.rss"},
+    {"name": "Release notes", "source": "feeds/releases.rss"}
+  ]
+}
