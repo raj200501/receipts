@@ -50,9 +50,12 @@ review. CAP_SHARE stays 0.2.
   N1, N3, N7, N9 to N16) are fixed in e8ee5de, with CORRECTIONS entries. B1 and N4 are
   fixed next (D56): `make freshness` and `make reproduce` re-derive the smoke summary from
   the banked run records, and the summary carries the models, config hashes, seeds,
-  environment, and usage of its runs. Still open: B2 (G7 must require a row for every
-  banked E1 run and re-derive outcomes from the ledgers), B3 (G8 must find E2 and E3
-  results bound in the results sections), N5, N6, and G13's per-result links.
+  environment, and usage of its runs. B3, N5, and N16 are fixed after that (D58): G8
+  counts E2 and E3 as reported only when their REPORT.md sections bind numbers from their
+  artifacts and name every judge; G5 re-derives every ledger-completeness row on the
+  clone; G13 requires each README key result to link its artifact and preregistration.
+  Still open: B2 and N6 (G7 and G9 must require a row for every banked run and re-derive
+  row outcomes from the ledgers), being fixed in a separate worktree (D57).
 - **E0 verifier mode (D54)**, merged in 8692254: the held-out scoring verifies each seeded
   report with its task's requirement texts and records `verifier_mode`; `valid_types`,
   G5, and the G7/G9 instrument check refuse any other evaluation.
@@ -62,8 +65,8 @@ review. CAP_SHARE stays 0.2.
 
 ## Next three actions
 
-1. Close the review's remaining gate findings (B2, B3, N5, N6, G13 links), each with
-   tests and an adversarial check, then run `make ci` on fresh clones for both Pythons.
+1. Merge the G7/G9 fix (B2, N6) after reading its diff adversarially, then run `make ci`
+   on fresh clones for both Pythons and update `main` (D49).
 2. Finish the smoke study, bank its runs and `smoke_runs.json` (G6), update the README
    numbers from the new `smoke_outcomes.json`, then run the E0 labelers, writers, and
    adjudicators (D40, D43) and score the held-out split (G5).

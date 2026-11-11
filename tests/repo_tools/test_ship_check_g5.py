@@ -25,6 +25,7 @@ from receipts.ledger.events import GENESIS, Event
 
 Commit = Callable[[Path, str], str]
 GateError = ship_check.GateError
+ORIGINAL_REDERIVE = ship_check.rederived_completeness
 
 AGENT = "minimal-agent/qwen2.5-coder-7b-instruct-q4km"
 TYPES = ("tests_pass", "file_modified", "ran_command", "test_count", "task_complete")
@@ -238,7 +239,8 @@ REPORT = "SYNTHETIC smoke report. " + " ".join(f"claim {n}." for n in range(30))
 
 
 def completeness(rows: Sequence[Mapping[str, Any]] | None = None) -> dict[str, Any]:
-    """A SYNTHETIC ledger completeness artifact (no gaps by default)."""
+    """A SYNTHETIC ledger completeness artifact (no gaps by default). Each row counts its
+    unparsed actions (0 unless a row says otherwise), as tools/e0.py writes it."""
     if rows is None:
         rows = [
             {
@@ -248,7 +250,25 @@ def completeness(rows: Sequence[Mapping[str, Any]] | None = None) -> dict[str, A
             }
             for rid in SMOKE_IDS
         ]
-    return {"runs": list(rows), "provenance": PROV}
+    counted = [{"unparsed_actions": 0, **row} for row in rows]
+    return {"runs": counted, "runs_dirs": [SMOKE_DIR], "provenance": PROV}
+
+
+SMOKE_DIR = "artifacts/studies/smoke/runs"
+
+
+@pytest.fixture(autouse=True)
+def rederivation_agrees(monkeypatch: pytest.MonkeyPatch) -> None:
+    """By default the re-derivation of ledger completeness (tools/e0.py on the clone,
+    which these SYNTHETIC worlds lack) agrees with the committed rows; the tests of the
+    re-derivation itself replace this."""
+
+    def agree(ctx: ship_check.Context, data: Mapping[str, Any]) -> dict[str, Any]:
+        runs = data.get("runs")
+        rows = runs if isinstance(runs, list) else []
+        return {str(r.get("run_id")): r for r in rows if isinstance(r, dict)}
+
+    monkeypatch.setattr(ship_check, "rederived_completeness", agree)
 
 
 def write_ledger(path: Path, events: Sequence[tuple[str, Mapping[str, Any]]]) -> None:
@@ -957,3 +977,102 @@ def test_imports_are_resolved_like_python_does() -> None:
     assert found == loaded | {"receipts.claims"}
     nested = ship_check.imported_modules(source, "receipts.claims", package=True, nested=True)
     assert "receipts.bench.spec" in nested and "receipts.claims.patterns" in nested
+
+
+# ---------------------------------------------------------------- review N5
+
+
+def disagree(edit: Callable[[dict[str, Any]], None]) -> Callable[..., dict[str, Any]]:
+    """A re-derivation that differs from the committed artifact by ``edit``."""
+
+    def rederive(ctx: ship_check.Context, data: Mapping[str, Any]) -> dict[str, Any]:
+        fresh = {str(r["run_id"]): dict(r) for r in data["runs"]}
+        edit(fresh)
+        return fresh
+
+    return rederive
+
+
+def test_a_row_whose_transcript_side_was_edited_fails(
+    git_repo: Path, commit: Commit, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The committed transcript side hides a command that the transcript shows and the
+    # ledger never recorded; only re-deriving the row finds the gap.
+    ctx, _ = project(git_repo, commit)
+
+    def hidden(fresh: dict[str, Any]) -> None:
+        fresh[SMOKE_IDS[2]]["transcript_commands"] = [*COMMANDS, "rm -rf build"]
+
+    monkeypatch.setattr(ship_check, "rederived_completeness", disagree(hidden))
+    with pytest.raises(GateError, match=rf"row {SMOKE_IDS[2]} differs from its re-derivation"):
+        ship_check.g5(ctx)
+
+
+def test_unparsed_actions_must_be_counted_and_match(
+    git_repo: Path, commit: Commit, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx, _ = project(git_repo, commit)
+    rel = "artifacts/e0/ledger_completeness.json"
+    data = json.loads((git_repo / rel).read_text(encoding="utf-8"))
+    del data["runs"][0]["unparsed_actions"]
+    (git_repo / rel).write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(GateError, match="does not count its unparsed_actions"):
+        ship_check.g5(ctx)
+
+    data["runs"][0]["unparsed_actions"] = 0
+    (git_repo / rel).write_text(json.dumps(data), encoding="utf-8")
+
+    def parser_gap(fresh: dict[str, Any]) -> None:
+        fresh[SMOKE_IDS[0]]["unparsed_actions"] = 2
+
+    monkeypatch.setattr(ship_check, "rederived_completeness", disagree(parser_gap))
+    with pytest.raises(GateError, match="differs from its re-derivation"):
+        ship_check.g5(ctx)
+
+
+def test_a_rederived_run_cannot_be_left_out(
+    git_repo: Path, commit: Commit, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx, _ = project(git_repo, commit)
+
+    def more(fresh: dict[str, Any]) -> None:
+        fresh["smoke-extra"] = {"run_id": "smoke-extra", "transcript_commands": ["ls"]}
+
+    monkeypatch.setattr(ship_check, "rederived_completeness", disagree(more))
+    with pytest.raises(GateError, match="leaves out 1 run"):
+        ship_check.g5(ctx)
+
+
+class ToolContext(ship_check.Context):
+    """A Context whose make and python calls are SYNTHETIC stand-ins for the clone's."""
+
+    calls: list[list[str]]
+    rows: list[dict[str, Any]] | None
+
+    def make(self, target: str, timeout: float, *args: str, **kw: Any) -> ship_check.CmdResult:
+        return ship_check.CmdResult(target, 0, "", "", 0.0)
+
+    def python(self, name: str, script_args: Sequence[str], timeout: float) -> ship_check.CmdResult:
+        self.calls.append(list(script_args))
+        if self.rows is None:
+            return ship_check.CmdResult(name, 1, "", "boom", 0.0)
+        out = Path(script_args[list(script_args).index("--out") + 1])
+        out.write_text(json.dumps({"runs": self.rows}), encoding="utf-8")
+        return ship_check.CmdResult(name, 0, "", "", 0.0)
+
+
+def test_rederivation_runs_the_completeness_tool_on_the_recorded_dirs(tmp_path: Path) -> None:
+    # ORIGINAL_REDERIVE is the real function, taken before the autouse stand-in.
+    ctx = ToolContext(orig=tmp_path, clone=tmp_path, logs=tmp_path, fast=True, sha="0" * 40)
+    ctx.calls, ctx.rows = [], [{"run_id": "r1", "unparsed_actions": 0}]
+    data = {"runs_dirs": ["a/runs", "b/runs"]}
+    fresh = ORIGINAL_REDERIVE(ctx, data)
+    assert fresh == {"r1": {"run_id": "r1", "unparsed_actions": 0}}
+    (argv,) = ctx.calls
+    assert argv[:2] == ["tools/e0.py", "completeness"]
+    assert argv[2:6] == ["--runs", "a/runs", "--runs", "b/runs"]
+    with pytest.raises(GateError, match="does not record the runs_dirs"):
+        ORIGINAL_REDERIVE(ctx, {"runs_dirs": []})
+    ctx.rows = None
+    with pytest.raises(GateError, match="did not re-derive"):
+        ORIGINAL_REDERIVE(ctx, data)

@@ -38,12 +38,21 @@ REPORT = """\
 
 ## E2: mechanisms of contradicted claims
 
-The SYNTHETIC mechanism mix is reported here, including null results.
+The SYNTHETIC mechanism mix is reported here, including null results:
+<!--n:e2.confusion-->5<!--/n--> claims from confusion.
 
 ## E3: judge validity
 
-The SYNTHETIC judge precision and recall are reported here.
+The SYNTHETIC judge precision is <!--n:e3.judge-a.precision-->0.75<!--/n--> for judge-a
+and <!--n:e3.judge-b.precision-->0.75<!--/n--> for judge-b.
 """
+# The SYNTHETIC registry entries the report's markers are bound to.
+SOURCES = {
+    "e2.confusion": "artifacts/e2/mechanism.json",
+    "e3.judge-a.precision": "artifacts/e3/judges.json",
+    "e3.judge-b.precision": "artifacts/e3/judges.json",
+    "e1.rate": "artifacts/e1/results.json",
+}
 
 Edit = Callable[[dict[str, Any]], None]
 
@@ -163,6 +172,8 @@ def artifacts(
         e3(data)
     put(root, "artifacts/e3/judges.json", data)
     put(root, "docs/REPORT.md", report)
+    numbers = {key: {"value": "0", "source": src} for key, src in SOURCES.items()}
+    put(root, "artifacts/report/numbers.json", {"numbers": numbers})
     return ship_check.Context(orig=root, clone=root, logs=root, fast=False, sha="0" * 40)
 
 
@@ -450,3 +461,55 @@ def test_a_claim_classified_twice_fails(tmp_path: Path) -> None:
 def test_report_sections_must_exist_and_say_something(tmp_path: Path, report: str) -> None:
     with pytest.raises(GateError, match=r"REPORT\.md has no E[23] section"):
         ship_check.g8(artifacts(tmp_path, report=report))
+
+
+E2_BODY = "The SYNTHETIC mix: <!--n:e2.confusion-->5<!--/n--> from confusion.\n"
+E3_BODY = (
+    "SYNTHETIC precision <!--n:e3.judge-a.precision-->0.75<!--/n--> (judge-a) and "
+    "<!--n:e3.judge-b.precision-->0.75<!--/n--> (judge-b).\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("report", "match"),
+    [
+        pytest.param(
+            "## E2: mechanisms\n\nThe design: each contradicted claim gets a class.\n\n"
+            f"## E3: judges\n\n{E3_BODY}",
+            r"no E2 section that binds a number from artifacts/e2/mechanism\.json",
+            id="e2-design-text-only",
+        ),
+        pytest.param(
+            f"## E2: mechanisms\n\n{E2_BODY}\n## E3: judges\n\nThe design: two judges.\n",
+            r"no E3 section that binds a number from artifacts/e3/judges\.json",
+            id="e3-design-text-only",
+        ),
+        pytest.param(
+            "## E2: mechanisms\n\nRate <!--n:e1.rate-->0.2<!--/n--> from E1.\n\n"
+            f"## E3: judges\n\n{E3_BODY}",
+            r"no E2 section that binds a number from",
+            id="e2-binds-another-artifact",
+        ),
+        pytest.param(
+            f"## E2: mechanisms\n\nText.\n\n## Other\n\n{E2_BODY}\n## E3: judges\n\n{E3_BODY}",
+            r"no E2 section that binds a number from",
+            id="e2-number-outside-its-section",
+        ),
+        pytest.param(
+            f"## E2: mechanisms\n\n{E2_BODY}\n## E3: judges\n\n"
+            "Precision <!--n:e3.judge-a.precision-->0.75<!--/n--> for judge-a only.\n",
+            r"do not name judge configuration\(s\) judge-b",
+            id="a-judge-left-out",
+        ),
+    ],
+)
+def test_design_text_is_not_a_report_of_results(tmp_path: Path, report: str, match: str) -> None:
+    with pytest.raises(GateError, match=match):
+        ship_check.g8(artifacts(tmp_path, report=f"# SYNTHETIC\n\n{report}"))
+
+
+def test_the_report_needs_the_numbers_registry(tmp_path: Path) -> None:
+    ctx = artifacts(tmp_path)
+    (tmp_path / "artifacts" / "report" / "numbers.json").unlink()
+    with pytest.raises(GateError, match=r"artifacts/report/numbers\.json"):
+        ship_check.g8(ctx)

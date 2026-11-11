@@ -690,3 +690,25 @@ current hashes. `make report` rewrites a derived artifact only when its content 
 so rebuilding does not churn its timestamp. The summary's provenance now also carries the
 models, agent-config hashes, seeds, environment, and token usage of its input runs (review
 N4); artifacts/README.md says what each kind of artifact records.
+
+**D58. What G8 counts as reported, what G13 counts as a key result, and where G5's
+transcript side comes from.** Recorded 2026-11-11, before these changes are committed
+(review B3, N16, N5). (1) G8: section 6 asks that E2 and E3 "ran and are reported,
+including null results". A heading with design text passed before any result existed. The
+gate now requires an E2 section of docs/REPORT.md that binds at least one number derived
+from `artifacts/e2/mechanism.json`, and an E3 section that binds one derived from
+`artifacts/e3/judges.json` (a claimcheck marker whose registry entry names that artifact as
+its source; G10 checks the value is current) and names every judge configuration, so each
+judge's result, a null one included, is in the report. Whether the prose states every null
+result is left to review; the gate cannot read meaning. (2) G13: section 11 asks for "key
+results, each linked to its artifact and preregistration". A key result is read as an item
+of the README results section (a paragraph, a top-level list item with its nested items,
+or a table) that binds a number; each must link an existing file under `artifacts/` and
+one under `prereg/` within the item. Items without a bound number (the section's
+introduction, a result not measured yet) are not key results. (3) G5: the completeness
+artifact's transcript side was taken on trust. The gate now runs `tools/e0.py
+completeness` on the clone over the runs directories the artifact records and requires
+every committed row to equal its re-derivation (transcript commands, ledger commands,
+missing commands, and `unparsed_actions`), with no re-derived run left out. The
+re-derivation uses the project's own transcript parser; `unparsed_actions` exposes the
+assistant turns that parser could not read, and the evidence line reports their number.

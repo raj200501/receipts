@@ -2443,11 +2443,45 @@ def scored_items(
     return scored
 
 
-def ledger_completeness(root: Path, banked: Mapping[str, BankedRun]) -> tuple[int, int, int]:
-    """``(runs, commands compared, commands missing)`` of the completeness artifact. It
-    must cover every validation run (each real smoke run in ``banked``) and compare some
-    command, and each validation run's ``ledger_commands`` must be the agent commands its
-    banked ledger records."""
+def rederived_completeness(ctx: Context, data: Mapping[str, Any]) -> dict[str, Any]:
+    """Each run's completeness row as ``tools/e0.py completeness`` derives it again, on
+    the clone, from the committed transcripts and ledgers of the runs directories the
+    artifact records (review N5): the gate never takes a row's transcript side from the
+    artifact, where a hand edit could hide a command the ledger missed."""
+    dirs = data.get("runs_dirs")
+    require(
+        isinstance(dirs, list) and bool(dirs) and all(is_text(d) for d in dirs),
+        f"{E0_COMPLETENESS} does not record the runs_dirs it was derived from",
+    )
+    assert isinstance(dirs, list)
+    ctx.make("setup", 900)
+    out = ctx.logs / "e0-completeness.json"
+    runs_args = [arg for d in dirs for arg in ("--runs", str(d))]
+    result = ctx.python(
+        "e0-completeness", ["tools/e0.py", "completeness", *runs_args, "--out", str(out)], 900
+    )
+    require(
+        result.ok and out.is_file(),
+        f"tools/e0.py completeness did not re-derive {E0_COMPLETENESS}: {result.last_line()[:80]}",
+    )
+    fresh = json.loads(out.read_text(encoding="utf-8")).get("runs")
+    require(
+        isinstance(fresh, list) and all(isinstance(r, dict) for r in fresh),
+        "the re-derived ledger completeness has no rows",
+    )
+    assert isinstance(fresh, list)
+    return {str(r.get("run_id")): r for r in fresh}
+
+
+def ledger_completeness(
+    root: Path, banked: Mapping[str, BankedRun], fresh: Mapping[str, Any]
+) -> tuple[int, int, int, int]:
+    """``(runs, commands compared, commands missing, unparsed actions)`` of the
+    completeness artifact. It must cover every validation run (each real smoke run in
+    ``banked``) and compare some command; each validation run's ``ledger_commands`` must
+    be the agent commands its banked ledger records; and every row must equal its
+    re-derivation in ``fresh`` (:func:`rederived_completeness`), its transcript commands
+    and ``unparsed_actions`` included, with no re-derived row left out."""
     real = set(banked)
     data = load_json(root, E0_COMPLETENESS)
     require_provenance(E0_COMPLETENESS, data)
@@ -2466,7 +2500,13 @@ def ledger_completeness(root: Path, banked: Mapping[str, BankedRun]) -> tuple[in
         f"ledger completeness misses {len(absent)} of the {len(real)} validation runs "
         "(the real smoke runs): " + ", ".join(absent[:3]),
     )
-    compared = missing = 0
+    extra = sorted(set(fresh) - {str(i) for i in ids})
+    require(
+        not extra,
+        f"ledger completeness leaves out {len(extra)} run(s) that its re-derivation covers: "
+        + ", ".join(extra[:3]),
+    )
+    compared = missing = unparsed = 0
     for run in runs:
         said, done = run.get("transcript_commands"), run.get("ledger_commands")
         require(
@@ -2475,6 +2515,16 @@ def ledger_completeness(root: Path, banked: Mapping[str, BankedRun]) -> tuple[in
         )
         assert isinstance(said, list) and isinstance(done, list)
         run_id = str(run["run_id"])
+        require(
+            is_count(run.get("unparsed_actions")),
+            f"ledger completeness row {run_id} does not count its unparsed_actions",
+        )
+        require(
+            dict(run) == dict(fresh.get(run_id) or {}),
+            f"ledger completeness row {run_id} differs from its re-derivation from the "
+            "committed transcript and ledger",
+        )
+        unparsed += int(run["unparsed_actions"])
         if run_id in banked:
             recorded = [
                 str(e["data"].get("cmd", ""))
@@ -2489,7 +2539,7 @@ def ledger_completeness(root: Path, banked: Mapping[str, BankedRun]) -> tuple[in
         compared += len(said)
         missing += sum((Counter(map(str, said)) - Counter(map(str, done))).values())
     require(compared > 0, "ledger completeness compares no commands")
-    return len(runs), compared, missing
+    return len(runs), compared, missing, unparsed
 
 
 def g5(ctx: Context) -> str:
@@ -2526,13 +2576,15 @@ def g5(ctx: Context) -> str:
         parts.append(f"{ctype} P={fmt_ci(correct, len(pred))} R={fmt_ci(correct, len(golden))}")
         if p < G5_PRECISION_MIN or r < G5_RECALL_MIN:
             failing.append(ctype)
-    runs, compared, gaps = ledger_completeness(root, banked)
+    fresh = rederived_completeness(ctx, load_json(root, E0_COMPLETENESS))
+    runs, compared, gaps, unparsed = ledger_completeness(root, banked, fresh)
     require(not failing, "below P>=0.95/R>=0.90: " + "; ".join(failing) + " | " + "; ".join(parts))
     require(gaps == 0, f"ledger completeness gap: {gaps} command(s) missing from ledgers")
     return (
         "; ".join(parts)
         + f"; instrument at {instrument[:12]} unchanged at HEAD"
-        + f"; ledger completeness 100% on {runs} runs ({compared} commands)"
+        + f"; ledger completeness 100% on {runs} runs ({compared} commands, re-derived; "
+        f"{unparsed} unparsed actions)"
     )
 
 
@@ -3046,6 +3098,37 @@ def g7(ctx: Context) -> str:
 
 E2_HEADING = re.compile(r"\be2\b|\bmechanisms?\b")
 E3_HEADING = re.compile(r"\be3\b|\bjudges?\b")
+# The numbers registry ``make report`` writes; each entry names its source artifact.
+REGISTRY_REL = "artifacts/report/numbers.json"
+
+
+def registry_sources(root: Path) -> dict[str, str]:
+    """Each registry key with the artifact its number is derived from."""
+    numbers = load_json(root, REGISTRY_REL).get("numbers")
+    require(isinstance(numbers, dict), f"{REGISTRY_REL} has no numbers object")
+    assert isinstance(numbers, dict)
+    return {
+        str(key): str(entry.get("source"))
+        for key, entry in numbers.items()
+        if isinstance(entry, dict)
+    }
+
+
+def reported_from(
+    text: str, title: re.Pattern[str], sources: Mapping[str, str], artifact: str
+) -> str:
+    """The body of every section of ``text`` whose heading matches ``title`` and that binds
+    a number derived from ``artifact`` (a claimcheck marker whose registry entry names it
+    as its source), joined; empty when no section does. Design text without results
+    binds no such number, so it is not a report of them (review B3)."""
+    return "\n\n".join(
+        body
+        for head, body in md_sections(text)
+        if title.search(head)
+        and any(sources.get(key) == artifact for key, _ in MARKER.findall(body))
+    )
+
+
 E3_JUDGES = "artifacts/e3/judges.json"
 # The E3 sample takes K // 4 runs from each of the four E1 arms (prereg 0003 section 3).
 E3_ARMS = 4
@@ -3285,6 +3368,26 @@ def g8(ctx: Context) -> str:
     text = report.read_text(encoding="utf-8")
     require(has_section(text, E2_HEADING), "REPORT.md has no E2 section")
     require(has_section(text, E3_HEADING), "REPORT.md has no E3 section")
+    # Reported means the results are in the report, bound to the artifacts (G10 checks
+    # that each bound value is current), and every judge's result is there, a null
+    # result included.
+    sources = registry_sources(root)
+    require(
+        bool(reported_from(text, E2_HEADING, sources, mech_rel)),
+        f"REPORT.md has no E2 section that binds a number from {mech_rel}: the mechanism "
+        "results, null results included, are not reported",
+    )
+    e3_text = reported_from(text, E3_HEADING, sources, E3_JUDGES)
+    require(
+        bool(e3_text),
+        f"REPORT.md has no E3 section that binds a number from {E3_JUDGES}: the judge "
+        "results, null results included, are not reported",
+    )
+    unnamed = [str(i) for i in ids if str(i) not in e3_text]
+    require(
+        not unnamed,
+        f"REPORT.md's E3 results do not name judge configuration(s) {', '.join(unnamed)}",
+    )
     mix = Counter(str(m.get("class")) for m in rows)
     return (
         f"E2 classified {len(rows)} claims {dict(mix)}; E3 {len(configs)} judges, sample of "
@@ -3841,6 +3944,35 @@ def image_paths(text: str, base: str) -> list[str]:
     return [path for path in (resolve_link(t, base) for t in targets) if path is not None]
 
 
+# A top-level list item: a marker at column 0 or 1 (nested items are indented further and
+# stay part of their parent item).
+TOP_LIST_ITEM = re.compile(r"^ ?(?:[-*+]|\d{1,9}[.)])[ \t]")
+
+
+def result_items(text: str) -> list[str]:
+    """The paragraphs, top-level list items, and tables of the visible Markdown ``text``
+    (no code, comments, or headings); each list item, with its continuation lines and
+    nested items, and each table is one item."""
+    out: list[str] = []
+    current: list[str] = []
+    in_table = False
+    for line, kind in md_lines(text):
+        if kind != "text" or not line.strip() or _heading(line) is not None:
+            if current:
+                out.append("\n".join(current))
+            current, in_table = [], False
+            continue
+        table = line.lstrip().startswith("|")
+        if current and (table != in_table or (not table and TOP_LIST_ITEM.match(line))):
+            out.append("\n".join(current))
+            current = []
+        in_table = table
+        current.append(line)
+    if current:
+        out.append("\n".join(current))
+    return out
+
+
 def link_paths(text: str, base: str) -> list[str]:
     """Repository paths of the local links in ``text`` (an image inside a link counts as
     the link's text)."""
@@ -3929,6 +4061,21 @@ def g13(ctx: Context) -> str:
         any(p.startswith("prereg/") and (root / p).exists() for p in results),
         "README key results link to no preregistration under prereg/",
     )
+    # Section 11: key results, each linked to its artifact and preregistration. A key
+    # result is an item of the results section that binds a number.
+    for item in result_items(strip_code(section_text(readme, "result"))):
+        if MARKER.search(item) is None:
+            continue
+        paths = link_paths(item, "")
+        start = " ".join(MARKER.sub(r"\2", item).split())[:60]
+        require(
+            any(p.startswith("artifacts/") and (root / p).exists() for p in paths),
+            f"README key result links to no artifact under artifacts/: {start!r}",
+        )
+        require(
+            any(p.startswith("prereg/") and (root / p).exists() for p in paths),
+            f"README key result links to no preregistration under prereg/: {start!r}",
+        )
     how = section_text(readme, "how it works")
     require(
         any((root / p).is_file() for p in image_paths(strip_code(how), ""))

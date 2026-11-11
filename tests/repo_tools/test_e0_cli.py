@@ -521,8 +521,8 @@ def test_artifacts_carry_the_fields_of_the_plan_g5_row(
         "`report_id`, `claim_type`, `gold_verdict`, `pred_verdict`)",
         "`artifacts/e0/heldout_manifest.json` (`reports: {id: sha256}`)",
         "`artifacts/e0/seeded/heldout/<id>.json`",
-        "`artifacts/e0/ledger_completeness.json` (`runs[]` with `transcript_commands`, "
-        "`ledger_commands`)",
+        "`artifacts/e0/ledger_completeness.json` (`runs_dirs`; `runs[]` with "
+        "`transcript_commands`, `ledger_commands`, `missing`, `unparsed_actions`)",
     ):
         assert named in row
     paths = pipeline(git_repo, commit, capsys)
@@ -545,7 +545,9 @@ def test_artifacts_carry_the_fields_of_the_plan_g5_row(
     )
     for report_id, digest in manifest["reports"].items():
         assert e0.sha256_file(git_repo / e0.SEEDED / "heldout" / f"{report_id}.json") == digest
-    assert all({"transcript_commands", "ledger_commands"} <= set(r) for r in completeness["runs"])
+    fields = {"transcript_commands", "ledger_commands", "missing", "unparsed_actions"}
+    assert all(fields <= set(r) for r in completeness["runs"])
+    assert completeness["runs_dirs"]  # G5 re-derives the rows from these (D58)
     # The gate's counts equal per_type once ignored items are skipped (harness request).
     plain = [i for i in evaluation["items"] if not i["ignored"]]
     for name, entry in evaluation["per_type"].items():

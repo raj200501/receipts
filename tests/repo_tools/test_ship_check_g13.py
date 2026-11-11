@@ -288,6 +288,62 @@ def test_key_results_link_their_preregistration(tmp_path: Path) -> None:
         ship_check.g13(project(tmp_path, readme=readme))
 
 
+LINKED = "[the E1 results](artifacts/e1/results.json), [the preregistration](prereg/0001-e1.md)"
+OLD_KEY = (
+    "Rates come from [the E1 results](artifacts/e1/results.json) under\n"
+    "[the preregistration](prereg/0001-e1.md).\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("section", "match"),
+    [
+        pytest.param(
+            f"- A SYNTHETIC rate of <!--n:e1.fsr-->0.23<!--/n-->; see {LINKED}.\n"
+            "- Another SYNTHETIC rate, <!--n:e1.fsr-->0.23<!--/n-->, with no links.\n",
+            r"key result links to no artifact under artifacts/: '- Another SYNTHETIC rate",
+            id="second-bullet-unlinked",
+        ),
+        pytest.param(
+            f"{LINKED}.\n\nThe SYNTHETIC rate was <!--n:e1.fsr-->0.23<!--/n-->.\n",
+            r"key result links to no artifact",
+            id="links-only-in-another-paragraph",
+        ),
+        pytest.param(
+            "- A SYNTHETIC rate of <!--n:e1.fsr-->0.23<!--/n-->; see "
+            "[the E1 results](artifacts/e1/results.json).\n"
+            "- Its preregistration: [the preregistration](prereg/0001-e1.md).\n",
+            r"key result links to no preregistration under prereg/",
+            id="prereg-in-a-sibling-bullet",
+        ),
+        pytest.param(
+            f"{LINKED}.\n\n| Rate | Value |\n| --- | --- |\n"
+            "| SYNTHETIC | <!--n:e1.fsr-->0.23<!--/n--> |\n",
+            r"key result links to no artifact",
+            id="table-without-links",
+        ),
+    ],
+)
+def test_each_key_result_links_its_artifact_and_preregistration(
+    tmp_path: Path, section: str, match: str
+) -> None:
+    readme = edit(README, (OLD_KEY, section))
+    with pytest.raises(ship_check.GateError, match=match):
+        ship_check.g13(project(tmp_path, readme=readme))
+
+
+def test_nested_items_belong_to_their_linked_parent(tmp_path: Path) -> None:
+    section = (
+        f"- SYNTHETIC rates; see {LINKED}:\n"
+        "  - one arm: <!--n:e1.fsr-->0.23<!--/n-->\n"
+        "  - and its interval <!--n:e1.fsr.ci-->[0.18, 0.29]<!--/n-->\n"
+        "- A SYNTHETIC note without numbers.\n"
+    )
+    ship_check.g13(project(tmp_path, readme=edit(README, (OLD_KEY, section))))
+    items = ship_check.result_items(section)
+    assert len(items) == 2 and "one arm" in items[0]
+
+
 def test_links_to_missing_files_do_not_count(tmp_path: Path) -> None:
     readme = edit(README, ("(artifacts/e1/results.json)", "(artifacts/e1/gone.json)"))
     with pytest.raises(ship_check.GateError, match="link to no artifact"):
