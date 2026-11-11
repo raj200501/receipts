@@ -148,6 +148,12 @@ flowchart LR
 - [`src/receipts/analysis`](src/receipts/analysis): random-intercept logistic models fitted
   by adaptive Gauss-Hermite quadrature, separation checks, cluster bootstrap intervals,
   Holm-adjusted contrasts, and simulation power analysis.
+- [`src/receipts/study`](src/receipts/study): study plans, the run executor, banking, and
+  re-verification of every banked run with the checkout's instrument (DECISIONS D42), so
+  outcomes never come from verdicts written at run time; the E1 and E4 analyses.
+- [`src/receipts/evaluation`](src/receipts/evaluation): the blind E0 tooling (seeded
+  reports, fact sheets, ledger completeness), mechanism classification (E2), and LLM
+  judges scored against the ledger (E3).
 - [`src/receipts/hook`](src/receipts/hook): receipts-hook for Claude Code and a wrapper for
   other CLIs.
 
