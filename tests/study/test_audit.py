@@ -247,6 +247,24 @@ def test_an_unknown_tool_is_reported(run: Run) -> None:
     assert kinds(run.audit()) == [(seq, "unknown_tool")]
 
 
+def test_events_the_recorder_would_refuse_are_still_audited(run: Run) -> None:
+    # Written past the recorder, as a broken or hostile writer could: a tool input that
+    # is not an object, and an agent file write outside the workspace.
+    writer = run.recorder.writer
+    odd = writer.append("tool_call", {"tool": "read", "input": "../x", "source": "agent"}).seq
+    write = {"path": "../run-2/app.py", "op": "create", "sha256_before": None}
+    data = {**write, "sha256_after": "0" * 64, "call_seq": None, "source": "agent"}
+    moved = writer.append("file_write", data).seq
+    assert kinds(run.audit()) == [(odd, "unknown_tool"), (moved, "file_path")]
+
+
+def test_rare_shapes_of_paths_and_text() -> None:
+    assert path_findings("src/a\0b.py", WS)[0][1].endswith("holds a NUL byte")
+    assert shell_findings("pushd +1", WS) == [("cd", "pushd +1 turns to a directory on the stack")]
+    found = content_findings('log = os.path.join("$HOME", "x")\n', WS, "src/app.py")
+    assert found == [("content", "$HOME named in src/app.py")]
+
+
 # Text the agent wrote into files ---------------------------------------------------------
 
 
