@@ -35,64 +35,47 @@ B4).
 
 ## Now
 
-Crunch time, 2026-11-11 (goal_turn 6). `main` holds the release commits and the repository
-is public. Raj's order: G1, G2, G3, the canary string, the smoke runs and
-`smoke_runs.json` (G5, G6), E0, the E1 freeze and runs, E2 to E4, then an independent
-review. CAP_SHARE stays 0.2.
+Final sprint, 2026-11-12 (goal_turn 6). Raj gave one more hour for the gates, then the
+finale: finalize and update `main`. Not all fourteen gates were reachable in that hour: G6
+waits on the smoke runs not yet banked (each takes 30 to 60 minutes on this CPU-only
+container), and G5, G7 to G9, and G11 wait on E0 and the studies, which take days of
+local-model compute here.
 
-- **Done:** G1 (real tests for `receipts wrap` and the CLI, D50), G2 (the type-ignore scan
-  skips the synthetic task content under `bench/tasks/`, D51 and D55; the gate passed by
-  that narrowing), G3 on Python 3.11 and 3.12, and the canary string (D52) in every task
-  definition and every answer-key file with a comment syntax (JSON answer-key files carry
-  none; no file the agent sees does). RELEASE-READY points since: 01f40e9, b3f48b2, and
-  7d1d0f0, each with `main` updated (D49).
-- **Review of e4230cc: REVIEW: BLOCK** (banked in 2cf2cef). Its documentation findings (B4,
-  N1, N3, N7, N9 to N16) are fixed in e8ee5de, with CORRECTIONS entries. B1 and N4 are
-  fixed next (D56): `make freshness` and `make reproduce` re-derive the smoke summary from
-  the banked run records, and the summary carries the models, config hashes, seeds, and
-  usage of its runs, with the environment that derived it. B3, N5, and N16 are fixed after that (D58): G8
-  counts E2 and E3 as reported only when their REPORT.md sections bind numbers from their
-  artifacts and name every judge; G5 re-derives every ledger-completeness row on the
-  clone; G13 requires each README key result to link its artifact and preregistration.
-  B2 and N6 are fixed in 6eddbef (D57, merged in 310bd95): G7 and G9 require one row per
-  banked run, re-derive ground truth from each ledger, and run `tools/bank_study.py
-  <study> --check` on the clone; G9 checks each E4 run's code. N8 (D59): new study runs
-  carry the canary. Every review finding is now addressed; three adversarial workflows
-  are checking these fixes before the next push.
-- **Extractor (D60)**, merged in 6fde5bd: the pattern extractor reads the completion
-  statements found in the smoke reports (for example "has been successfully added",
-  "now uses"), with precision guards, before any E0 material exists. The smoke numbers
-  keep the run-time verdicts; the demo report card now shows the bizdays completion
-  sentence contradicted.
-- **Fresh-clone `make ci` caught a regression** in 8094d0a: the analyze-to-G7 contract
-  test banked ledgers without hidden-check results, which the new G7 requires. Fixed in
-  f3430d9; nothing after 7d1d0f0 is pushed until `make ci` passes on both Pythons.
-- **E0 verifier mode (D54)**, merged in 8692254: the held-out scoring verifies each seeded
-  report with its task's requirement texts and records `verifier_mode`; `valid_types`,
-  G5, and the G7/G9 instrument check refuse any other evaluation.
-- **Smoke study (D53):** the remaining runs run from a snapshot of e4230cc, with the
-  earlier arm and server settings, four at a time. Each commit that banks finished runs
-  also re-derives the smoke summary and the README and REPORT numbers (freshness checks
-  it, D56); the runs hand-read so far are noted in the README's Limitations.
-
-- **Adversarial checks of 2026-11-12.** Fixed: banked runs are immutable (D62), `bank_study
-  --check` keeps instrument fields apart and run records list untracked files (D63), the
-  document errors (CORRECTIONS), and the D60 extractor change is reverted (D61). Still open:
-  the E2 and E3 artifacts that G8 requires the report to bind are not re-derived (no E2 or
-  E3 data exist yet); G5 reports `unparsed_actions` as one total for two different causes;
-  several G7 and G9 tests assert only a headline that any failure produces; the D60
-  phrasing families wait for a revision with precision guards.
+- **On `main`: 02bc774** (RELEASE-READY), after `make ci` on fresh clones for Python 3.11
+  and 3.12 and fresh-clone `make claimcheck`, `freshness`, `citecheck`, `secrets-scan`,
+  and `budget`. It holds every fix below.
+- **Independent review of 02bc774: REVIEW: BLOCK**, banked with this update. It confirms
+  B1 to B4 of the previous review fixed and every bound number equal to its own
+  recomputation from the 31 run records. Two new gate holes block, both latent because no
+  E0 to E4 data exist yet: **B5**, G7 to G10 never re-derive the E1 to E4 result
+  artifacts, so hand-set E2 classes, E3 counts, or E1 and E4 test results would pass;
+  **B6**, G5 takes the recorded held-out predictions on trust instead of re-running the
+  scoring, and reads neither the held-out attempt log nor the requirement digests.
+  Non-blocking N2, N13, and N17 to N23 are in docs/REVIEW_LOG.md.
+- **Review of e4230cc (BLOCK, B1 to B4, N1 to N16):** every finding is fixed (D56 to D59).
+  Three adversarial workflows then checked the fixes; their confirmed findings led to the
+  revert of the D60 extractor change before any E0 scoring (D61), immutable banked runs
+  (D62), unforgeable `bank_study --check` and run-record inputs (D63), and G5, G8, and G13
+  reading only committed directories and visible prose (D64).
+- **Smoke study (D53):** 31 of the 40 runs are banked; the rest, nearly all TypeScript,
+  keep running from the e4230cc snapshot, four at a time. Each banking commit re-derives
+  the summary and the README and REPORT numbers (D56).
+- **Open, non-blocking, from the adversarial checks:** G5 reports `unparsed_actions` as
+  one total for two causes; several G7 and G9 tests assert only a
+  headline that any failure produces; G9 lacks G7's accounting of planned runs that were
+  never banked; the ledger writer leaves U+2028, U+2029, and U+0085 unescaped; prereg
+  0002's "Z1 over every banked run" has no code yet. None affects a reported number.
 
 ## Next three actions
 
-1. Merge the G7/G9 fix (B2, N6) after reading its diff adversarially, then run `make ci`
-   on fresh clones for both Pythons and update `main` (D49).
-2. Finish the smoke study, bank its runs and `smoke_runs.json` (G6), update the README
-   numbers from the new `smoke_outcomes.json`, then run the E0 labelers, writers, and
-   adjudicators (D40, D43) and score the held-out split (G5).
-3. Pilot, power run, E1/E4 plans, fill the TO FIX fields, freeze 0001 to 0003, and launch
-   E1 from the freeze-commit snapshot; the next independent review when the daily cap
-   allows.
+1. Bank the remaining smoke runs as they finish, then `smoke_runs.json` (G6); run the E0
+   labelers, writers, and adjudicators (D40, D43) and score the held-out split (G5).
+2. Pilot, power run, E1 and E4 plans, fill the TO FIX fields, freeze 0001 to 0003, and
+   launch E1 and E4 from the freeze-commit snapshot (G7 to G9, G11).
+3. Fix B5 (G7 to G10 re-derive the E1 to E4 result artifacts from their banked inputs)
+   and B6 (G5 re-runs the held-out scoring in the clone, reads `heldout_attempts.jsonl`,
+   and checks the requirement digests), with tests; then N18 and N19 before any E1 run;
+   the next independent review when the daily cap allows (G12).
 
 ## Environment (`make doctor`, 2026-10-23)
 
