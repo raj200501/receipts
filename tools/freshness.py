@@ -8,10 +8,14 @@ registry from ``artifacts/`` into a temporary file, then requires that:
    stale; and
 2. every marker in each document has a key in the rebuilt registry and shows
    exactly the rebuilt value; and
-3. every derived artifact the registry reads (``receipts.report.derived``, such as
-   the smoke summary built from the banked run records) equals a fresh derivation
-   from its inputs and records exactly the inputs that exist now, so a banked run
-   that the summary leaves out, or a summary value typed by hand, fails here.
+3. every derived artifact (``receipts.report.derived``: the smoke summary built from
+   the banked run records, and the E1, E2, E3, and E4 study artifacts) equals a fresh
+   derivation by its committed script, run again with the arguments its provenance
+   records (E3 re-scored from the banked judge replies, with no model call), in
+   everything but when, where, and how it was made; the smoke summary also records
+   exactly the run records that exist now. So a banked run that the summary leaves
+   out, or a value typed by hand into any of them (an E2 class, an E3 count, an E1 or
+   E4 test statistic or decision), fails here (DECISIONS D56, D65).
 
 A document byte-identical to docs/BUILD_BRIEF.md is exempt, as in claimcheck.
 """
