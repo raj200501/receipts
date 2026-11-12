@@ -1,4 +1,11 @@
-"""Start and stop the local llama-cpp-python server for one pinned GGUF model."""
+"""Start and stop the local model server for one pinned GGUF model.
+
+A server is started only on a port nothing answers on, and once it answers the session
+confirms that the server is its own process serving what it was started with: for
+llama.cpp, the window per slot, the slots, and the model file that ``GET /props``
+reports (:meth:`LocalServer.confirm_serving`, DECISIONS D71). A server left running
+by an earlier session therefore never answers a later session's requests unnoticed.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +18,7 @@ import urllib.request
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from receipts.ledger.events import sha256_text
 
@@ -108,6 +115,23 @@ def file_sha256(path: Path, chunk: int = 1 << 22) -> str:
     return digest.hexdigest()
 
 
+class ServerStateError(RuntimeError):
+    """The model server that answers is not this session's own server serving what it
+    was started with (DECISIONS D71): something else holds the port, the server process
+    is not running, or it reports another window per slot, slot count, or model file."""
+
+
+def get_json(url: str, timeout_s: float = 30.0) -> object:
+    """``GET url`` on the loopback without any proxy, parsed as JSON; None when nothing
+    answers or the answer is not JSON."""
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(url, timeout=timeout_s) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, ValueError, ConnectionError):
+        return None
+
+
 def server_ready(base_url: str, timeout_s: float = 2.0) -> bool:
     """True when ``GET {base_url}/models`` answers with JSON."""
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -117,6 +141,31 @@ def server_ready(base_url: str, timeout_s: float = 2.0) -> bool:
             return True
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ConnectionError):
         return False
+
+
+def _positive_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+
+def props_report(props: object) -> dict[str, Any] | None:
+    """What llama.cpp's ``GET /props`` says its server serves: the window per slot
+    (``default_generation_settings.n_ctx``), the slots (``total_slots``), and the model
+    file (``model_path``), as ``{"source": "GET /props", "n_ctx_per_slot": ...,
+    "total_slots": ..., "model_path": ...}``; None when it does not say all three (the
+    window and slots as positive integers, the file as text)."""
+    if not isinstance(props, dict):
+        return None
+    settings = props.get("default_generation_settings")
+    window = settings.get("n_ctx") if isinstance(settings, dict) else None
+    slots, path = props.get("total_slots"), props.get("model_path")
+    if not (_positive_int(window) and _positive_int(slots) and isinstance(path, str)):
+        return None
+    return {
+        "source": "GET /props",
+        "n_ctx_per_slot": window,
+        "total_slots": slots,
+        "model_path": path,
+    }
 
 
 @dataclass
@@ -169,9 +218,26 @@ class LocalServer:
         return server_command(self.model, self.port, self.threads, self.python)
 
     def start(self) -> None:
-        """Verify the model hash, start the server, and wait until it answers."""
+        """Verify the model hash, start the server, and wait until it answers.
+
+        Nothing may answer on the port before the server starts: requests would reach
+        that server instead. Once the port answers, the server must be this session's
+        own process serving what it was started with (:meth:`confirm_serving`).
+
+        Raises:
+            RuntimeError: The model file does not match its pinned SHA-256, the server
+                exited early, or it did not answer in time.
+            ServerStateError: Something already answers on the port (no server is
+                started), or the server that answers is not this one serving what it was
+                started with (it is stopped).
+        """
         if self.verify_hash and file_sha256(self.model.path) != self.model.sha256:
             raise RuntimeError(f"{self.model.path} does not match its pinned sha256")
+        if server_ready(self.base_url):
+            raise ServerStateError(
+                f"something already answers on port {self.port} ({self.base_url}), so this "
+                "session's requests would reach it and not the server it starts; stop it first"
+            )
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         log = self.log_path.open("ab")
         self._proc = subprocess.Popen(list(self.command()), stdout=log, stderr=log)
@@ -180,10 +246,55 @@ class LocalServer:
             if self._proc.poll() is not None:
                 raise RuntimeError(f"model server exited early; see {self.log_path}")
             if server_ready(self.base_url):
+                try:
+                    self.confirm_serving()
+                except ServerStateError:
+                    self.stop()
+                    raise
                 return
             self._sleep(1.0)
         self.stop()
         raise RuntimeError("model server did not become ready in time")
+
+    def confirm_serving(self) -> dict[str, Any] | None:
+        """Confirm that this session's server process is running and, for llama.cpp,
+        that it reports serving the window per slot, the slots, and the model file it was
+        started with (``GET /props``, :func:`props_report`); return that report, or None
+        for llama-cpp-python, which reports neither.
+
+        Raises:
+            ServerStateError: The process is not running, so whatever answers on the
+                port is another server; or the report is missing or differs.
+        """
+        if self._proc is None or self._proc.poll() is not None:
+            raise ServerStateError(
+                f"this session's model server is not running, so whatever answers on port "
+                f"{self.port} is not it"
+            )
+        if self.engine != "llama.cpp":
+            return None
+        report = props_report(get_json(f"http://127.0.0.1:{self.port}/props"))
+        if report is None:
+            raise ServerStateError(
+                f"the server on port {self.port} does not report the window per slot, the "
+                "slots, and the model file it serves (GET /props)"
+            )
+        expected = {
+            "n_ctx_per_slot": self.model.n_ctx,
+            "total_slots": self.parallel,
+            "model_path": str(self.model.path),
+        }
+        differing = [
+            f"{name} {report[name]!r}, not {value!r}"
+            for name, value in expected.items()
+            if report[name] != value
+        ]
+        if differing:
+            raise ServerStateError(
+                f"the server on port {self.port} reports {'; '.join(differing)}, so it does not "
+                "serve what this session started"
+            )
+        return report
 
     def stop(self) -> None:
         """Stop the server if it is running."""
