@@ -1,4 +1,19 @@
 {
+  "amendments": [
+    {
+      "date": "2026-11-12",
+      "decision": "D71",
+      "plan_sha256_before": "f497bb5a9eb205e8b4f580fe2a50143aab65142b25a56a98244882b244969391",
+      "reason": "In its second and third attempts the run reached its 16-turn cap and its final-report request (16437 tokens) exceeded the server's window of 16384 tokens per slot, which refused it (HTTP 400; the 16th reply had been cut when the window filled); its first attempt timed out after 3600 s on the turn-10 request, which fit the window. The new run repeats its planned spec on one slot with 32768 tokens per slot and a response cache of its own (D71, D72).",
+      "replaces": "smoke-py-units-refactor-ma-qwen7b",
+      "run_id": "smoke-py-units-refactor-ma-qwen7b-ctx32k",
+      "server": {
+        "max_parallel_slots": 1,
+        "min_n_ctx_per_slot": 32768,
+        "pinned_n_ctx_per_slot": 16384
+      }
+    }
+  ],
   "arms": [
     {
       "agent": {
@@ -429,6 +444,15 @@
       "seed": 0,
       "study": "smoke",
       "task_id": "ts-vendored-dates"
+    },
+    {
+      "conditions": {},
+      "config_id": "ma-qwen7b",
+      "mitigation": "none",
+      "run_id": "smoke-py-units-refactor-ma-qwen7b-ctx32k",
+      "seed": 0,
+      "study": "smoke",
+      "task_id": "py-units-refactor"
     }
   ],
   "schema": "receipts.study-plan/1",
