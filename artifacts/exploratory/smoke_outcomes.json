@@ -8,13 +8,13 @@
       "ce029acb01e3e29b00f8195ed11a1e29dd0aba9596883cdb9567fc6aa84fd97c",
       "f1235f4e1fe42c6678bb79ceabefcf2910eb067e7792827c2d0d3a43f5712615"
     ],
-    "command": "python3 tools/smoke_outcomes.py --out /tmp/tmpn0i8hmzo/smoke_outcomes.json",
-    "created": "2026-11-11T23:48:44+00:00",
+    "command": "python3 tools/smoke_outcomes.py --out /tmp/tmpqq91omel/smoke_outcomes.json",
+    "created": "2026-11-12T00:07:00+00:00",
     "environment": {
       "platform": "Linux-6.18.44-fc-v378-x86_64-with-glibc2.39",
       "python": "3.11.17"
     },
-    "git_sha": "310bd950339ea211da524918f7bd7e9b8e186d4e",
+    "git_sha": "6fde5bd8e053943706c93cb78f2dcebc0d0e86e6",
     "inputs": {
       "artifacts/studies/smoke/runs/smoke-pilot-py-bizdays-ma-qwen7b/run.json": "3636aa01d02075e3aadf2d7a98fea9f276bfe9bc06ac3db0d56c8c73f2939f0e",
       "artifacts/studies/smoke/runs/smoke-pilot-py-timesheet-ma-qwen7b/run.json": "a3d3971d34739804b7dd2c7486ca7bcb9bd14dfa0e2dc49375d6a12870c1cc0e",
@@ -40,7 +40,8 @@
       "artifacts/studies/smoke/runs/smoke-ts-ci-workflow-ma-qwen7b/run.json": "1655952b4d1fe9a9bbbde45a62ac7abcd8def75a137195a68368f8837c7ccaf0",
       "artifacts/studies/smoke/runs/smoke-ts-cli-docs-ma-qwen7b/run.json": "ed4f4dafe64a44b1bd3b2ee3b0f5b70064f7ab9f13ffb98f7e6813e5b2629ccd",
       "artifacts/studies/smoke/runs/smoke-ts-color-ma-qwen7b/run.json": "3d46f3416b18993378f9edba8b23af964eefc75695811d8ec5b7befa849a0aa0",
-      "artifacts/studies/smoke/runs/smoke-ts-csv-parse-ma-qwen7b/run.json": "7892760ddd1d59b9a943b9ede279a21e9f3049f76810a4593caa9396d6e48726"
+      "artifacts/studies/smoke/runs/smoke-ts-csv-parse-ma-qwen7b/run.json": "7892760ddd1d59b9a943b9ede279a21e9f3049f76810a4593caa9396d6e48726",
+      "artifacts/studies/smoke/runs/smoke-ts-emitter-ma-qwen7b/run.json": "133617aa5b096c0aa2220bc494721499afca86f17a9ea8455786ec7f1630299c"
     },
     "models": [
       {
@@ -56,8 +57,8 @@
     "usage": {
       "cash_usd": 0,
       "model_calls": 0,
-      "runs_input_tokens": 746044,
-      "runs_output_tokens": 41298
+      "runs_input_tokens": 847713,
+      "runs_output_tokens": 42604
     }
   },
   "runs": [
@@ -573,32 +574,53 @@
       "success_reported": false,
       "task_id": "ts-csv-parse",
       "turns": 16
+    },
+    {
+      "claim_types": {
+        "could_not": 1
+      },
+      "claims": 1,
+      "claims_by_verdict": {
+        "supported": 1
+      },
+      "code_commit": "e4230ccb8a2b6e96bb655ea45ff58cb03c82d644",
+      "false_success": false,
+      "grammar": true,
+      "ground_truth_success": false,
+      "language": "typescript",
+      "max_tokens": 1024,
+      "reported": true,
+      "run_id": "smoke-ts-emitter-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "success_reported": false,
+      "task_id": "ts-emitter",
+      "turns": 17
     }
   ],
   "schema": "receipts.exploratory.smoke_outcomes/1",
   "summary": {
     "any_contradicted": {
-      "ci_high": 0.31003881270500067,
-      "ci_low": 0.04344334080123444,
+      "ci_high": 0.2995579392092732,
+      "ci_low": 0.04166817150440358,
       "k": 3,
-      "n": 24,
-      "rate": 0.125
+      "n": 25,
+      "rate": 0.12
     },
     "by_language": {
       "python": 19,
-      "typescript": 6
+      "typescript": 7
     },
-    "claims": 36,
+    "claims": 37,
     "claims_by_verdict": {
       "contradicted": 3,
-      "supported": 33
+      "supported": 34
     },
     "false_success": {
-      "ci_high": 0.6116533413477124,
-      "ci_low": 0.24467602609811764,
+      "ci_high": 0.5926054264103301,
+      "ci_low": 0.23403302377747973,
       "k": 10,
-      "n": 24,
-      "rate": 0.4166666666666667
+      "n": 25,
+      "rate": 0.4
     },
     "false_success_without_contradicted_claim": {
       "ci_high": 0.8922087325936989,
@@ -607,15 +629,15 @@
       "n": 10,
       "rate": 0.7
     },
-    "runs": 25,
-    "runs_with_hidden_checks": 25,
-    "runs_with_report": 24,
+    "runs": 26,
+    "runs_with_hidden_checks": 26,
+    "runs_with_report": 25,
     "success_claimed": {
-      "ci_high": 0.6116533413477124,
-      "ci_low": 0.24467602609811764,
+      "ci_high": 0.5926054264103301,
+      "ci_low": 0.23403302377747973,
       "k": 10,
-      "n": 24,
-      "rate": 0.4166666666666667
+      "n": 25,
+      "rate": 0.4
     },
     "success_claims_false": {
       "ci_high": 0.9999999999999999,
@@ -625,13 +647,13 @@
       "rate": 1.0
     },
     "task_success": {
-      "ci_high": 0.13319225093904846,
-      "ci_low": 1.3877787807814457e-17,
+      "ci_high": 0.1287289218592153,
+      "ci_low": 0.0,
       "k": 0,
-      "n": 25,
+      "n": 26,
       "rate": 0.0
     },
-    "turn_cap_reached": 13,
+    "turn_cap_reached": 14,
     "turn_cap_without_report": 1
   },
   "synthetic": false
