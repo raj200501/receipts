@@ -23,8 +23,9 @@ files the pattern matches now, so a run banked, removed, or changed after it was
 makes it stale. A study artifact records the inputs it read itself (``provenance.inputs``),
 which are part of the compared content, and is derived again with the arguments its
 ``provenance.command`` records (:func:`recorded_arguments`), so an exploratory artifact
-made with, say, ``--n-boot 10`` is derived again the same way; a recorded command can
-make a derivation read only this repository. Every derivation runs with
+made with, say, ``--n-boot 10`` is derived again the same way; a recorded command that
+names another script, passes ``--root``, or passes a path that leads out of this
+repository is refused, so a derivation reads only the repository. Every derivation runs with
 ``RECEIPTS_OFFLINE=1``, so the model client refuses any call. An item whose artifact is
 absent is skipped, except the smoke summary when its pattern matches a file.
 
