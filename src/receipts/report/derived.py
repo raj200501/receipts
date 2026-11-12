@@ -22,22 +22,22 @@ exactly, a float within :data:`REL_TOL` or :data:`ABS_TOL` (another BLAS kernel,
 or scipy moves the last digits of a mixed-model fit; review F1 of the B5 fix), and an
 optimizer's iteration count (:data:`DIAGNOSTIC`) only as a count. So no count, decision,
 class, or label can be typed in, and no other value beyond its fifth significant digit.
-The smoke summary has an input
-pattern: the inputs its provenance records (path to SHA-256) must also be exactly the
-files the pattern matches now, so a run banked, removed, or changed after it was written
-makes it stale. A study artifact records the inputs it read itself (``provenance.inputs``),
-which are part of the compared content, and is derived again with the arguments its
-``provenance.command`` records (:func:`recorded_arguments`), so an exploratory artifact
-made with, say, ``--n-boot 10`` is derived again the same way. Only the options each
-item lists (:attr:`Derived.options`) are re-used, and an option that names an input only
-with its default path: so a recorded command that names another script, passes
-``--root``, an input file other than the banked one (``--runs`` of a hand-made rows
-file, or ``--replies`` of hand-made judge replies, both inside the repository), an option
-of a partial or exploratory run that never writes the item's path, or a path that leads
-out of this repository is refused, and a derivation reads only the banked inputs. Every
-derivation runs with ``RECEIPTS_OFFLINE=1``, so the model client refuses any call. An
-item whose artifact is absent is skipped, except the smoke summary when its pattern
-matches a file.
+The smoke summary has an input pattern: the inputs its provenance records (path to
+SHA-256) must also be exactly the files the pattern matches now, so a run banked,
+removed, or changed after it was written makes it stale. A study artifact records the
+inputs it read itself (``provenance.inputs``), which are part of the compared content,
+and is derived again with the arguments its ``provenance.command`` records
+(:func:`recorded_arguments`), so an exploratory artifact made with, say, ``--n-boot 10``
+is derived again the same way. Only the options each item lists
+(:attr:`Derived.options`) are re-used, and an option that names an input only with its
+default path: so a recorded command that names another script, passes ``--root``, an
+input file other than the banked one (``--runs`` of a hand-made rows file, or
+``--replies`` of hand-made judge replies, both inside the repository; review BV1 and BV2
+of the B5 fix), an option of a partial or exploratory run that never writes the item's
+path, or a path that leads out of this repository is refused, and a derivation reads
+only the banked inputs. Every derivation runs with ``RECEIPTS_OFFLINE=1``, so the model
+client refuses any call. An item whose artifact is absent is skipped, except the smoke
+summary when its pattern matches a file.
 
 ``make freshness`` and ``make reproduce`` report what :func:`check` finds for every item,
 and gates G7, G8, and G9 run ``python -m receipts.report.derived <path>`` (:func:`main`)
