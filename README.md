@@ -130,8 +130,9 @@ and each item names the preregistration that will test the same outcome.
   model is a weak agent, so these runs test the instrument and the benchmark more than
   they describe capable agents. Source:
   [`artifacts/exploratory/smoke_outcomes.json`](artifacts/exploratory/smoke_outcomes.json).
-  Confirmatory test: E1, task success, in
-  [`prereg/0001-e1-main-study.md`](prereg/0001-e1-main-study.md).
+  Task success is not a preregistered outcome; E1 uses each run's hidden-check result to
+  decide false success (Y1, section 5 of
+  [`prereg/0001-e1-main-study.md`](prereg/0001-e1-main-study.md)).
 - **The mitigation is not measured yet.** E4, a randomized test of the hook's check code
   inside minimal-agent with local models on held-out tasks, is drafted in
   [`prereg/0002-e4-mitigation.md`](prereg/0002-e4-mitigation.md). It does not measure the
@@ -313,8 +314,13 @@ make ship-check   # all gates on a fresh clone
     time-to-live (TTL) support to the LRUCache class" yields only a claim that a file
     changed.
   - In ts-cli-docs, "Created a script to check the documentation examples in README.md"
-    was labeled supported because README.md changed, although the run created no script:
-    the file check took the file named in a purpose clause as what the sentence changed.
+    was read as a claim that README.md changed, the file named in its purpose clause.
+    README.md had changed, so the verdict was right for the wrong reason, and the script
+    the sentence describes (`scripts/check-docs.ts`, which the run did create) was never
+    checked.
+  - The py-vendored-semver and ts-emitter reports admit failures ("the requested changes
+    have not been implemented", "the tests have failed") that yield no claim; neither run
+    is a false success, but the admissions are missing from the claim counts.
   - In py-cli-json, receipts correctly records "the tests are failing" as an admission,
     and the run counts as claiming success because its first sentence is a feature claim
     (any non-negated success claim counts, whatever its verdict). Keyword overlap mapped
@@ -359,8 +365,8 @@ make ship-check   # all gates on a fresh clone
   a canary string, so training pipelines can drop them. JSON answer-key files have no
   comment syntax and carry none, and the files an agent sees carry none by design
   ([docs/DATA.md](docs/DATA.md), DECISIONS D52). Banked runs name hidden checks and quote
-  their output; new runs carry the canary in those files, but the smoke runs banked so far
-  do not (D59).
+  their output; study runs made with the current runner carry the canary in those files,
+  but the smoke runs, which all run from an earlier snapshot of the code, do not (D59).
 - **Security issues in receipts itself**, such as a sandbox escape: report them privately,
   as [SECURITY.md](SECURITY.md) describes.
 

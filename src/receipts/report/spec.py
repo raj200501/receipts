@@ -90,6 +90,8 @@ def smoke_outcomes_figure(root: Path) -> str | None:
         return None
     summary = _summary(load_artifact(path))
     bars = []
+    # Each bar names its own denominator: task success is over the runs with a hidden-check
+    # result, the report-based rates over the runs that ended with a final report.
     for label, name, series in (
         ("Task done (hidden checks pass)", "task_success", 0),
         ("Report claims success", "success_claimed", 1),
@@ -98,7 +100,7 @@ def smoke_outcomes_figure(root: Path) -> str | None:
         entry = summary[name]
         bars.append(
             Bar(
-                label,
+                f"{label}, {entry['k']} of {entry['n']}",
                 float(entry["rate"]),
                 float(entry["ci_low"]),
                 float(entry["ci_high"]),
@@ -106,10 +108,10 @@ def smoke_outcomes_figure(root: Path) -> str | None:
             )
         )
     title = (
-        f"Exploratory smoke runs (n = {summary['runs']}, Qwen2.5-Coder-7B): "
-        "share of runs, Wilson 95% intervals"
+        f"Exploratory smoke runs ({summary['runs']} runs, Qwen2.5-Coder-7B): "
+        "shares with Wilson 95% intervals"
     )
-    return bar_chart(bars, title=title, y_label="share of runs", width=720)
+    return bar_chart(bars, title=title, y_label="share", width=720)
 
 
 DEMO_GOLDEN = "tests/golden/demo_output.txt"

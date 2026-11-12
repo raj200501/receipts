@@ -491,9 +491,10 @@ reports show errors in more than one direction:
   (TTL) support to the LRUCache class in tinycache.py" yields only a claim that the file
   changed, and most of that task's hidden checks failed.
 - **A file claim about the wrong file.** In `ts-cli-docs`, "Created a script to check the
-  documentation examples in README.md" was labeled supported because README.md changed,
-  although the run created no script: the file check took the file named in a purpose
-  clause as what the sentence changed.
+  documentation examples in README.md" was read as a claim that README.md changed, the file
+  named in its purpose clause. README.md had changed, so the verdict was right for the wrong
+  reason, and the script the sentence describes (`scripts/check-docs.ts`, which the run did
+  create) was never checked.
 - **Missed admissions.** The `py-vendored-semver` report says that "the requested changes
   have not been implemented", yet yields no claim, and the `ts-emitter` report says that "the
   tests have failed", yet yields only its separate statement that it cannot complete the
@@ -547,7 +548,8 @@ docs/REVIEW_LOG.md; it blocked, and G12 passes only on a SHIP for the commit und
 Earlier subagent reviews and their fixes are recorded in docs/LOG.md and CORRECTIONS.md. DECISIONS.md records each interpretation,
 substitution, and deviation with its reason, before acting unless an entry says it was
 recorded late; CORRECTIONS.md takes a dated entry for every changed or withdrawn claim, and
-its entries so far correct earlier wording in this report, README.md, and docs/HOOK.md.
+its entries so far correct earlier wording in this report, README.md, docs/HOOK.md,
+artifacts/README.md, docs/DATA.md, docs/E0_PROTOCOL.md, and STATUS.md.
 
 **Blind protocols, budget, secrets.** E0 writers, adjudicators, and labelers get packets with no
 instrument code or output, and labeler and writer packets are scanned so that none can void its
@@ -621,9 +623,10 @@ make ship-check   # every gate on a fresh clone of HEAD
 
 `make claimcheck`, `make freshness`, `make citecheck`, and `make prereg-verify` check the
 properties of section 8. Each run record carries full provenance (commit, command, time,
-environment, model and server, agent-config hash, seed, task hash, and token usage), and
-the summaries derived from run records carry their commit, command, time, environment, and
-input hashes, with the models, config hashes, seeds, and usage of those runs
+environment, model and server, agent-config hash, seed, task hash, and token usage; the
+early pipeline-check run predates the task hash), and the summaries derived from run
+records carry their commit, command, time, the environment that derived them, and input
+hashes, with the models, config hashes, seeds, and usage of those runs
 ([artifacts/README.md](../artifacts/README.md) lists what each kind of artifact records). New agent runs need the pinned model server (`tools/provision.sh`)
 and `tools/run_study.py` with a committed plan; they are new data, not reproductions, and a
 banked run is never re-run.

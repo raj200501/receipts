@@ -6,7 +6,7 @@
   "files": {
     "artifacts/report/numbers.json": "19a9398d168e4c6555e886b8226e15dd27682d90a6ed801172fcc7d2c70120a2",
     "docs/figures/demo_report_card.svg": "8a65752fe5df2766080967f4fa519433629a0eca103d2d69f4788c4b87916010",
-    "docs/figures/smoke_outcomes.svg": "17d2634a03db667c7e9c5fdc495c0b0bf33502aefa5109f08abf071e06996c07"
+    "docs/figures/smoke_outcomes.svg": "e474a6897a5531042d98d70c330fcacb7e973a17034af2aeddf77b66c4de55ad"
   },
   "numbers": 35,
   "schema": "receipts.report-manifest/1"

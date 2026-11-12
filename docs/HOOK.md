@@ -12,7 +12,8 @@ It has two parts:
   edit go into an append-only, hash-chained ledger file. For an edit the ledger holds the
   tool's input (as for every tool call, so a Write's new content is in it) and hashes of the
   file before and after; the recorder also keeps a copy of the file as it was before the
-  edit in its state directory, outside the workspace, until the edit's result arrives.
+  edit in its state directory, outside the workspace, and removes it once a successful
+  edit is recorded (after a failed edit the copy stays there).
 - **Stop hook**: when Claude finishes, receipts extracts the atomic claims from its final
   message (`last_assistant_message`), checks each against the ledger, and, if any is
   contradicted, returns `{"decision": "block", "reason": ...}` listing those claims and

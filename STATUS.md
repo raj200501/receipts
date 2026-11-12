@@ -49,8 +49,8 @@ review. CAP_SHARE stays 0.2.
 - **Review of e4230cc: REVIEW: BLOCK** (banked in 2cf2cef). Its documentation findings (B4,
   N1, N3, N7, N9 to N16) are fixed in e8ee5de, with CORRECTIONS entries. B1 and N4 are
   fixed next (D56): `make freshness` and `make reproduce` re-derive the smoke summary from
-  the banked run records, and the summary carries the models, config hashes, seeds,
-  environment, and usage of its runs. B3, N5, and N16 are fixed after that (D58): G8
+  the banked run records, and the summary carries the models, config hashes, seeds, and
+  usage of its runs, with the environment that derived it. B3, N5, and N16 are fixed after that (D58): G8
   counts E2 and E3 as reported only when their REPORT.md sections bind numbers from their
   artifacts and name every judge; G5 re-derives every ledger-completeness row on the
   clone; G13 requires each README key result to link its artifact and preregistration.
@@ -106,8 +106,8 @@ review. CAP_SHARE stays 0.2.
 cash_usd = 0. cap_share 0.2 (D20). Claude children: 0 agent runs, 0 single calls, 0
 review runs (billing guard, D4). Local-model calls are logged in
 `artifacts/usage/ledger.jsonl` (`make budget` summarizes them). Pipeline work uses Claude
-Code subagents in this session (plan usage; bulk roles on Sonnet). No model calls were
-made in this push.
+Code subagents in this session (plan usage; bulk roles on Sonnet). The smoke study's
+local-model calls are in the usage ledger; no Claude model has been a study subject.
 
 ## Needs Raj
 

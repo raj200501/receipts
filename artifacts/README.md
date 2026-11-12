@@ -15,9 +15,10 @@ file under `artifacts/`. What each kind of artifact records about how it was mad
 - **Environment and benchmark checks** (`env/`, `bench/reference_validation.json`):
   git SHA, command, time, and environment, plus the model and server for a
   throughput measurement.
-- **Generated indexes** (`report/numbers.json`, `report/manifest.json`): each value
-  or file with its source artifact and that artifact's SHA-256; they are rebuilt by
-  `make report` and checked by `make freshness` and `make reproduce`.
+- **Generated indexes**: `report/numbers.json` records each value with its source
+  artifact and that artifact's SHA-256 (rebuilt by `make report`, checked by `make
+  freshness` and `make reproduce`); `report/manifest.json` lists each generated file
+  with its own SHA-256 (checked by `make reproduce`).
 - **Records kept by their own tools**: `citecheck.json` (each reference's retrieval
   date, final URL, page title, and content hash) and `review/latest.json` (the
   reviewed commit, the reviewer, and the time).

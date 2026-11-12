@@ -5,6 +5,28 @@ docs/BUILD_BRIEF.md section 9), newest first.
 
 ## 2026-11-12
 
+- **README.md and docs/REPORT.md, the ts-cli-docs file claim**: they said the run "created no
+  script". It did: the ledger records `scripts/check-docs.ts` created and package.json
+  changed. The error is narrower: the claim was read as one about README.md, the file in
+  its purpose clause, which had changed, so its verdict was right for the wrong reason and
+  the script was never checked. Found by an adversarial check of the documents.
+- **README.md, the task-success result**: it named "E1, task success" as its confirmatory
+  test. Prereg 0001 has no task-success outcome; E1 uses each run's hidden-check result to
+  decide false success (Y1). The line now says so.
+- **README.md, the canary**: "the smoke runs banked so far do not" implied that later smoke
+  runs would carry the canary; none will, since all smoke runs use an earlier snapshot.
+- **The headline figure**: it called every bar a "share of runs" over all banked runs, but
+  the report-based bars are over the runs with a final report. Each bar now gives its own
+  count.
+- **artifacts/README.md, docs/HOOK.md, docs/DATA.md, docs/REPORT.md, STATUS.md**: the
+  manifest lists generated files with their own hashes, not source artifacts, and only
+  `make reproduce` checks it; the hook removes its before-copy only after a successful edit;
+  `run.json` holds no verdict evidence; the pipeline-check run record has no task hash; and
+  the smoke summary records the environment that derived it, not that of its runs (as the
+  2026-11-11 provenance entry below also said).
+- **README.md, the benchmark description** (changed in e8ee5de, review N9): "small,
+  realistic Python and TypeScript repositories" became "synthetic and written for the
+  benchmark to look like real projects", without an entry here until now.
 - **README.md and docs/REPORT.md, the report card and the revised extractor** (changed
   because the code changed back): the entry below describes a report card showing the
   bizdays completion sentence contradicted, and both documents said that a revised
