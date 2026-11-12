@@ -417,6 +417,15 @@ def another_run(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [*rows, dict(rows[0], run_id="e1-SYNTHETIC-not-banked")]
 
 
+def spoofed_trees(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    # Other instrument trees, with a top-level key spelled like the flattened field and
+    # holding the true trees, which once overwrote the nested field in the comparison.
+    true_trees = rows[0]["instrument"]["trees"]
+    rows[0]["instrument"]["trees"] = {p: "e" * 40 for p in rescore.INSTRUMENT_RECORD_PATHS}
+    rows[0]["instrument.trees"] = true_trees
+    return rows
+
+
 @pytest.mark.parametrize(
     ("edit", "found"),
     [
@@ -426,6 +435,7 @@ def another_run(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         pytest.param(flip_truth, "ground_truth_success", id="ground-truth"),
         pytest.param(flip_false_success, "false_success", id="false-success"),
         pytest.param(other_trees, "instrument.trees", id="instrument"),
+        pytest.param(spoofed_trees, "instrument.trees", id="a-key-spelled-like-a-nested-field"),
         pytest.param(
             lambda rows: [], "1 banked run(s) have no row", id="a-banked-run-without-a-row"
         ),

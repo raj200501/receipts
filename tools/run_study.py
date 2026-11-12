@@ -80,9 +80,10 @@ def git_sha() -> str:
 
 
 def dirty_files() -> list[str]:
-    """Tracked files with uncommitted changes (recorded per run; confirmatory runs need none)."""
+    """Files with uncommitted changes, untracked files included (recorded per run;
+    confirmatory runs need none): an untracked module under src/ can change what runs."""
     out = subprocess.run(
-        ["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no"],
+        ["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=all"],
         capture_output=True,
         text=True,
         check=True,

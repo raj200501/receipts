@@ -280,8 +280,11 @@ def comparable(row: Mapping[str, Any]) -> dict[str, str]:
     out: dict[str, str] = {}
     for key, value in row.items():
         if key == "instrument" and isinstance(value, Mapping):
+            # Kept apart from the row's own keys with a prefix that no row key can carry
+            # (a key may contain a dot, never a NUL), so a top-level key spelled like a
+            # flattened field cannot overwrite it in the comparison.
             out.update(
-                (f"instrument.{name}", json.dumps(item, sort_keys=True))
+                (f"instrument\0{name}", json.dumps(item, sort_keys=True))
                 for name, item in value.items()
                 if name != "commit"
             )
@@ -335,7 +338,9 @@ def row_problems(path: Path, fresh: Sequence[Mapping[str, Any]], runs_dir: Path)
         if fields:
             differing[run_id] = fields
     if differing:
-        named = sorted({field for fields in differing.values() for field in fields})
+        named = sorted(
+            {field.replace("\0", ".") for fields in differing.values() for field in fields}
+        )
         problems.append(
             f"{len(differing)} row(s) differ from the rows banking writes now in "
             f"{', '.join(named)}: {_listed(sorted(differing))}"

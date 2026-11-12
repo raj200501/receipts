@@ -825,3 +825,11 @@ attempt, in a later commit would leave both the rows and the missing-run count. 
 now refuse any committed file under `artifacts/studies/<study>/runs/` that a later commit
 modified or deleted (git log with renames off, so a rename is a deletion). A run is banked
 once and never changed; a run that must be redone is banked as a new run, with its own id.
+
+**D63. Two more gate inputs are made unforgeable.** Recorded 2026-11-12, before the change
+is committed (adversarial check of D57). (1) `tools/bank_study.py --check` compared rows
+after flattening the instrument record into keys such as `instrument.trees`, so a row with
+a top-level key spelled that way could overwrite the nested field; the flattened keys now
+use a separator no row key can contain. (2) A working-tree run recorded only tracked files
+with uncommitted changes, so an untracked module under `src/` could change what ran while
+G9 accepted the run as committed code; the run record now lists untracked files too.

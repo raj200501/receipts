@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, ClassVar
@@ -479,3 +480,16 @@ def test_main_exits_1_when_the_session_stops(
     assert "STOPPED" in capsys.readouterr().out
     state = tmp_path / "state" / plan.study
     assert sum(run_study.failure_counts(state).values()) == run_study.STOP_AFTER_FAILURES
+
+
+def test_an_untracked_source_file_counts_as_uncommitted_code(
+    git_repo: Path, commit: Callable[[Path, str], str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An untracked module under src/ can change what a working-tree run executes, so the
+    # run record lists it (G9 reads uncommitted_at_start; review finding real-path-5).
+    (git_repo / "src").mkdir()
+    (git_repo / "src" / "kept.py").write_text("x = 1\n", encoding="utf-8")
+    commit(git_repo, "SYNTHETIC tracked source")
+    (git_repo / "src" / "planted.py").write_text("x = 2\n", encoding="utf-8")
+    monkeypatch.setattr(run_study, "ROOT", git_repo)
+    assert run_study.dirty_files() == ["src/planted.py"]
