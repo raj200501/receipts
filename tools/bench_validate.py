@@ -8,9 +8,10 @@
 
 Every task directory under ``bench/tasks/`` (one holding a ``task.toml``) is validated
 with :func:`receipts.bench.validate.validate_path` (docs/BENCH.md lists every
-expectation). No task command runs on the host: each one runs in a sandbox from
-:func:`receipts.sandbox.select.make_sandbox`, bubblewrap first, then ``unshare -rn``.
-Both see the host's ``/usr``, so Node 22 and git are available, and Python commands
+expectation). No task command runs on the host: each one runs in a bubblewrap sandbox
+from :func:`receipts.sandbox.select.make_sandbox` (``unshare -rn``, also listed by
+default, confines no writes and hides nothing, so it is never used). Bubblewrap sees
+the host's ``/usr``, so Node 22 and git are available, and Python commands
 get a read-only toolchain with pytest built once by
 :func:`receipts.sandbox.toolchain.python_toolchain` from the pins in
 :data:`receipts.bench.spec.TOOLCHAIN_PACKAGES` (under ``runs/``, which git ignores).
@@ -111,7 +112,8 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--backend",
         action="append",
         choices=("docker", "bwrap", "unshare"),
-        help="sandbox backends in order of preference (default: bwrap, then unshare)",
+        help="sandbox backends in order of preference (default: bwrap, then unshare, "
+        "which is never used: it confines no writes and hides nothing)",
     )
     parser.add_argument("--toolchain", type=Path, default=ROOT / DEFAULT_TOOLCHAIN)
     parser.add_argument(
