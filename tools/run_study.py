@@ -19,6 +19,11 @@ record says how it was hidden (``provenance.sandbox``). A session that imports a
 snapshot (``runs/code/<sha>/src``) starts only when the snapshot's files are ``src/`` of
 the commit it names (:func:`snapshot_differences`).
 
+Each model server gives every one of its ``--parallel`` slots the pinned model's context
+window (``LocalModel.n_ctx``) unless ``--n-ctx`` asks for another one
+(:func:`served_model`). The run record's ``provenance.model_server`` holds the window per
+slot, the slots, and whether the window is the pinned one (:func:`server_record`).
+
 Infrastructure failures (prereg/0001-e1-main-study.md section 10, prereg 0002 section
 6): an exception raised in ``execute_run`` (a model server, sandbox, or workspace error,
 never agent behavior) leaves the run unbanked, and the failed attempt is appended to
@@ -56,7 +61,7 @@ import threading
 import traceback
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -64,7 +69,7 @@ from receipts.bench.hashing import tree_sha256
 from receipts.bench.spec import TOOLCHAIN_PACKAGES, TOOLCHAIN_PYTHON
 from receipts.client.backends import LocalOpenAIBackend
 from receipts.client.models import LOCAL_MODELS
-from receipts.client.server import LocalServer
+from receipts.client.server import LocalModel, LocalServer
 from receipts.client.wrapper import ModelClient
 from receipts.sandbox.api import HidesPaths, Sandbox, SandboxPolicy, SandboxUnavailableError
 from receipts.sandbox.bwrap import default_hidden_paths, project_root
@@ -459,6 +464,35 @@ def preflight(study: str) -> dict[str, Any]:
         shutil.rmtree(probe, ignore_errors=True)
 
 
+def served_model(pinned: LocalModel, n_ctx: int | None) -> LocalModel:
+    """The model a session serves: ``pinned`` itself, or a copy whose context window per
+    slot is ``n_ctx`` tokens (``--n-ctx``; DECISIONS D71). ``pinned`` is unchanged.
+
+    Raises:
+        ValueError: ``n_ctx`` is not a positive number of tokens.
+    """
+    if n_ctx is None or n_ctx == pinned.n_ctx:
+        return pinned
+    if n_ctx < 1:
+        raise ValueError(f"a context window must be a positive number of tokens, not {n_ctx}")
+    return replace(pinned, n_ctx=n_ctx)
+
+
+def server_record(server: LocalServer) -> dict[str, Any]:
+    """The model server's provenance for a run record (``provenance.model_server``).
+
+    It is :meth:`LocalServer.provenance` (with the window per slot and the slots) plus
+    the pinned window per slot of the served model (``n_ctx_per_slot_default``, from
+    :data:`LOCAL_MODELS`) and whether the server served it
+    (``n_ctx_per_slot_is_default``), so a run made with another window says so.
+    """
+    record = dict(server.provenance())
+    pinned = LOCAL_MODELS[server.model.name].n_ctx
+    record["n_ctx_per_slot_default"] = pinned
+    record["n_ctx_per_slot_is_default"] = server.model.n_ctx == pinned
+    return record
+
+
 def one_run(
     plan: Plan,
     spec: RunSpec,
@@ -505,7 +539,7 @@ def one_run(
             sandbox_factory=lambda work: study_sandbox(work, policy),
             sandbox_check=checkout_hiding,
             git_sha=sha,
-            server_provenance=server.provenance(),
+            server_provenance=server_record(server),
             extra_provenance=extra,
         )
     except CheckoutExposedError:
@@ -636,9 +670,11 @@ def run_model(
     sha: str,
     code: Mapping[str, Any],
 ) -> SessionResult:
-    """Serve one model and run its share of the plan (:func:`run_session`)."""
+    """Serve one model, with the window per slot that ``--n-ctx`` asks for (the pinned
+    one by default, :func:`served_model`), and run its share of the plan
+    (:func:`run_session`)."""
     server = LocalServer(
-        LOCAL_MODELS[model_name],
+        served_model(LOCAL_MODELS[model_name], args.n_ctx),
         port=args.port,
         threads=args.threads,
         log_path=state / f"server-{model_name}.log",
@@ -666,12 +702,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--engine", choices=("llama.cpp", "llama-cpp-python"), default="llama.cpp")
     parser.add_argument("--parallel", type=int, default=1, help="concurrent runs per model")
     parser.add_argument(
+        "--n-ctx",
+        type=int,
+        default=None,
+        metavar="TOKENS",
+        help="context window per server slot (default: the pinned model's); another window "
+        "serves only runs whose plan amendment requires it (DECISIONS D71)",
+    )
+    parser.add_argument(
         "--request-timeout",
         type=float,
         default=3600.0,
         help="seconds one model call may take (a cold prompt on a shared CPU can take minutes)",
     )
     args = parser.parse_args(argv)
+    if args.n_ctx is not None and args.n_ctx < 1:
+        parser.error(f"--n-ctx must be a positive number of tokens, not {args.n_ctx}")
     plan = load_plan(args.plan)
     artifacts = args.plan.parent / "runs"
     state = RUNS / plan.study

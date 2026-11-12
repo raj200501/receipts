@@ -14,6 +14,7 @@ written outside tmp_path.
 
 from __future__ import annotations
 
+import dataclasses
 import io
 import json
 import subprocess
@@ -28,6 +29,7 @@ import pytest
 
 import receipts
 import run_study
+from receipts.client.server import LocalModel, LocalServer
 from receipts.sandbox.bwrap import probe_bwrap
 from receipts.study.plan import Plan, local_arm, write_plan
 from receipts.study.spec import RunSpec
@@ -35,6 +37,13 @@ from receipts.study.spec import RunSpec
 needs_bwrap = pytest.mark.skipif(not probe_bwrap().ok, reason="bubblewrap does not work here")
 
 SYNTHETIC_MODELS = ("synthetic-model-a", "synthetic-model-b")
+PINNED_N_CTX = 16384
+
+
+def synthetic_model(name: str = SYNTHETIC_MODELS[0], n_ctx: int = PINNED_N_CTX) -> LocalModel:
+    """A SYNTHETIC pinned model (no file behind it; nothing here serves it)."""
+    path = Path("/nonexistent/synthetic.gguf")
+    return LocalModel(name, "fam", path, "0" * 64, "SYNTHETIC", n_ctx)
 
 
 def synthetic_plan(n_runs: int = 4, study: str = "synthetic-study") -> Plan:
@@ -293,21 +302,25 @@ def test_parallel_sessions_count_each_run_separately(tmp_path: Path) -> None:
 
 @pytest.fixture
 def no_setup(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Replace task loading, the toolchain, and the tree hash with SYNTHETIC stand-ins."""
+    """Replace task loading, the toolchain, the tree hash, and the pinned models with
+    SYNTHETIC stand-ins."""
     task = SimpleNamespace(command_timeout_s=60.0, memory_mb=512)
     monkeypatch.setattr(run_study, "load_run_task", lambda path: task)
     monkeypatch.setattr(run_study, "toolchain", lambda: SimpleNamespace(installed=("pkg==1",)))
     monkeypatch.setattr(run_study, "with_toolchain", lambda policy, chain: policy)
     monkeypatch.setattr(run_study, "tree_sha256", lambda path: "f" * 64)
+    models = {name: synthetic_model(name) for name in SYNTHETIC_MODELS}
+    monkeypatch.setattr(run_study, "LOCAL_MODELS", models)
 
 
-def call_one_run(spec: RunSpec) -> Any:
-    """one_run with stand-in client and server; each test patches execute_run."""
-    server = SimpleNamespace(provenance=lambda: {"model": "synthetic"})
+def call_one_run(spec: RunSpec, plan: Plan | None = None, n_ctx: int | None = None) -> Any:
+    """one_run with stand-in client and server (serving the model of the run's arm with
+    window ``n_ctx``, the pinned one by default); each test patches execute_run."""
+    plan = plan or synthetic_plan()
+    pinned = run_study.LOCAL_MODELS[plan.arm(spec.config_id).model]
+    server = FakeServer(run_study.served_model(pinned, n_ctx), parallel=1)
     code = {"code": "working tree"}
-    return run_study.one_run(
-        synthetic_plan(), spec, object(), Path("/nonexistent"), "a" * 40, server, code
-    )
+    return run_study.one_run(plan, spec, object(), Path("/nonexistent"), "a" * 40, server, code)
 
 
 def raise_in_execute_run(*args: Any, **kwargs: Any) -> Any:
@@ -353,6 +366,69 @@ def test_one_run_passes_the_planned_spec_and_provenance(
     assert seen["git_sha"] == "a" * 40
     assert seen["extra_provenance"]["task_tree_sha256"] == "f" * 64
     assert seen["extra_provenance"]["code"] == "working tree"
+    # The run record's model server says which window per slot it served, and that it
+    # is the pinned one (DECISIONS D71).
+    server = seen["server_provenance"]
+    assert server["n_ctx_per_slot"] == server["n_ctx_per_slot_default"] == PINNED_N_CTX
+    assert server["n_ctx_per_slot_is_default"] is True
+
+
+# The server's context window per slot (DECISIONS D71) -------------------------------------
+
+
+def test_served_model_is_the_pinned_one_unless_another_window_is_asked() -> None:
+    pinned = synthetic_model()
+    assert run_study.served_model(pinned, None) is pinned
+    assert run_study.served_model(pinned, PINNED_N_CTX) is pinned
+    raised = run_study.served_model(pinned, 32768)
+    assert raised == dataclasses.replace(pinned, n_ctx=32768) and raised.n_ctx == 32768
+    assert pinned.n_ctx == PINNED_N_CTX  # the pinned model itself is unchanged
+    with pytest.raises(ValueError, match="positive"):
+        run_study.served_model(pinned, 0)
+
+
+@pytest.mark.parametrize(("n_ctx", "pinned"), [(None, True), (32768, False), (8192, False)])
+def test_the_server_record_says_whether_the_window_is_the_pinned_one(
+    monkeypatch: pytest.MonkeyPatch, n_ctx: int | None, pinned: bool
+) -> None:
+    model = synthetic_model()
+    monkeypatch.setattr(run_study, "LOCAL_MODELS", {model.name: model})
+    server = LocalServer(run_study.served_model(model, n_ctx), engine="llama.cpp", parallel=1)
+    record = run_study.server_record(server)
+    served = n_ctx or PINNED_N_CTX
+    assert record["n_ctx_per_slot"] == served and record["ctx_size"] == served
+    assert record["n_ctx_per_slot_default"] == PINNED_N_CTX
+    assert record["n_ctx_per_slot_is_default"] is pinned
+    assert record["server_command"] == list(server.command())
+    command = record["server_command"]
+    assert command[command.index("--ctx-size") + 1] == str(served)
+
+
+def test_run_model_serves_the_window_the_session_asks_for(
+    tmp_path: Path, no_models: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = synthetic_plan(n_runs=1)
+    monkeypatch.setattr(run_study, "run_session", lambda runs, attempt, state, **kw: None)
+    for n_ctx in (None, 32768):
+        args = SimpleNamespace(
+            port=1, threads=1, engine="llama.cpp", parallel=1, request_timeout=1.0, n_ctx=n_ctx
+        )
+        run_study.run_model(plan, SYNTHETIC_MODELS[0], [], args, tmp_path, tmp_path, "a" * 40, {})
+    assert FakeServer.served == [
+        (SYNTHETIC_MODELS[0], PINNED_N_CTX, 1),
+        (SYNTHETIC_MODELS[0], 32768, 1),
+    ]
+    assert run_study.LOCAL_MODELS[SYNTHETIC_MODELS[0]].n_ctx == PINNED_N_CTX
+
+
+def test_main_refuses_a_window_that_is_not_a_positive_number(
+    tmp_path: Path, no_models: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = plan_file(tmp_path, synthetic_plan(n_runs=1))
+    with pytest.raises(SystemExit):
+        run_study.main(["--plan", str(path), "--n-ctx", "0"])
+    assert "--n-ctx must be a positive number of tokens" in capsys.readouterr().err
+    assert FakeServer.started == []
 
 
 # main: what it reports, and what it never re-runs ----------------------------------------
@@ -401,31 +477,40 @@ def test_main_refuses_a_failure_log_it_cannot_count(
 
 
 class FakeServer:
-    """A SYNTHETIC model server: records which model it serves and when it runs."""
+    """A SYNTHETIC model server: records which model it serves, with which window per
+    slot and how many slots, and when it runs."""
 
     started: ClassVar[list[str]] = []
+    served: ClassVar[list[tuple[str, int, int]]] = []
 
-    def __init__(self, model: Any, **kwargs: Any) -> None:
+    def __init__(self, model: LocalModel, **kwargs: Any) -> None:
         self.model = model
+        self.parallel = int(kwargs.get("parallel", 1))
         self.base_url = "http://127.0.0.1:1/v1"
 
     def __enter__(self) -> FakeServer:
         FakeServer.started.append(self.model.name)
+        FakeServer.served.append((self.model.name, self.model.n_ctx, self.parallel))
         return self
 
     def __exit__(self, *exc: object) -> None:
         return None
 
     def provenance(self) -> dict[str, Any]:
-        return {"model": self.model.name}
+        return {
+            "model": self.model.name,
+            "parallel_slots": self.parallel,
+            "n_ctx_per_slot": self.model.n_ctx,
+        }
 
 
 @pytest.fixture
 def no_models(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Stand-ins for the model server, backend, client, code state, and the sandbox
-    preflight (all SYNTHETIC)."""
+    """Stand-ins for the pinned models, the model server, backend, client, code state,
+    and the sandbox preflight (all SYNTHETIC)."""
     FakeServer.started = []
-    models = {name: SimpleNamespace(name=name) for name in SYNTHETIC_MODELS}
+    FakeServer.served = []
+    models = {name: synthetic_model(name) for name in SYNTHETIC_MODELS}
     monkeypatch.setattr(run_study, "RUNS", tmp_path / "state")
     monkeypatch.setattr(run_study, "LOCAL_MODELS", models)
     monkeypatch.setattr(run_study, "LocalServer", FakeServer)
