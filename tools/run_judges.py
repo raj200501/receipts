@@ -53,7 +53,9 @@ and scores them again. A request without a banked reply, a banked reply that no 
 uses, or a reply recorded for another run stops it. A re-score writes only ``--out``
 (under the same rules as a run), never the replies file, the response cache, the pid
 file, or the failure log, so ``make freshness`` and gate G8 can re-derive
-``artifacts/e3/judges.json`` in a fresh clone. Exit status: 0 done; 1 invalid input, a
+``artifacts/e3/judges.json`` in a fresh clone; and a re-score of replies other than the
+banked ``artifacts/e3/replies.jsonl`` never writes ``artifacts/e3/judges.json``, which is
+scored from them (review BV2 of the B5 fix). Exit status: 0 done; 1 invalid input, a
 refused confirmatory artifact, a failed call, or replies that do not serve the re-score;
 2 a usage problem (unknown or repeated judges, an output this run may not write, no
 sample size, a bad K, ``--rescore`` with ``--dry-run``, ``--replies`` without
@@ -635,6 +637,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if problem is None and args.rescore and out.resolve() == source.resolve():
             problem = f"--out {_rel(out, root)} is the replies file the re-score reads"
+        if (
+            problem is None
+            and args.rescore
+            and out.resolve() == (root / OUT).resolve()
+            and source.resolve() != (root / REPLIES).resolve()
+        ):
+            problem = (
+                f"a re-score of {_rel(source, root)} never writes {OUT}, which is scored from "
+                f"the banked replies {REPLIES}; pass --out with another path"
+            )
         if problem is not None:
             print(f"E3: {problem}", file=sys.stderr)
             return 2

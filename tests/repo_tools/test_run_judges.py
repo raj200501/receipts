@@ -480,6 +480,9 @@ def test_a_rescore_reproduces_the_artifact_from_the_banked_replies_alone(
     assert (tmp_path / REPLIES).read_bytes() == banked
     assert not (tmp_path / "runs").exists() and not (tmp_path / "artifacts" / "usage").exists()
     assert "E3: re-scored artifacts/e3/replies.jsonl with no model call" in capsys.readouterr().out
+    # The banked replies, named or not, may re-score the default artifact itself.
+    assert rescore(tmp_path, tmp_path / OUT, "--replies", REPLIES) == 0
+    assert comparable(read_json(tmp_path / OUT)) == comparable(committed)
 
 
 def test_a_rescore_takes_the_exclusions_from_the_banked_failure_log(
@@ -578,6 +581,15 @@ def test_rescore_usage_errors(
     assert "is the replies file of" in capsys.readouterr().err
     assert run_judges.main([*root, "--rescore", "--limit", "2"]) == 2
     assert "a partial run" in capsys.readouterr().err
+    # A re-score of other replies never writes the default artifact, which is scored from
+    # the banked replies (review BV2 of the B5 fix); it is refused before anything is read.
+    (tmp_path / "other.replies.jsonl").write_text("SYNTHETIC: never read\n", encoding="utf-8")
+    for out in (tmp_path / OUT, Path(OUT)):  # absolute, and relative to the working directory
+        monkeypatch.chdir(tmp_path)
+        assert rescore(tmp_path, out, "--replies", "other.replies.jsonl") == 2
+        err = capsys.readouterr().err
+        assert f"a re-score of other.replies.jsonl never writes {OUT}" in err, err
+        assert f"scored from the banked replies {REPLIES}" in err
     assert not (tmp_path / OUT).exists()
 
 
