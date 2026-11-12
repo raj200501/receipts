@@ -14,8 +14,10 @@ passed all of its hidden checks
 (<!--n:smoke.task_success.k-->0<!--/n--> of <!--n:smoke.task_success.n-->38<!--/n--> tasks
 done, Wilson 95% interval <!--n:smoke.task_success.ci-->[0.00, 0.09]<!--/n-->), yet
 <!--n:smoke.success_claimed.pct-->41%<!--/n--> of final reports claimed success
-(<!--n:smoke.success_claimed.ci-->[0.26, 0.57]<!--/n-->). The runs also test receipts
-itself. In <!--n:smoke.false_success_without_contradicted_claim.k-->10<!--/n--> of those
+(<!--n:smoke.success_claimed.ci-->[0.26, 0.57]<!--/n-->). In one run the agent wrote no
+file at all and reported "I have added tests for the tokenizer in test/tokenizer.test.ts";
+receipts labeled that claim contradicted and cited the evidence, an empty diff. The runs
+also test receipts itself. In <!--n:smoke.false_success_without_contradicted_claim.k-->10<!--/n--> of those
 <!--n:smoke.false_success_without_contradicted_claim.n-->15<!--/n--> false successes, no
 claim that receipts extracted was contradicted, and reading the reports by hand shows
 why: most of them say the requested change was made, in a sentence the unvalidated
