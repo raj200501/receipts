@@ -15,9 +15,14 @@ inputs. :data:`DERIVED` lists every one a gate or a bound number reads:
 - ``artifacts/e4/results.json``: ``tools/analyze_e4.py``, the E4 analysis (gate G9).
 
 :func:`check` runs each script again into a temporary file and requires the fresh
-artifact to equal the committed one in everything except when, where, and how it was
-made (``provenance`` keys :data:`VOLATILE`), compared as JSON values (``1`` is not
-``true`` and not ``1.0``), so no value can be typed in. The smoke summary has an input
+artifact to agree with the committed one in everything except when, where, and how it
+was made (``provenance`` keys :data:`VOLATILE`), compared as JSON values (``1`` is not
+``true`` and not ``1.0``) by :func:`agree`: every string, boolean, null, and integer
+exactly, a float within :data:`REL_TOL` or :data:`ABS_TOL` (another BLAS kernel, numpy,
+or scipy moves the last digits of a mixed-model fit; review F1 of the B5 fix), and an
+optimizer's iteration count (:data:`DIAGNOSTIC`) only as a count. So no count, decision,
+class, or label can be typed in, and no other value beyond its fifth significant digit.
+The smoke summary has an input
 pattern: the inputs its provenance records (path to SHA-256) must also be exactly the
 files the pattern matches now, so a run banked, removed, or changed after it was written
 makes it stale. A study artifact records the inputs it read itself (``provenance.inputs``),
@@ -47,6 +52,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -193,8 +199,26 @@ DERIVED: tuple[Derived, ...] = (
     ),
 )
 #: Provenance keys that record when, where, and how an artifact was made, not what it
-#: holds: a derivation on another commit, Python, or machine gives the same content.
+#: holds. Everything else must agree with a fresh derivation (:func:`agree`), floats
+#: within :data:`REL_TOL` or :data:`ABS_TOL`: another commit, Python, or machine gives the
+#: same content, but not the same last digits of a model fit (review F1 of the B5 fix).
 VOLATILE: frozenset[str] = frozenset({"git_sha", "command", "created", "environment"})
+#: How closely a float of a fresh derivation must agree with the committed one, relative
+#: and absolute (``math.isclose``). A mixed-model fit or bootstrap moves in its last digits
+#: with the BLAS kernel, numpy's code paths, and the numpy and scipy versions (uv.lock
+#: resolves other ones for Python 3.12): its Newton refinement stops once the likelihood
+#: no longer improves in floating point. On the SYNTHETIC E1 and E4 studies of the tests,
+#: under OpenBLAS's Haswell kernel, numpy without its AVX-512 paths, and Python 3.12, the
+#: floats moved by at most 3.1e-7, and the worst used 1.9% of this tolerance (6.6e-7
+#: relative at a z of -0.047 used 66% of rel 1e-6 with abs 1e-9). A value typed in at
+#: the fifth significant digit or above still differs, and counts, decisions, and text
+#: must agree exactly.
+REL_TOL = 1e-5
+ABS_TOL = 1e-5
+#: Keys whose value says how an optimizer reached a result, not what the result is: a
+#: fit's iteration count moves by one under another kernel. Each must be a count in both
+#: artifacts; its value is not compared.
+DIAGNOSTIC: frozenset[str] = frozenset({"iterations"})
 #: The interpreter word a recorded command may begin with.
 _PYTHON = re.compile(r"python(?:3(?:\.\d+)?)?")
 #: The environment a derivation adds: the model client refuses every call.
@@ -221,24 +245,48 @@ def same(a: object, b: object) -> bool:
     return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
 
 
+def _is_count(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _close(a: object, b: object) -> bool:
+    """Two leaf values agree: floats within :data:`REL_TOL` or :data:`ABS_TOL` (a NaN
+    agrees only with a NaN), any other value only as the same JSON value (:func:`same`)."""
+    if type(a) is float and type(b) is float:
+        if math.isnan(a) or math.isnan(b):
+            return math.isnan(a) and math.isnan(b)
+        return math.isclose(a, b, rel_tol=REL_TOL, abs_tol=ABS_TOL)
+    return same(a, b)
+
+
 def _differing(a: object, b: object, at: str) -> Iterator[str]:
     if isinstance(a, Mapping) and isinstance(b, Mapping):
         for key in sorted(set(a) | set(b), key=str):
             sub = f"{at}.{key}" if at else str(key)
-            if key in a and key in b:
-                yield from _differing(a[key], b[key], sub)
-            else:
+            if key not in a or key not in b:
                 yield sub
+            elif key in DIAGNOSTIC and _is_count(a[key]) and _is_count(b[key]):
+                continue
+            else:
+                yield from _differing(a[key], b[key], sub)
     elif isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
         for index, (x, y) in enumerate(zip(a, b, strict=True)):
             yield from _differing(x, y, f"{at}.{index}" if at else str(index))
-    elif not same(a, b):
+    elif not _close(a, b):
         yield at or "the whole artifact"
 
 
+def agree(a: object, b: object) -> bool:
+    """Whether the JSON values ``a`` and ``b`` agree as a fresh derivation must agree with
+    the committed artifact: the same keys and list lengths, floats within
+    :data:`REL_TOL` or :data:`ABS_TOL`, every other value exactly as JSON (``1`` is not
+    ``1.0`` and not ``true``), and a :data:`DIAGNOSTIC` key a count in both."""
+    return next(_differing(a, b, ""), None) is None
+
+
 def differences(a: Mapping[str, Any], b: Mapping[str, Any], limit: int = 5) -> str:
-    """The dotted paths (list items by index) at which ``a`` and ``b`` differ as JSON
-    values, the first ``limit`` of them, comma-separated."""
+    """The dotted paths (list items by index) at which ``a`` and ``b`` do not agree
+    (:func:`agree`), the first ``limit`` of them, comma-separated."""
     paths = list(_differing(a, b, ""))
     shown = ", ".join(paths[:limit])
     return shown + (f", and {len(paths) - limit} more" if len(paths) > limit else "")
@@ -487,7 +535,7 @@ def check(root: Path, items: Sequence[Derived] = DERIVED, *, present: bool = Fal
         except DerivedError as exc:
             problems.append(f"{item.path}: {exc}")
             continue
-        if not same(comparable(fresh), comparable(committed)):
+        if not agree(comparable(fresh), comparable(committed)):
             problems.append(
                 f"{item.path}: differs from a fresh derivation by {item.script} "
                 f"({differences(comparable(fresh), comparable(committed))}); {item.remedy}"

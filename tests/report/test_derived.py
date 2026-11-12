@@ -28,9 +28,13 @@ import run_judges
 from receipts.evaluation import e3 as e3_judges
 from receipts.report import derived
 from receipts.report.derived import (
+    ABS_TOL,
     DERIVED,
+    DIAGNOSTIC,
+    REL_TOL,
     Derived,
     DerivedError,
+    agree,
     arguments,
     check,
     comparable,
@@ -175,6 +179,35 @@ def test_values_are_compared_as_json_values() -> None:
     assert differences({"a": [1, 2]}, {"a": [1]}) == "a"  # a list of another length
     many = {f"k{n}": n for n in range(7)}
     assert differences(many, {}) == "k0, k1, k2, k3, k4, and 2 more"
+
+
+def test_floats_agree_within_the_tolerance_and_every_other_value_exactly() -> None:
+    """Review F1 of the B5 fix: another BLAS kernel, numpy, or scipy moves the last digits
+    of a mixed-model fit (the values below are such pairs, measured on the SYNTHETIC E1
+    and E4 studies), so a float agrees within REL_TOL or ABS_TOL; a string, a boolean,
+    null, and an integer (a count) agree only exactly, and 1 is not 1.0."""
+    assert agree(0.3990620563557907, 0.3990620563557368)  # another kernel
+    assert agree(-5.443148281544655e-13, 6.022759074388995e-13)  # a sign flip at 1e-12
+    assert agree(-0.04747244321341861, -0.047472412012032034)  # Python 3.12, numpy 2.5
+    assert agree(-0.7254312571563394, -0.7254310647669295)
+    assert not agree(0.399, 0.3994)  # a value typed in at the fourth significant digit
+    assert not agree({"odds_ratio": 0.4}, {"odds_ratio": 0.8})
+    big = 148.0
+    assert agree(big, big * (1 + REL_TOL / 2)) and not agree(big, big * (1 + 2 * REL_TOL))
+    assert agree(0.0, ABS_TOL / 2) and not agree(0.0, 2 * ABS_TOL)
+    assert agree(float("nan"), float("nan")) and not agree(float("nan"), 1.0)
+    assert agree(float("inf"), float("inf")) and not agree(float("inf"), -float("inf"))
+    assert not agree(13, 14) and not agree(1, 1.0) and not agree(True, False)
+    assert not agree("a", "b") and not agree(None, 0.0) and not agree([0.1], [0.1, 0.1])
+    # An optimizer's iteration count says how a fit got there, not what it found.
+    assert agree({"glmm": {"iterations": 13}}, {"glmm": {"iterations": 14}})
+    assert not agree({"glmm": {"iterations": 13}}, {"glmm": {}})
+    assert not agree({"glmm": {"iterations": 13}}, {"glmm": {"iterations": "13"}})
+    assert not agree({"glmm": {"iterations": True}}, {"glmm": {"iterations": 1}})
+    assert sorted(DIAGNOSTIC) == ["iterations"]
+    a = {"a": 0.4, "b": 1.0, "c": {"iterations": 3, "n": 1}}
+    b = {"a": 0.8, "b": 1.0 + 1e-12, "c": {"iterations": 4, "n": 2}}
+    assert differences(a, b) == "a, c.n"
 
 
 # ---------------------------------------------------------------- recorded arguments
@@ -724,6 +757,69 @@ def test_make_reproduce_fails_on_a_hand_set_study_value(
     capsys.readouterr()
     assert report.main(["--root", str(e4_repo), "--reproduce"]) == 1
     assert f"problem: {E4.path}: differs from a fresh derivation" in capsys.readouterr().out
+
+
+def runs_haswell_kernels() -> bool:
+    """Whether this CPU can run OpenBLAS's Haswell kernels (x86-64 with AVX2)."""
+    try:
+        return " avx2 " in Path("/proc/cpuinfo").read_text(encoding="utf-8").replace("\n", " ")
+    except OSError:
+        return False
+
+
+#: Other numerical kernels than the ones the SYNTHETIC artifacts were written with on a
+#: CPU with AVX-512: OpenBLAS's Haswell kernel (the one it picks on a CPU with AVX2 and
+#: no AVX-512) and numpy without its AVX-512 code paths (review F1 of the B5 fix).
+OTHER_KERNELS = [
+    pytest.param(
+        {"OPENBLAS_CORETYPE": "Haswell"},
+        id="openblas-haswell",
+        marks=pytest.mark.skipif(not runs_haswell_kernels(), reason="needs AVX2"),
+    ),
+    # The AVX-512 targets under the names of numpy 2.4 and later (X86_V4 and up) and of
+    # earlier releases; numpy passes over a name it does not dispatch.
+    pytest.param(
+        {
+            "NPY_DISABLE_CPU_FEATURES": "AVX512F,AVX512CD,AVX512_SKX,AVX512_CLX,AVX512_CNL,"
+            "AVX512_ICL,AVX512_SPR,X86_V4"
+        },
+        id="numpy-without-avx512",
+    ),
+]
+
+
+@pytest.mark.parametrize("kernel", OTHER_KERNELS)
+def test_the_e4_results_equal_a_derivation_with_other_numerical_kernels(
+    e4_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kernel: dict[str, str]
+) -> None:
+    """Review F1 of the B5 fix: the mixed models and bootstraps of E4 come out with other
+    last digits under another BLAS kernel or numpy's other code paths (also another
+    numpy or scipy, such as the lock's Python 3.12 resolution), and an optimizer may take
+    another iteration; a genuine artifact still equals its derivation, and a value typed
+    in at the fourth significant digit still fails."""
+    there = studies.fresh_clone(e4_repo, tmp_path / "clone")
+    for name, value in kernel.items():
+        monkeypatch.setenv(name, value)
+    assert check(there, [E4]) == []
+
+    def nudge(data: dict[str, Any]) -> None:
+        data["outcomes"]["Z1"]["contrasts"][0]["odds_ratio"] *= 1.001
+
+    studies.edit(there, E4.path, nudge)
+    (problem,) = check(there, [E4])
+    assert problem.startswith(f"{E4.path}: differs from a fresh derivation by {E4.script} (")
+    assert "(outcomes.Z1.contrasts.0.odds_ratio)" in problem
+
+
+@pytest.mark.slow  # the SYNTHETIC E1 analysis runs again
+@pytest.mark.parametrize("kernel", OTHER_KERNELS)
+def test_the_e1_results_equal_a_derivation_with_other_numerical_kernels(
+    e1_repo: Path, monkeypatch: pytest.MonkeyPatch, kernel: dict[str, str]
+) -> None:
+    """Review F1 of the B5 fix, for the E1 mixed models and bootstraps."""
+    for name, value in kernel.items():
+        monkeypatch.setenv(name, value)
+    assert check(e1_repo, [E1]) == []
 
 
 def test_a_banked_reply_missing_from_the_replies_fails_the_e3_re_derivation(
