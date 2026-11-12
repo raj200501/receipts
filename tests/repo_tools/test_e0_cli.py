@@ -718,12 +718,30 @@ def test_g5_reruns_the_scoring_this_tool_records(
         ship_check.rescored_heldout(cli_context(git_repo, sha))
 
 
+def edit_source(root: Path, rel: str) -> None:
+    """Append a SYNTHETIC comment to the source file ``rel`` of the world ``root``, copied
+    from this repository first when the world lacks it."""
+    path = root / rel
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes((REPO / rel).read_bytes())
+    edited = path.read_text("utf-8") + "# SYNTHETIC edit after a held-out attempt\n"
+    path.write_text(edited, "utf-8")
+
+
 def test_g5_reads_the_attempt_log_this_tool_writes(
     git_repo: Path, commit: Commit, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """ship_check.heldout_attempt reads the log that ``tools/e0.py evaluate`` appends to
-    (receipts.evaluation.e0.log_attempt): a re-score on the same instrument trees is
-    attempt 2, and one after the instrument changed fails (D66)."""
+    (receipts.evaluation.e0.log_attempt): a re-score on the same instrument is the next
+    attempt, also after an edit to code that sits beside the instrument in the logged
+    directories but that the scoring never loads (DECISIONS D36; review B6, FR1), and one
+    after the instrument changed fails (D66). The world commits this repository's
+    instrument files (gate G5's import closure), so each logged commit holds the
+    instrument; the scoring runs this working tree's package."""
+    for rel in ship_check.instrument_files(REPO):
+        (git_repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (git_repo / rel).write_bytes((REPO / rel).read_bytes())
     evaluated(git_repo, commit, capsys)
 
     def evaluation() -> dict[str, Any]:
@@ -733,16 +751,25 @@ def test_g5_reads_the_attempt_log_this_tool_writes(
     assert run(git_repo, "evaluate") == 0
     commit(git_repo, "the held-out half scored again, same instrument")
     assert ship_check.heldout_attempt(git_repo, evaluation()) == 2
-    (git_repo / "src/receipts/claims").mkdir(parents=True)
-    (git_repo / "src/receipts/claims/rules.py").write_text("RULES = 2\n", "utf-8")
+    # Old code: FAIL, since the logged trees of src/receipts/evaluation and
+    # src/receipts/bench changed.
+    for rel in ("src/receipts/evaluation/e3.py", "src/receipts/bench/validate.py"):
+        assert rel not in ship_check.instrument_files(git_repo)
+        edit_source(git_repo, rel)
+    commit(git_repo, "E3 and benchmark changes after the held-out scoring")
+    assert run(git_repo, "evaluate") == 0
+    commit(git_repo, "the held-out half scored again, same instrument")
+    assert ship_check.heldout_attempt(git_repo, evaluation()) == 3
+    edit_source(git_repo, "src/receipts/claims/patterns.py")
     commit(git_repo, "revise the extractor")
     assert run(git_repo, "evaluate") == 0
     commit(git_repo, "the held-out half scored after the revision")
     capsys.readouterr()
     with pytest.raises(
         ship_check.GateError,
-        match=r"attempt 1 of artifacts/e0/heldout_attempts\.jsonl scored other instrument "
-        r"trees than attempt 3 \(src/receipts/claims\)",
+        match=r"^attempt 1 of artifacts/e0/heldout_attempts\.jsonl scored another instrument "
+        r"than attempt 4 \(changed: src/receipts/claims/patterns\.py\): the held-out half was "
+        r"scored again after the instrument changed",
     ):
         ship_check.heldout_attempt(git_repo, evaluation())
 

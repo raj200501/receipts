@@ -1590,7 +1590,7 @@ def revise_and_rescore(root: Path, commit: Commit) -> str:
     return revised
 
 
-def test_an_earlier_attempt_on_other_instrument_trees_fails(git_repo: Path, commit: Commit) -> None:
+def test_an_earlier_attempt_on_another_instrument_fails(git_repo: Path, commit: Commit) -> None:
     # Old code: PASS. The held-out half was scored, the instrument revised, and the half
     # scored again: it is no longer untouched, so G5 fails rather than passing on it.
     project(git_repo, commit)
@@ -1598,14 +1598,14 @@ def test_an_earlier_attempt_on_other_instrument_trees_fails(git_repo: Path, comm
     sha = commit(git_repo, "score the held-out half again after the revision")
     with pytest.raises(
         GateError,
-        match=rf"attempt 1 of {re.escape(ATTEMPTS)} scored other instrument trees than "
-        r"attempt 2 \(src/receipts/claims\): the held-out half was scored again after the "
-        r"instrument changed",
+        match=rf"^attempt 1 of {re.escape(ATTEMPTS)} scored another instrument than attempt "
+        r"2 \(changed: src/receipts/claims/patterns\.py\): the held-out half was scored "
+        r"again after the instrument changed, so it is no longer untouched \(D66\)$",
     ):
         ship_check.g5(context(git_repo, sha))
 
 
-def test_a_rescore_on_the_same_instrument_trees_passes(git_repo: Path, commit: Commit) -> None:
+def test_a_rescore_on_the_same_instrument_passes(git_repo: Path, commit: Commit) -> None:
     project(git_repo, commit)
     put(git_repo, "README.md", "SYNTHETIC G5 test project, edited\n")
     later = commit(git_repo, "an unrelated change")
@@ -1613,9 +1613,193 @@ def test_a_rescore_on_the_same_instrument_trees_passes(git_repo: Path, commit: C
     sha = commit(git_repo, "score the held-out half again on the same instrument")
     evidence = ship_check.g5(context(git_repo, sha))
     assert (
-        "held-out attempt 2 (1 earlier attempt on the same instrument trees), its scoring "
-        "re-run in the clone" in evidence
+        "held-out attempt 2 (1 earlier attempt on the same instrument), its scoring re-run "
+        "in the clone" in evidence
     )
+
+
+def rescore_after_edit(root: Path, commit: Commit, rel: str) -> str:
+    """After project(): append a SYNTHETIC comment to ``rel`` (created when absent) in a
+    commit of its own, score the held-out half again at that commit as attempt 2, and
+    commit the attempt. Returns the last commit."""
+    old = (root / rel).read_text(encoding="utf-8") if (root / rel).is_file() else ""
+    put(root, rel, old + "# SYNTHETIC edit between two held-out attempts\n")
+    edited = commit(root, f"edit {rel} after the first held-out attempt")
+    put_evaluation(root, perfect_items(DOCS), edited)
+    return commit(root, "score the held-out half again")
+
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "src/receipts/evaluation/judges.py",
+        "src/receipts/evaluation/e3.py",
+        "src/receipts/evaluation/mechanism.py",
+        "src/receipts/evaluation/completeness.py",
+        "src/receipts/ledger/recorder.py",
+        "src/receipts/ledger/parsers/junit.py",
+        "src/receipts/__init__.py",
+    ],
+)
+def test_a_rescore_after_code_the_scoring_never_loads_changed_passes(
+    git_repo: Path, commit: Commit, rel: str
+) -> None:
+    # Old code: FAIL for every file but src/receipts/__init__.py, which no logged tree
+    # covers. Each attempt logs the git trees of whole directories, and those also hold
+    # code that the scoring never loads and DECISIONS D36 leaves out of the instrument
+    # (E2 and E3 code, completeness code, the ledger recorder and parsers), so an edit
+    # there made a re-score on the same instrument look like one on a revised instrument,
+    # and no later attempt could pass G5 again (review B6, FR1).
+    project(git_repo, commit)
+    sha = rescore_after_edit(git_repo, commit, rel)
+    assert rel not in ship_check.instrument_files(git_repo)
+    evidence = ship_check.g5(context(git_repo, sha))
+    assert "held-out attempt 2 (1 earlier attempt on the same instrument), its scoring" in evidence
+
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        SEEDED,
+        E0_MODULE,
+        "src/receipts/evaluation/facts.py",
+        "src/receipts/evaluation/__init__.py",
+        "src/receipts/ledger/events.py",
+        "src/receipts/ledger/__init__.py",
+        CHECKERS,
+        "src/receipts/claims/__init__.py",
+    ],
+)
+def test_a_rescore_after_scoring_code_changed_fails(
+    git_repo: Path, commit: Commit, rel: str
+) -> None:
+    project(git_repo, commit)
+    sha = rescore_after_edit(git_repo, commit, rel)
+    with pytest.raises(
+        GateError,
+        match=rf"^attempt 1 of {re.escape(ATTEMPTS)} scored another instrument than attempt "
+        rf"2 \(changed: {re.escape(rel)}\): the held-out half was scored again after the "
+        r"instrument changed",
+    ):
+        ship_check.g5(context(git_repo, sha))
+
+
+EXTRA = "src/receipts/claims/extra.py"
+# SYNTHETIC stand-ins whose extractor loads an optional rule module when there is one.
+GUARDED = {
+    **INSTRUMENT,
+    "src/receipts/claims/patterns.py": "# SYNTHETIC stand-in for the extractor\n"
+    "try:\n"
+    "    from receipts.claims.extra import BONUS\n"
+    "except ImportError:\n"
+    "    BONUS = 0\n"
+    "RULES = 1 + BONUS\n",
+}
+
+
+def test_a_module_only_an_earlier_attempt_loaded_is_bound(git_repo: Path, commit: Commit) -> None:
+    # Compared on HEAD's import closure alone: PASS. The extractor of attempt 1 loaded the
+    # optional module, which was deleted before attempt 2 while every file that imports it
+    # stayed the same, so only the closure at attempt 1's commit names it.
+    project(git_repo, commit, sources={**GUARDED, EXTRA: "BONUS = 1\n"})
+    (git_repo / EXTRA).unlink()
+    later = commit(git_repo, "delete the optional rule module after the first attempt")
+    assert EXTRA not in ship_check.instrument_files(git_repo)
+    put_evaluation(git_repo, perfect_items(DOCS), later)
+    sha = commit(git_repo, "score the held-out half again")
+    with pytest.raises(
+        GateError,
+        match=rf"^attempt 1 of {re.escape(ATTEMPTS)} scored another instrument than attempt "
+        rf"2 \(changed: {re.escape(EXTRA)}\)",
+    ):
+        ship_check.g5(context(git_repo, sha))
+
+
+def test_a_module_added_after_an_earlier_attempt_is_bound(git_repo: Path, commit: Commit) -> None:
+    project(git_repo, commit, sources=GUARDED)
+    put(git_repo, EXTRA, "BONUS = 1\n")
+    later = commit(git_repo, "add an optional rule module after the first attempt")
+    put_evaluation(git_repo, perfect_items(DOCS), later)
+    sha = commit(git_repo, "score the held-out half again")
+    with pytest.raises(
+        GateError,
+        match=rf"^attempt 1 of {re.escape(ATTEMPTS)} scored another instrument than attempt "
+        rf"2 \(changed: {re.escape(EXTRA)}\)",
+    ):
+        ship_check.g5(context(git_repo, sha))
+
+
+@pytest.mark.parametrize(
+    ("change", "named"),
+    [
+        pytest.param("drop", "src/receipts/ledger", id="a-checked-path-left-out"),
+        pytest.param("add", "README.md", id="a-path-not-checked"),
+    ],
+)
+def test_earlier_attempts_record_trees_for_the_paths_of_the_last(
+    git_repo: Path, commit: Commit, change: str, named: str
+) -> None:
+    # Attempt 1's trees are git's trees at its commit, but of other paths than the ones
+    # attempt 2 checked for uncommitted changes, so the log does not show that attempt 1
+    # scored committed code in every path that attempt 2 did.
+    def rewrite(text: str) -> str:
+        entry = json.loads(text.splitlines()[0])
+        if change == "drop":
+            del entry["trees"][named]
+        else:
+            entry["trees"].update(trees_at(git_repo, entry["commit"], [named]))
+        return json.dumps(entry, sort_keys=True) + "\n"
+
+    _, evaluated = project(git_repo, commit, log=rewrite)
+    put_evaluation(git_repo, perfect_items(DOCS), evaluated)
+    sha = commit(git_repo, "score the held-out half again on the same instrument")
+    with pytest.raises(
+        GateError,
+        match=rf"^attempt 1 of {re.escape(ATTEMPTS)} records trees for other paths than "
+        rf"attempt 2 \({re.escape(named)}\)",
+    ):
+        ship_check.g5(context(git_repo, sha))
+
+
+def test_an_earlier_attempt_at_a_commit_without_the_instrument_fails(
+    git_repo: Path, commit: Commit
+) -> None:
+    # The trees attempt 1 logs are git's trees at its commit (none), but that commit
+    # holds no instrument, so the log does not show what attempt 1 scored.
+    empty = commit(git_repo, "an empty first commit")
+    nothing = dict.fromkeys(CHECKED_PATHS)
+    _, evaluated = project(git_repo, commit, log=_set_first(commit=empty, trees=nothing))
+    put_evaluation(git_repo, perfect_items(DOCS), evaluated)
+    sha = commit(git_repo, "score the held-out half again")
+    with pytest.raises(
+        GateError,
+        match=rf"^attempt 1 of {re.escape(ATTEMPTS)}: the E0 instrument is missing at commit "
+        rf"{empty[:12]}: receipts\.claims, receipts\.verify, receipts\.evaluation\.e0$",
+    ):
+        ship_check.g5(context(git_repo, sha))
+
+
+def test_the_instrument_at_a_commit_is_read_from_git(git_repo: Path, commit: Commit) -> None:
+    for rel, text in INSTRUMENT.items():
+        put(git_repo, rel, text)
+    first = commit(git_repo, "the stand-in instrument")
+    closure = ship_check.instrument_files(git_repo)
+    assert ship_check.instrument_files(git_repo, first) == closure
+    # The clone's files change; the instrument of the commit does not.
+    put(git_repo, SEEDED, INSTRUMENT[SEEDED] + "from receipts.evaluation.spans import WIDTH\n")
+    put(git_repo, SPANS, "# SYNTHETIC span helper\nWIDTH = 1\n")
+    (git_repo / CHECKERS).unlink()
+    assert SPANS in ship_check.instrument_files(git_repo)
+    assert ship_check.instrument_files(git_repo, first) == closure
+    second = commit(git_repo, "the scorer imports a span helper; the verifier module is gone")
+    assert ship_check.instrument_files(git_repo, second) == sorted({*closure, SPANS} - {CHECKERS})
+    put(git_repo, CHECKERS, "this is not Python (\n")
+    third = commit(git_repo, "a verifier module that does not parse")
+    with pytest.raises(
+        GateError,
+        match=rf"^cannot read the instrument module {re.escape(CHECKERS)} at commit {third[:12]}",
+    ):
+        ship_check.instrument_files(git_repo, third)
 
 
 def test_an_attempt_removed_from_the_log_later_fails(git_repo: Path, commit: Commit) -> None:
