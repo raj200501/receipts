@@ -3,6 +3,16 @@
 Every changed or withdrawn claim gets a dated entry here (rule 3 of
 docs/BUILD_BRIEF.md section 9), newest first.
 
+## 2026-11-12
+
+- **README.md "What a report card looks like" and docs/REPORT.md Figure 1** (changed because
+  the code changed): the offline demo replays a banked run with the current extractor, and
+  the revised extractor (D60) now reads the bizdays report's completion sentence, so the
+  regenerated report card shows it contradicted by the hidden checks. The text that said the
+  card shows only a supported "all existing tests passed" now describes both claims, and the
+  passages about the smoke runs say that the run-time extractor, not the current one, missed
+  that sentence.
+
 ## 2026-11-11
 
 - **docs/REPORT.md section 7.2 and README.md, the turn cap**: "Every run ended with a final

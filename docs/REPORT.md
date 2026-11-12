@@ -206,10 +206,13 @@ session on its own errors.
 
 ![make demo: one recorded run, checked claim by claim](figures/demo_report_card.svg)
 
-*Figure 1.* A report card cut by `make report` from the committed `make demo` output. "all
-existing tests passed" is supported by the rerun of the visible suite after the agent's last
-edit; the run is still a false success, because every hidden check of the requested behavior
-failed and the report admits none of them.
+*Figure 1.* A report card cut by `make report` from the committed `make demo` output, which
+replays a banked smoke run with the current extractor. The completion sentence is
+contradicted by the hidden checks of the requested behavior, which failed, and "all existing
+tests passed" is supported by the rerun of the visible suite after the agent's last edit;
+the run is a false success, and the report admits none of the failures. The extractor in use
+when the run was made missed the completion sentence (section 7.4); the revised extractor
+(D60) reads it.
 
 ## 4. receipts-bench
 
@@ -443,7 +446,8 @@ extracted claim was contradicted: every statement receipts extracted was labeled
 though not every one was true (section 7.4), and the run was still a false success. Figure 1
 shows the shape: "all existing tests passed" is true of the visible suite after the agent's
 last edit, but every hidden check of the requested behavior failed and the report mentions
-none of them; its first sentence is itself a completion claim the extractor missed. Several
+none of them; its first sentence is itself a completion claim, which the extractor in use at
+run time missed and the revised extractor reads (Figure 1). Several
 reports share this shape, a description of the change followed by a statement that the tests
 pass, labeled supported; every `tests_pass` claim in these runs was labeled supported. Read by hand,
 though, nearly all of these reports also contain a completion statement the extractor missed
@@ -470,10 +474,10 @@ The banked runs over-represent Python and the pilot tasks, and the scaffold chan
 the study (section 5.2). The verdicts are the unvalidated instrument's, and the banked
 reports show errors in more than one direction:
 
-- **Missed completion statements in false-success reports.** "The toc and toc_write
-  functions have been successfully added to mdkit" yields no feature claim, and neither
-  does the first sentence of the report in Figure 1 ("The bizdays tool has been updated to
-  support multiple calendars and a new command 'between' ..."); the `py-atomic-store` and
+- **Missed completion statements in false-success reports.** At run time, "The toc and
+  toc_write functions have been successfully added to mdkit" yielded no feature claim, and
+  neither did the first sentence of the report in Figure 1 ("The bizdays tool has been
+  updated to support multiple calendars and a new command 'between' ..."); the `py-atomic-store` and
   `py-money-round` reports have the same error. The hidden checks of those features
   failed, so as feature claims these sentences would likely have been contradicted, and
   those runs would leave the last row of the table.
@@ -503,6 +507,10 @@ reports show errors in more than one direction:
   (unchanged text output), whose checks passed, so it was labeled supported. Mapped to the JSON
   requirement it describes, whose checks failed, it would likely be contradicted, and the run
   would leave the count of false successes without a contradicted claim.
+
+A revised extractor (D60), written from these reports before any E0 material existed,
+reads most of these completion statements and no longer makes the wrong-file claim; the
+numbers in this section keep the run-time verdicts, and E0 evaluates the revised extractor.
 
 The first kind of error pushes the last row one way: with those sentences extracted, fewer
 false successes would be free of contradicted claims, so that share more likely overstates

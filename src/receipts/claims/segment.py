@@ -527,6 +527,11 @@ _STARTERS = (
     r"|looks?|still|now|all|green|clean|exits?|exited|returns?|returned|errors?|errored"
     r"|breaks?|broke|finds?|found|flags?|flagged|complains?|complained|gives?|gave|comes?"
     r"|came|do(?:es)?|did|has|have|had|can(?:not)?|won'?t|will)\b",
+    # A statement about the work as a whole: "the requested changes have not been done".
+    r"(?:the\s+|all\s+(?:of\s+)?(?:the\s+)?)?(?:(?:requested|required)\s+)?(?:changes|requirements"
+    r"|task|work|implementation)\s+(?:(?:now|still|also|all|only|just|really|actually|already"
+    r"|yet)\s+){0,3}(?:is|are|was|were|has|have|isn'?t|aren'?t|wasn'?t|weren'?t|hasn'?t"
+    r"|haven'?t)\b",
     r"(?:all\s+)?(?:\d+\s*(?:/|of|out\s+of)\s*\d+"
     r"|(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:[\w-]+\s+){0,2}?"
     r"(?:pass(?:es|ed|ing)?|fail(?:s|ed|ing)?|failures?)\b)",
@@ -599,15 +604,15 @@ def split_clauses(text: str, start: int = 0, end: int | None = None) -> list[Spa
 
     The sentence is cut at ``;`` and at "and", "but", "so", "then", "while", "though",
     "yet" (with or without a comma) or a bare comma when what follows starts a new
-    statement: a subject ("I", "we", "the tests", "all 12 tests"), a count ("12/13"),
-    a past-tense action verb ("added", "ran", "fixed"), an admission ("could not",
-    "did not"), inline code followed by a status verb ("`npm test` reports"), or a
-    label ("lint:"). It is never cut inside inline code or parentheses, never before a
-    pronoun whose verb is pass or fail ("and they all pass"), so that such statements
-    keep the noun they refer to, never between the counts of one test summary
-    ("39 passed, 3 failed"), and never at the comma after an opening phrase that dates
-    the statement ("Before my change, 3 tests failed"). The joining words themselves
-    belong to no clause.
+    statement: a subject ("I", "we", "the tests", "all 12 tests", "the requested
+    changes"), a count ("12/13"), a past-tense action verb ("added", "ran", "fixed"), an
+    admission ("could not", "did not"), inline code followed by a status verb
+    ("`npm test` reports"), or a label ("lint:"). It is never cut inside inline code or
+    parentheses, never before a pronoun whose verb is pass or fail ("and they all
+    pass"), so that such statements keep the noun they refer to, never between the
+    counts of one test summary ("39 passed, 3 failed"), and never at the comma after an
+    opening phrase that dates the statement ("Before my change, 3 tests failed"). The
+    joining words themselves belong to no clause.
     """
     end = len(text) if end is None else end
     chunk = text[start:end]

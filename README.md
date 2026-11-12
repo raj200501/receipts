@@ -41,11 +41,13 @@ below before quoting these numbers.
 
 ![make demo: one recorded run, checked claim by claim](docs/figures/demo_report_card.svg)
 
-The agent says all existing tests passed. receipts agrees, and shows why: the visible suite
-passed in the last test run after the agent's last edit. It still marks the run a false
-success, because every hidden check of the requested behavior failed and the report
-admits none of them. The panel is cut from the committed `make demo` output by
-`make report`.
+The agent says it added the requested calendars and command, and that all existing tests
+passed. receipts contradicts the first claim with the hidden checks of the requested
+behavior, which failed, and supports the second, because the visible suite did pass after
+the agent's last edit. The run is a false success, and the report admits none of the
+failures. The panel is cut from the committed `make demo` output by `make report`; the
+demo replays a banked smoke run with the current extractor, which reads the completion
+sentence that the extractor in use at run time missed (D60).
 
 ## Quickstart (the demo runs offline, with no model calls)
 
@@ -324,7 +326,9 @@ make ship-check   # all gates on a fresh clone
     a contradicted claim is too high.
 
   [docs/REPORT.md](docs/REPORT.md) section 7 discusses them; measuring such errors is what
-  the blind E0 validation is for.
+  the blind E0 validation is for. A revised extractor (D60), written from these reports
+  before any E0 material existed, reads most of these completion statements; the numbers
+  in this README keep the verdicts given at run time, and E0 evaluates the revised one.
 - **No Claude subjects yet.** This environment's billing guard keeps headless Claude runs
   from starting (DECISIONS D4), so the study arms are local open-weight models through
   minimal-agent. Nothing here is a statement about Claude models; the Claude arms in the
