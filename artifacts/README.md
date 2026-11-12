@@ -11,7 +11,9 @@ file under `artifacts/`. What each kind of artifact records about how it was mad
 - **Results derived from run records** (such as `exploratory/smoke_outcomes.json`):
   git SHA, exact command, time, environment, and the SHA-256 of every input record,
   with the models, agent-config hashes, seeds, and token usage of those runs (the
-  derivation itself makes no model call). `make freshness` re-derives them (D56).
+  derivation itself makes no model call). `make freshness` re-derives them (D56), and does
+  the same for the E1 to E4 study results once they exist, from their banked inputs only,
+  with the E3 judge scores re-scored from the banked replies (D65, D70).
 - **Environment and benchmark checks** (`env/`, `bench/reference_validation.json`):
   git SHA, command, time, and environment, plus the model and server for a
   throughput measurement.

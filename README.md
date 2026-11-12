@@ -247,8 +247,11 @@ The repository enforces its own honesty rules in code ([CLAUDE.md](CLAUDE.md) li
 
 - `make claimcheck`: every result number in this README is bound to a banked artifact
   through the registry in `artifacts/report/numbers.json`, with the artifact's hash;
-  `make freshness` re-derives each one, and re-derives the smoke summary itself from the
-  banked run records, so a run banked after the summary, or a value typed into it, fails.
+  `make freshness` re-derives each one, and reruns the committed script behind every
+  derived artifact from its banked inputs: the smoke summary from the run records, and the
+  E1 to E4 results once they exist, the E3 judge scores from the banked replies with no
+  model call (D56, D65, D70). A run banked after a summary, or a value typed into one,
+  fails; gates G7 to G9 run the same re-derivation on a fresh clone.
 - `make prereg-verify`: preregistrations live in [prereg/](prereg/), and freezing one
   appends its hash to a chain in `prereg/LOCK.json` (none is frozen yet, so that file does
   not exist yet); a confirmatory artifact must cite a preregistration frozen before its
@@ -258,6 +261,9 @@ The repository enforces its own honesty rules in code ([CLAUDE.md](CLAUDE.md) li
   code; their transcripts are scanned afterwards, and any agent whose tool calls reached
   that code is voided, so blindness is audited rather than enforced; and a held-out split
   of the seeded set is hashed and committed before the instrument is ever scored on it.
+  Gate G5 scores the held-out split again on a fresh clone and reads the attempt log, so a
+  typed prediction, or a held-out split scored again after the instrument changed, fails
+  (D66, D69).
 - `tools/ship_check.py`: the definition of done, implemented as gates G1 to G14 on a
   fresh clone (tests and coverage, static quality, CI parity, offline demo, instrument
   validity, benchmark completeness, the confirmatory studies, claim integrity,
@@ -282,7 +288,9 @@ fast check skips slow steps and does not count as the final check):
   an artifact and re-derived), G13 documentation, and G14 hygiene (secrets scan clean, no
   cash spent, nothing private tracked).
 - **Failing, and why:** G5 to G9 and G11: the instrument validation (E0) and the studies
-  (E1 to E4) have not run. G12: no independent review has approved the current code.
+  (E1 to E4) have not run. G12: the independent review of 2026-11-12 found gate holes
+  that could pass on hand-set study results (B5, B6); both are fixed (D65, D66, D69, D70),
+  and G12 waits on the next review.
 - **Built and checked:** the ledger, sandboxes, parsers, claim extractor, verifiers,
   minimal-agent, the analysis library, receipts-hook, the wrapper and the `receipts`
   command line, the E0 tooling, and the gates, with unit tests (`make test`); receipts-bench, where every task's reference solution passes

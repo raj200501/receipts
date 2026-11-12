@@ -543,10 +543,16 @@ number appears in prose (digits, number words, and counts glued to letters, inli
 included), unless it is an identifier, a date, a version, a section or list number, a path, or
 a design-parameter phrase listed with a reason in `docs/claimcheck_allow.txt`.
 `make freshness` rebuilds the registry and requires it to match. It also reruns the script
-behind each derived artifact (the smoke summary, from the banked run records) and requires
-the committed artifact to equal the fresh one and to record exactly the inputs that exist
-now, so a run banked after the summary, or a value typed into it, fails (D56). `make
-reproduce` makes the same check and rebuilds the registry and figures in a temporary
+behind each derived artifact from its banked inputs (the smoke summary from the run
+records; the E1 to E4 results once they exist, with the E3 judge scores re-scored from the
+banked replies and no model call) and requires the committed artifact to agree with the
+fresh one: strings, counts, and decisions exactly, floats within the tolerance that D70
+sets, so a run banked
+after a summary, or a value typed into one, fails (D56, D65, D70). A re-derivation reuses
+only the options each artifact lists and reads inputs only at their banked paths, so a
+hand-made input cannot re-derive to itself. Gates G7 to G9 run the same re-derivation on a
+fresh clone, and G5 scores the held-out split again and reads the attempt log (D66, D69).
+`make reproduce` makes the same check and rebuilds the registry and figures in a temporary
 directory, failing on any difference.
 
 **The definition of done is code.** `tools/ship_check.py` implements gates G1 to G14 on a fresh

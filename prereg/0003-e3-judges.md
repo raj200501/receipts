@@ -231,9 +231,11 @@ Artifacts:
   label); one entry per call (its status and cache key); each excluded run with the
   logged errors of its calls (section 7); and provenance (the SHA-256 of every input,
   the failure log included, the model servers, the command).
-- `artifacts/e3/replies.jsonl`: the raw reply of every call (judge id, run id, cache key,
-  reply text, parse status, finish reason, tokens), so that every label can be checked
-  against what the judge said.
+- `artifacts/e3/replies.jsonl`: a header record (the model servers and the failure log of
+  the run), then the raw reply of every call (judge id, run id, cache key, reply text,
+  parse status, finish reason, tokens), so that every label can be checked against what
+  the judge said and `tools/run_judges.py --rescore` can rebuild `judges.json` from them
+  with no model call (DECISIONS D65, D70).
 
 Analysis code: `python tools/run_judges.py --prereg prereg/0003-e3-judges.md
 --confirmatory`, which runs `receipts.evaluation.e3` and `receipts.evaluation.judges`

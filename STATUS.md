@@ -35,47 +35,49 @@ B4).
 
 ## Now
 
-Final sprint, 2026-11-12 (goal_turn 6). Raj gave one more hour for the gates, then the
-finale: finalize and update `main`. Not all fourteen gates were reachable in that hour: G6
-waits on the smoke runs not yet banked (each takes 30 to 60 minutes on this CPU-only
-container), and G5, G7 to G9, and G11 wait on E0 and the studies, which take days of
-local-model compute here.
+Final sprint and finale, 2026-11-12 (goal_turn 6). Raj gave one more hour for the gates,
+then the finale: finalize, update `main`, remove weaknesses, show strengths. Not all
+fourteen gates were reachable: G5, G7 to G9, and G11 need E0 and the studies (days of
+local-model compute here), and G12 needs another independent review (one a day at
+CAP_SHARE 0.2).
 
-- **On `main`: 02bc774** (RELEASE-READY), after `make ci` on fresh clones for Python 3.11
-  and 3.12 and fresh-clone `make claimcheck`, `freshness`, `citecheck`, `secrets-scan`,
-  and `budget`. It holds every fix below.
-- **Independent review of 02bc774: REVIEW: BLOCK**, banked with this update. It confirms
-  B1 to B4 of the previous review fixed and every bound number equal to its own
-  recomputation from the 31 run records. Two new gate holes block, both latent because no
-  E0 to E4 data exist yet: **B5**, G7 to G10 never re-derive the E1 to E4 result
-  artifacts, so hand-set E2 classes, E3 counts, or E1 and E4 test results would pass;
-  **B6**, G5 takes the recorded held-out predictions on trust instead of re-running the
-  scoring, and reads neither the held-out attempt log nor the requirement digests.
-  Non-blocking N2, N13, and N17 to N23 are in docs/REVIEW_LOG.md.
-- **Review of e4230cc (BLOCK, B1 to B4, N1 to N16):** every finding is fixed (D56 to D59).
-  Three adversarial workflows then checked the fixes; their confirmed findings led to the
-  revert of the D60 extractor change before any E0 scoring (D61), immutable banked runs
-  (D62), unforgeable `bank_study --check` and run-record inputs (D63), and G5, G8, and G13
-  reading only committed directories and visible prose (D64).
-- **Smoke study (D53):** 31 of the 40 runs are banked; the rest, nearly all TypeScript,
-  keep running from the e4230cc snapshot, four at a time. Each banking commit re-derives
-  the summary and the README and REPORT numbers (D56).
-- **Open, non-blocking, from the adversarial checks:** G5 reports `unparsed_actions` as
-  one total for two causes; several G7 and G9 tests assert only a
-  headline that any failure produces; G9 lacks G7's accounting of planned runs that were
-  never banked; the ledger writer leaves U+2028, U+2029, and U+0085 unescaped; prereg
-  0002's "Z1 over every banked run" has no code yet. None affects a reported number.
+- **Independent review of 02bc774: REVIEW: BLOCK** (banked in 7bbdf9c). It confirmed B1
+  to B4 of the previous review fixed and every bound number equal to its own recomputation,
+  and found two gate holes that could pass on hand-set study results. Both are fixed,
+  each implemented in a worktree, checked by adversarial verifiers, and fixed again for
+  what they found: **B5** (G7 to G10 re-derive the E1 to E4 artifacts from their banked
+  inputs only, E3 re-scored from the banked replies, floats within 1e-5; D65, D70) and
+  **B6** (G5 scores the held-out split again on the clone and reads the attempt log,
+  comparing attempts by the instrument each scored; D66, D69). Non-blocking N17 and N19
+  (document errors) are corrected with CORRECTIONS entries, and **N18** is fixed: study
+  runs hide the checkout from the sandbox and refuse to start otherwise, snapshots are
+  checked against their commit, and a path audit (`tools/audit_run_paths.py`) checks a
+  run's ledger before banking (D67, D68).
+- **Smoke study:** 38 of the 40 runs are banked, each audited for paths outside its
+  workspace (one run's code named nonexistent paths above it; D68). py-units-refactor
+  (attempt 2 after a server timeout) and ts-todo-tags are still running from the e4230cc
+  snapshot. When both are banked, `python tools/bank_study.py smoke` writes
+  `artifacts/bench/smoke_runs.json`, which G6 needs. A new key result: in ts-parser-tests
+  the agent wrote no file and reported adding tests, and receipts contradicted both claims.
+- **Open, non-blocking:** G7 and G9 do not yet require `provenance.sandbox.checkout_hidden`
+  or `snapshot_verified` for E1 and E4 runs; the held-out attempt log records no
+  requirement digests (D69); the banked E3 replies file is not yet immutable (D70); the
+  `tests_added` checker and docs/CLAIM_TYPES.md disagree (N19); G5 does not read the E0
+  blindness audit (N20); G5 reports `unparsed_actions` as one total for two causes; several
+  G7 and G9 tests assert only a headline; the ledger writer leaves U+2028, U+2029, and U+0085
+  unescaped; prereg 0002's "Z1 over every banked run" has no code yet. None affects a
+  reported number.
 
 ## Next three actions
 
-1. Bank the remaining smoke runs as they finish, then `smoke_runs.json` (G6); run the E0
-   labelers, writers, and adjudicators (D40, D43) and score the held-out split (G5).
-2. Pilot, power run, E1 and E4 plans, fill the TO FIX fields, freeze 0001 to 0003, and
-   launch E1 and E4 from the freeze-commit snapshot (G7 to G9, G11).
-3. Fix B5 (G7 to G10 re-derive the E1 to E4 result artifacts from their banked inputs)
-   and B6 (G5 re-runs the held-out scoring in the clone, reads `heldout_attempts.jsonl`,
-   and checks the requirement digests), with tests; then N18 and N19 before any E1 run;
-   the next independent review when the daily cap allows (G12).
+1. Bank the last two smoke runs after the path audit, write `smoke_runs.json` (G6), then
+   log requirement digests per held-out attempt and run the E0 labelers, writers, and
+   adjudicators (D40, D43) and the held-out scoring (G5).
+2. Before E1: G7 and G9 require the sandbox and snapshot fields, the `tests_added` checker
+   follows docs/CLAIM_TYPES.md, and the replies file becomes immutable; then the pilot,
+   power run, freezing 0001 to 0003, and E1 and E4 from the freeze-commit snapshot (G7 to
+   G9, G11).
+3. The next independent review when the daily cap allows (G12).
 
 ## Environment (`make doctor`, 2026-10-23)
 

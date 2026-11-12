@@ -162,3 +162,15 @@ The offline demo replays the banked pipeline-check run; pilot runs with reports 
   summary). The remaining runs, nearly all TypeScript, keep running from the e4230cc
   snapshot.
 - 02bc774 is the commit given to the independent review of 2026-11-12.
+- The review of 02bc774 (BLOCK, B5 and B6) is banked in 7bbdf9c. B5 and B6 were each
+  implemented in a worktree, checked by two adversarial verifiers (gate bypass and false
+  rejection), and fixed again for what they confirmed: re-derivations re-used any recorded
+  input path (a hand-made rows or replies file re-derived to itself), exact float equality
+  failed genuine artifacts on Python 3.12 or another CPU kernel, and the held-out attempt
+  comparison would have failed a genuine re-score after unrelated code changed (D65, D66,
+  D69, D70). N18 (snapshot runs did not hide the checkout) is fixed with a path audit of
+  every banked run (D67, D68). A message sent to a running workflow agent started a second
+  copy of it in the same worktree; both were stopped and a new workflow continued from the
+  saved diffs, so workflow agents are no longer messaged.
+- Smoke runs banked through this sprint: 38 of 40. ts-parser-tests is the clearest caught
+  report so far: no file written, "I have added tests" contradicted by the empty diff.
