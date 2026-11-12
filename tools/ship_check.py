@@ -2978,11 +2978,23 @@ def g5(ctx: Context) -> str:
 
 
 # The plan every smoke run must be a run of (DECISIONS D71), the directory of the banked
-# smoke runs, and the planned-run fields a run a plan amendment added shares with the run
-# it replaces (receipts.study.plan.SAME_AS_REPLACED).
+# smoke runs, and the banked failure log. A plan amendment keeps D71's terms: the
+# planned-run fields an added run shares with the run it replaces
+# (receipts.study.plan.SAME_AS_REPLACED), the decision that allows it, the fields of its
+# server requirement, and the one slot of its server (AMENDMENT_DECISION, SERVER_FIELDS,
+# AMENDMENT_SLOTS there). MAX_ATTEMPTS is tools/run_study.py's: that many logged failed
+# attempts exclude a run. An added run's replies are cached in a directory of its own
+# (receipts.study.plan.amendment_cache).
 SMOKE_PLAN = "artifacts/studies/smoke/plan.json"
 SMOKE_RUN_DIR = "artifacts/studies/smoke/runs"
+SMOKE_FAILURES = "artifacts/studies/smoke/failures.jsonl"
 SAME_AS_REPLACED = ("study", "task_id", "config_id", "conditions", "seed", "mitigation")
+AMENDMENT_DECISION = "D71"
+AMENDMENT_SERVER_FIELDS = ("min_n_ctx_per_slot", "max_parallel_slots", "pinned_n_ctx_per_slot")
+AMENDMENT_SLOTS = 1
+MAX_ATTEMPTS = 3
+# The plan fields no committed version of the smoke plan may change.
+FIXED_PLAN_FIELDS = ("schema", "study", "notes", "text")
 
 
 def positive_int(value: object) -> TypeGuard[int]:
@@ -2990,13 +3002,50 @@ def positive_int(value: object) -> TypeGuard[int]:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 1
 
 
-def smoke_plan_runs(root: Path) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
-    """The planned runs of the smoke plan by run id, and its amendments by the run each
-    added (DECISIONS D71), read as receipts.study.plan writes them. The plan holds a list
-    of planned runs with distinct run ids. Each amendment adds a planned run in place of
-    another planned run that shares every planned field but the id
-    (:data:`SAME_AS_REPLACED`), with a server requirement of two positive integers, and
-    no task is amended twice."""
+def plan_file_text(plan: Mapping[str, Any]) -> str:
+    """The text receipts.study.plan.write_plan writes for a plan as plan.json holds it:
+    two-space indents, sorted keys, ASCII escapes, and a final newline."""
+    return json.dumps(plan, indent=2, sort_keys=True) + "\n"
+
+
+def plan_amendments(plan: Mapping[str, Any]) -> list[Any]:
+    """The amendment records of a plan as plan.json holds it (none when it has none)."""
+    amendments = plan.get("amendments", [])
+    return list(amendments) if isinstance(amendments, list) else []
+
+
+def plan_before(plan: Mapping[str, Any], count: int) -> dict[str, Any]:
+    """``plan`` (as plan.json holds it) as it was before its amendments from number
+    ``count`` on: without those amendment records and the runs they added
+    (receipts.study.plan.plan_before); without any amendment it stores none."""
+    amendments = plan_amendments(plan)
+    later = {str(a.get("run_id")) for a in amendments[count:] if isinstance(a, dict)}
+    before = {key: value for key, value in plan.items() if key != "amendments"}
+    before["runs"] = [
+        run
+        for run in plan.get("runs", [])
+        if not (isinstance(run, dict) and str(run.get("run_id")) in later)
+    ]
+    if amendments[:count]:
+        before["amendments"] = amendments[:count]
+    return before
+
+
+def smoke_plan_runs(
+    root: Path,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    """The smoke plan at HEAD, its planned runs by run id, and its amendments by the run
+    each added (DECISIONS D71), after checking them: the plan holds planned runs with
+    distinct ids and arms with distinct config ids. Each amendment adds a planned run in
+    place of another planned run that shares every planned field but the id
+    (:data:`SAME_AS_REPLACED`); it is allowed by :data:`AMENDMENT_DECISION`; its server
+    requirement is three positive integers (:data:`AMENDMENT_SERVER_FIELDS`) with a
+    window per slot above the pinned window it raises, on :data:`AMENDMENT_SLOTS` slot;
+    no task is amended twice. The runs amendments added are the plan's last runs, in the
+    order of the amendments, and each amendment's ``plan_sha256_before`` is the SHA-256
+    of the plan before it (:func:`plan_before`, as write_plan writes it), so a planned
+    run, an arm, or any other part of the plan that changed after an amendment, or a run
+    added outside one, fails."""
     plan = load_json(root, SMOKE_PLAN)
     runs = plan.get("runs") if isinstance(plan, dict) else None
     require(
@@ -3007,11 +3056,22 @@ def smoke_plan_runs(root: Path) -> tuple[dict[str, dict[str, Any]], dict[str, di
     assert isinstance(runs, list) and isinstance(plan, dict)
     planned = {str(run["run_id"]): run for run in runs}
     require(len(planned) == len(runs), f"{SMOKE_PLAN} repeats a run id")
+    arms = plan.get("arms")
+    require(
+        isinstance(arms, list) and all(isinstance(arm, dict) for arm in arms),
+        f"{SMOKE_PLAN} holds no list of arms",
+    )
+    assert isinstance(arms, list)
+    require(
+        len({json.dumps(arm.get("config_id")) for arm in arms}) == len(arms),
+        f"{SMOKE_PLAN} repeats an arm",
+    )
     amendments = plan.get("amendments", [])
     require(
         isinstance(amendments, list) and all(isinstance(a, dict) for a in amendments),
         f"{SMOKE_PLAN}: its amendments are not a list of amendment records",
     )
+    assert isinstance(amendments, list)
     added: dict[str, dict[str, Any]] = {}
     tasks: set[str] = set()
     for amendment in amendments:
@@ -3028,12 +3088,29 @@ def smoke_plan_runs(root: Path) -> tuple[dict[str, dict[str, Any]], dict[str, di
             rid != old and all(new_run.get(f) == old_run.get(f) for f in SAME_AS_REPLACED),
             f"{SMOKE_PLAN}: amended run {rid} is not the planned run {old} under a new id",
         )
+        require(
+            amendment.get("decision") == AMENDMENT_DECISION,
+            f"{SMOKE_PLAN}: amendment {rid} is allowed by {amendment.get('decision')!r}, and "
+            f"only {AMENDMENT_DECISION} allows a smoke plan amendment",
+        )
         server = amendment.get("server")
         require(
             isinstance(server, dict)
-            and positive_int(server.get("min_n_ctx_per_slot"))
-            and positive_int(server.get("max_parallel_slots")),
-            f"{SMOKE_PLAN}: amendment {rid} has no server requirement of two positive integers",
+            and all(positive_int(server.get(name)) for name in AMENDMENT_SERVER_FIELDS),
+            f"{SMOKE_PLAN}: amendment {rid} has no server requirement of three positive "
+            f"integers ({', '.join(AMENDMENT_SERVER_FIELDS)})",
+        )
+        assert isinstance(server, dict)
+        require(
+            server["min_n_ctx_per_slot"] > server["pinned_n_ctx_per_slot"],
+            f"{SMOKE_PLAN}: amendment {rid}'s {server['min_n_ctx_per_slot']} tokens per slot "
+            f"does not raise the pinned window of {server['pinned_n_ctx_per_slot']} "
+            f"({AMENDMENT_DECISION})",
+        )
+        require(
+            server["max_parallel_slots"] == AMENDMENT_SLOTS,
+            f"{SMOKE_PLAN}: amendment {rid} allows {server['max_parallel_slots']} slots, and "
+            f"the added run's server has one slot ({AMENDMENT_DECISION})",
         )
         task = json.dumps(new_run.get("task_id"))
         require(
@@ -3043,7 +3120,259 @@ def smoke_plan_runs(root: Path) -> tuple[dict[str, dict[str, Any]], dict[str, di
         )
         tasks.add(task)
         added[str(rid)] = amendment
-    return planned, added
+    tail = [str(run["run_id"]) for run in runs[len(runs) - len(amendments) :]]
+    require(
+        tail == [str(a.get("run_id")) for a in amendments],
+        f"{SMOKE_PLAN}: the runs its amendments added are not its last runs, in the order of "
+        "the amendments, so a run was added outside an amendment",
+    )
+    for index, amendment in enumerate(amendments):
+        before = hashlib.sha256(plan_file_text(plan_before(plan, index)).encode("utf-8"))
+        require(
+            before.hexdigest() == amendment.get("plan_sha256_before"),
+            f"{SMOKE_PLAN}: amendment {amendment.get('run_id')}'s plan_sha256_before is not "
+            "the SHA-256 of the plan as it was before it (the plan without it and any later "
+            "amendment, as write_plan writes it), so the plan changed outside its amendments",
+        )
+    return plan, planned, added
+
+
+def git_bytes(root: Path, *args: str) -> bytes:
+    """Run git in ``root`` and return its stdout as bytes (raises on failure)."""
+    return subprocess.run(
+        ["git", "-C", str(root), *args], capture_output=True, check=True, env=git_env()
+    ).stdout
+
+
+def committed_versions(
+    root: Path, rel: str
+) -> tuple[dict[str, list[str]], dict[str, str | None], dict[str, bytes]]:
+    """Every commit reachable from HEAD with its parents, the blob of the file ``rel``
+    each commit holds (None when it holds none), and the bytes of each such blob."""
+    parents: dict[str, list[str]] = {}
+    for line in git(root, "rev-list", "--parents", "HEAD").splitlines():
+        sha, *rest = line.split()
+        parents[sha] = rest
+    names = "".join(f"{sha}:{rel}\n" for sha in parents)
+    listing = subprocess.run(
+        ["git", "-C", str(root), "cat-file", "--batch-check=%(objectname) %(objecttype)"],
+        input=names,
+        capture_output=True,
+        text=True,
+        check=True,
+        env=git_env(),
+    ).stdout.splitlines()
+    require(len(listing) == len(parents), f"git could not list {rel} in every commit")
+    blobs: dict[str, str | None] = {}
+    for sha, line in zip(parents, listing, strict=True):
+        if line.endswith(" missing"):
+            blobs[sha] = None
+            continue
+        name, kind = line.split()
+        require(kind == "blob", f"{rel} is not a file in commit {sha[:12]}")
+        blobs[sha] = name
+    contents = {
+        blob: git_bytes(root, "cat-file", "blob", blob) for blob in set(blobs.values()) if blob
+    }
+    return parents, blobs, contents
+
+
+def check_plan_history(root: Path, plan: Mapping[str, Any]) -> dict[str, list[Any]]:
+    """Every committed version of the smoke plan in HEAD's history plans the runs HEAD's
+    plan does, but for the runs of the amendments it does not hold yet (DECISIONS D71):
+    it holds a start of HEAD's amendments, the same schema, study, notes, and text, and,
+    once it holds an amendment, the same arms. The plan is never removed once
+    committed, a commit adds at most one amendment and removes none, a plan is first
+    committed without any, and an amendment's ``plan_sha256_before`` is the SHA-256 of
+    the plan file in each parent of the commit that adds it. So a planned run added,
+    removed, or changed outside an amendment in any commit, or an amendment made to
+    another plan than the one committed before it, fails. Returns the amendments each
+    commit's plan holds (by commit)."""
+    parents, blobs, contents = committed_versions(root, SMOKE_PLAN)
+    head = plan_amendments(plan)
+    versions: dict[str, list[Any]] = {}
+    for blob, data in contents.items():
+        try:
+            version = json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise GateError(f"a committed version of {SMOKE_PLAN} is not JSON") from exc
+        require(
+            isinstance(version, dict) and isinstance(version.get("runs"), list),
+            f"a committed version of {SMOKE_PLAN} holds no list of planned runs",
+        )
+        amendments = plan_amendments(version)
+        require(
+            amendments == head[: len(amendments)],
+            f"a committed version of {SMOKE_PLAN} holds plan amendments that HEAD's plan "
+            "does not hold in the same order, and an amendment is never changed or removed",
+        )
+        require(
+            version["runs"] == plan_before(plan, len(amendments))["runs"],
+            f"a committed version of {SMOKE_PLAN} plans other runs than HEAD's plan does "
+            "without its later amendments, so a planned run was added, removed, or changed "
+            "outside an amendment",
+        )
+        require(
+            all(version.get(key) == plan.get(key) for key in FIXED_PLAN_FIELDS),
+            f"a committed version of {SMOKE_PLAN} has another {', '.join(FIXED_PLAN_FIELDS)} "
+            "than HEAD's plan",
+        )
+        require(
+            not amendments or version.get("arms") == plan.get("arms"),
+            f"a committed version of {SMOKE_PLAN} that holds a plan amendment has other arms "
+            "than HEAD's plan",
+        )
+        versions[blob] = amendments
+    held: dict[str, list[Any]] = {}
+    for sha, shas in parents.items():
+        current = blobs[sha]
+        mine = versions[current] if current is not None else []
+        held[sha] = mine
+        for parent in shas:
+            earlier = blobs[parent]
+            if earlier is None:
+                require(
+                    not mine,
+                    f"commit {sha[:12]} adds {SMOKE_PLAN} with a plan amendment, and a plan "
+                    "is committed without any first",
+                )
+                continue
+            require(current is not None, f"commit {sha[:12]} removed {SMOKE_PLAN}")
+            theirs = versions[earlier]
+            require(
+                len(theirs) <= len(mine) <= len(theirs) + 1,
+                f"commit {sha[:12]} adds more than one plan amendment, or removes one",
+            )
+            if len(mine) == len(theirs) + 1:
+                recorded = (
+                    mine[-1].get("plan_sha256_before") if isinstance(mine[-1], dict) else None
+                )
+                actual = hashlib.sha256(contents[earlier]).hexdigest()
+                require(
+                    recorded == actual,
+                    f"the plan amendment committed in {sha[:12]} records plan_sha256_before "
+                    f"{str(recorded)[:12]}, and the plan file before it, in {parent[:12]}, has "
+                    f"the SHA-256 {actual[:12]}",
+                )
+        if not shas:
+            require(
+                not mine,
+                f"commit {sha[:12]} adds {SMOKE_PLAN} with a plan amendment, and a plan is "
+                "committed without any first",
+            )
+    return held
+
+
+def smoke_rows(root: Path) -> list[dict[str, Any]]:
+    """The rows smoke_runs.json holds, derived from the committed run directories under
+    :data:`SMOKE_RUN_DIR` as receipts.study.aggregate.smoke_runs_artifact derives them
+    from each run.json (sorted by run id, one per directory, each a real model run)."""
+    base = f"{SMOKE_RUN_DIR}/"
+    ids = sorted({path[len(base) :].split("/", 1)[0] for path in tracked(root, base)})
+    rows = []
+    for rid in ids:
+        require(SAFE_ID.fullmatch(rid) is not None, f"smoke run id {rid!r} is not a plain name")
+        record = load_json(root, f"{base}{rid}/run.json")
+        require(isinstance(record, dict), f"{base}{rid}/run.json is not a run record")
+        assert isinstance(record, dict)
+        rows.append(
+            {
+                "run_id": record.get("run_id"),
+                "task_id": record.get("task_id"),
+                "agent": f"minimal-agent/{record.get('model')}",
+                "config_id": record.get("config_id"),
+                "stop_reason": record.get("stop_reason"),
+                "turns": record.get("turns"),
+                "synthetic": False,
+            }
+        )
+    return rows
+
+
+def check_smoke_rows(root: Path, smoke: Mapping[str, Any]) -> set[str]:
+    """smoke_runs.json holds exactly the rows banking derives from the committed run
+    directories (:func:`smoke_rows`): one row per banked smoke run, no duplicate, no row
+    for a run that is not banked (marked synthetic or not), and every field as its
+    run.json gives it; and it was banked from the committed plan (``plan_sha256``).
+    Returns the banked run ids."""
+    rows = smoke_rows(root)
+    require(
+        smoke.get("runs") == rows,
+        f"{SMOKE_RUNS} does not hold one row per banked smoke run as banking derives it from "
+        f"each committed run.json under {SMOKE_RUN_DIR} (a missing, repeated, extra, or "
+        "edited row)",
+    )
+    prov = smoke.get("provenance")
+    plan_sha = hashlib.sha256((root / SMOKE_PLAN).read_bytes()).hexdigest()
+    require(
+        isinstance(prov, dict) and prov.get("plan_sha256") == plan_sha,
+        f"{SMOKE_RUNS} was banked from another plan than the committed {SMOKE_PLAN} "
+        "(provenance.plan_sha256)",
+    )
+    return {str(row["run_id"]) for row in rows}
+
+
+def check_failure_log(
+    root: Path, smoke: Mapping[str, Any], banked: set[str], replaced: set[str]
+) -> int:
+    """The smoke study's banked failure log (:data:`SMOKE_FAILURES`) is the one
+    smoke_runs.json names (``failures``: its path, the SHA-256 of its bytes, and its
+    number of entries; null when no log is committed); every committed version of it is
+    the start of the one at HEAD, so a logged failure stays logged; each line is an
+    entry with a run id; no banked run has :data:`MAX_ATTEMPTS` logged failures (the
+    runner excluded it, and an excluded run is never banked); and every run a plan
+    amendment replaced has (D71: only an excluded run is replaced). Returns the number
+    of entries."""
+    summary = smoke.get("failures")
+    path = root / SMOKE_FAILURES
+    counts: Counter[str] = Counter()
+    if not path.is_file():
+        require(
+            summary is None,
+            f"{SMOKE_RUNS} summarizes a banked failure log, and {SMOKE_FAILURES} is not committed",
+        )
+    else:
+        data = path.read_bytes()
+        lines = [line for line in data.decode("utf-8").splitlines() if line.strip()]
+        for number, line in enumerate(lines, start=1):
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise GateError(f"{SMOKE_FAILURES}:{number} is not JSON") from exc
+            rid = entry.get("run_id") if isinstance(entry, dict) else None
+            require(is_text(rid), f"{SMOKE_FAILURES}:{number} names no run id")
+            counts[str(rid)] += 1
+        require(
+            isinstance(summary, dict)
+            and summary.get("banked") == SMOKE_FAILURES
+            and summary.get("sha256") == hashlib.sha256(data).hexdigest()
+            and summary.get("entries") == len(lines),
+            f"{SMOKE_RUNS} does not summarize the committed failure log {SMOKE_FAILURES} "
+            "(failures: banked, sha256, entries)",
+        )
+        for sha in git(root, "log", "--full-history", "--format=%H", "--", SMOKE_FAILURES).split():
+            earlier = git_or_none(root, "show", f"{sha}:{SMOKE_FAILURES}")
+            require(earlier is not None, f"commit {sha[:12]} deleted {SMOKE_FAILURES}")
+            assert earlier is not None
+            require(
+                data.decode("utf-8").startswith(earlier),
+                f"the {SMOKE_FAILURES} committed in {sha[:12]} is not the start of the one at "
+                "HEAD, and a logged failure stays logged",
+            )
+    for rid in sorted(banked):
+        require(
+            counts[rid] < MAX_ATTEMPTS,
+            f"smoke run {rid} has {counts[rid]} logged failed attempts, so the runner excluded "
+            "it, and an excluded run is never banked",
+        )
+    for rid in sorted(replaced):
+        require(
+            counts[rid] >= MAX_ATTEMPTS,
+            f"{rid} was replaced by a plan amendment, and {SMOKE_FAILURES} logs "
+            f"{counts[rid]} failed attempt(s) of it, fewer than the {MAX_ATTEMPTS} that "
+            "exclude a run",
+        )
+    return sum(counts.values())
 
 
 def flag_value(command: Sequence[str], name: str) -> str | None:
@@ -3054,19 +3383,52 @@ def flag_value(command: Sequence[str], name: str) -> str | None:
     return None
 
 
+def served_window(server: object) -> int | None:
+    """The window per slot a banked run's model server served: ``n_ctx_per_slot`` when it
+    records one; otherwise, from its command line, llama.cpp's ``--ctx-size`` over its
+    ``--parallel`` slots (when they divide evenly) or llama-cpp-python's ``--n_ctx``;
+    None when the record says neither."""
+    if not isinstance(server, dict):
+        return None
+    if positive_int(server.get("n_ctx_per_slot")):
+        return int(server["n_ctx_per_slot"])
+    command = server.get("server_command")
+    if not (isinstance(command, list) and all(isinstance(word, str) for word in command)):
+        return None
+    if server.get("engine") == "llama.cpp":
+        size, slots = flag_value(command, "--ctx-size"), flag_value(command, "--parallel")
+        if size and slots and size.isdigit() and slots.isdigit() and int(slots) >= 1:
+            whole, rest = divmod(int(size), int(slots))
+            return whole if rest == 0 and whole >= 1 else None
+        return None
+    if server.get("engine") == "llama-cpp-python":
+        window = flag_value(command, "--n_ctx")
+        return int(window) if window and window.isdigit() and int(window) >= 1 else None
+    return None
+
+
 def check_server_requirement(rid: str, need: Mapping[str, Any], server: object) -> None:
     """The model server smoke run ``rid`` recorded (``provenance.model_server``) meets the
     requirement ``need`` of the plan amendment that added the run, and agrees with itself
-    (the reading of ``receipts.study.plan.server_record_problems``): its window per slot
-    (``n_ctx_per_slot``) and slots (``parallel_slots``) are at least the required window
-    on at most the required slots; its command line is the one its SHA-256 names and
-    gives the same window and slots (llama.cpp's ``--ctx-size`` is the window times the
-    slots, with ``--parallel`` slots; llama-cpp-python's ``--n_ctx`` is the window on one
-    slot), as does ``ctx_size``; and ``n_ctx_per_slot_is_default`` says whether the window
-    is ``n_ctx_per_slot_default``, the pinned one. So a run made on a smaller window, or
-    a record edited in one field only, fails."""
+    and with what the live server reported (the reading of
+    ``receipts.study.plan.server_record_problems``): llama.cpp served it; its window per
+    slot (``n_ctx_per_slot``) and slots (``parallel_slots``) are at least the required
+    window on at most the required slots; its command line is the one its SHA-256 names
+    and gives the same window and slots (``--ctx-size`` is the window times the slots,
+    with ``--parallel`` slots), as does ``ctx_size``; it records the pinned window the
+    amendment raises (``n_ctx_per_slot_default``) and says it was not served
+    (``n_ctx_per_slot_is_default``); and the live server reported serving that window,
+    those slots, and the model file of its command (``reported``). So a run made on a
+    smaller window, a record edited in one field only, or a run another server answered,
+    fails."""
     require(isinstance(server, dict), f"smoke run {rid} records no model server")
     assert isinstance(server, dict)
+    require(
+        server.get("engine") == "llama.cpp",
+        f"smoke run {rid} was served by {server.get('engine')!r}, and a run a plan amendment "
+        "added is served by llama.cpp, whose server reports the window per slot and the "
+        "slots it serves",
+    )
     window, slots = server.get("n_ctx_per_slot"), server.get("parallel_slots")
     require(
         positive_int(window) and positive_int(slots),
@@ -3097,18 +3459,7 @@ def check_server_requirement(rid: str, need: Mapping[str, Any], server: object) 
         f"smoke run {rid}: its server command is not the one its SHA-256 "
         "(server_command_sha256) names",
     )
-    engine = server.get("engine")
-    if engine == "llama.cpp":
-        expected, size = (
-            {"--ctx-size": str(window * slots), "--parallel": str(slots)},
-            window * slots,
-        )
-    elif engine == "llama-cpp-python":
-        require(slots == 1, f"smoke run {rid}: llama-cpp-python serves one slot, not {slots}")
-        expected, size = {"--n_ctx": str(window)}, window
-    else:
-        raise GateError(f"smoke run {rid}: its model server's engine {engine!r} is not known")
-    for name, value in expected.items():
+    for name, value in {"--ctx-size": str(window * slots), "--parallel": str(slots)}.items():
         found = flag_value(command, name)
         require(
             found == value,
@@ -3116,26 +3467,191 @@ def check_server_requirement(rid: str, need: Mapping[str, Any], server: object) 
             f"{window} tokens per slot on {slots} slot(s) take",
         )
     require(
-        server.get("ctx_size") == size,
-        f"smoke run {rid}: ctx_size {server.get('ctx_size')!r} is not the {size} tokens it serves",
+        server.get("ctx_size") == window * slots,
+        f"smoke run {rid}: ctx_size {server.get('ctx_size')!r} is not the {window * slots} "
+        "tokens it serves",
     )
-    default = server.get("n_ctx_per_slot_default")
+    pinned = need["pinned_n_ctx_per_slot"]
     require(
-        positive_int(default) and server.get("n_ctx_per_slot_is_default") is (window == default),
-        f"smoke run {rid}: n_ctx_per_slot_is_default does not say whether its {window} tokens "
-        f"per slot are the pinned window (n_ctx_per_slot_default {default!r})",
+        server.get("n_ctx_per_slot_default") == pinned,
+        f"smoke run {rid} records the pinned window {server.get('n_ctx_per_slot_default')!r}, "
+        f"and the plan amendment that added it raises the pinned window of {pinned}",
+    )
+    require(
+        server.get("n_ctx_per_slot_is_default") is False,
+        f"smoke run {rid}: n_ctx_per_slot_is_default does not say that its {window} tokens "
+        f"per slot are not the pinned window of {pinned}",
+    )
+    reported = server.get("reported")
+    require(
+        isinstance(reported, dict),
+        f"smoke run {rid} records nothing the live server reported serving (reported), so "
+        "the server that answered is not known to be the one it started",
+    )
+    assert isinstance(reported, dict)
+    expected = {
+        "n_ctx_per_slot": window,
+        "total_slots": slots,
+        "model_path": flag_value(command, "--model"),
+    }
+    differing = [
+        f"{name} {reported.get(name)!r}"
+        for name, value in expected.items()
+        if reported.get(name) != value or isinstance(reported.get(name), bool)
+    ]
+    require(
+        not differing,
+        f"smoke run {rid}: the live server reports {', '.join(differing)}, not the window per "
+        "slot, slots, and model file its record names",
     )
 
 
-def check_planned_smoke_runs(root: Path, runs: Sequence[BankedRun]) -> int:
-    """Every real smoke run is a run of the smoke plan, made as planned (DECISIONS D71):
+def require_regular_files(root: Path, *paths: str) -> None:
+    """Each of ``paths`` that HEAD holds is a regular file (git mode 100644): not a
+    symlink that shows other content, an executable, or a submodule."""
+    for path in paths:
+        listing = git(root, "ls-tree", "HEAD", "--", path).strip()
+        require(
+            not listing or listing.startswith("100644 blob "),
+            f"{path} is not a regular file at HEAD",
+        )
+
+
+def check_run_end(rid: str, run: BankedRun) -> None:
+    """The ledger of smoke run ``rid`` ends with the ``run_end`` of its run.json: the same
+    turns, stop reason, and report (as the ledger stores text), and run.json's
+    ``ground_truth_success`` is the hidden-check result of the ledger
+    (:func:`ledger_ground_truth`), so a run.json copied beside a ledger of another run,
+    or a ledger of nothing but its run_start, fails (review F6)."""
+    record = run.record
+    end = run.events[-1]
+    data = end.get("data")
+    report = record.get("report")
+    require(
+        end.get("kind") == "run_end"
+        and isinstance(data, dict)
+        and data.get("turns") == record.get("turns")
+        and data.get("stop_reason") == record.get("stop_reason")
+        and isinstance(report, str)
+        and data.get("final_report") == LONE_SURROGATE.sub("\ufffd", report),
+        f"smoke run {rid}: its ledger does not end with the run_end of its run.json (turns, "
+        "stop reason, and report)",
+    )
+    try:
+        truth = ledger_ground_truth(run.events)
+    except (ValueError, OverflowError) as exc:
+        raise GateError(
+            f"smoke run {rid}: its ledger's hidden-check counts are unreadable"
+        ) from exc
+    require(
+        record.get("ground_truth_success") is truth,
+        f"smoke run {rid}: run.json's ground_truth_success {record.get('ground_truth_success')!r} "
+        f"is not its ledger's hidden-check result {truth!r}",
+    )
+
+
+def check_added_run(
+    root: Path,
+    rid: str,
+    run: BankedRun,
+    amendment: Mapping[str, Any],
+    plain: Sequence[BankedRun],
+    held: Mapping[str, Sequence[Any]],
+) -> None:
+    """Smoke run ``rid``, which ``amendment`` added, was made as D71 allows: it records
+    that amendment and a model server meeting its requirement
+    (:func:`check_server_requirement`); every other banked run of its model was served
+    the pinned window the amendment raises; its replies came from its own response cache
+    (``provenance.response_cache``); its agent configuration is the one a banked run of
+    its arm recorded, so the same agent made it; and it was made from a commit of HEAD's
+    history whose smoke plan holds the amendment (``provenance.git_sha``), so after the
+    amendment, from that commit's code (a verified snapshot of it, or a working tree with
+    no uncommitted change), in a sandbox that hid the checkout (DECISIONS D67)."""
+    prov = run.record.get("provenance")
+    assert isinstance(prov, dict)
+    require(
+        prov.get("plan_amendment") == amendment,
+        f"smoke run {rid} does not record the plan amendment that added it "
+        "(provenance.plan_amendment)",
+    )
+    need = amendment["server"]
+    check_server_requirement(rid, need, prov.get("model_server"))
+    windows = {
+        str(other.row["run_id"]): served_window(
+            dict(other.record.get("provenance") or {}).get("model_server")
+        )
+        for other in plain
+        if other.model == run.model
+    }
+    wrong = sorted(
+        other for other, window in windows.items() if window != need["pinned_n_ctx_per_slot"]
+    )
+    require(
+        not wrong,
+        f"smoke run {rid}'s plan amendment raises the pinned window of "
+        f"{need['pinned_n_ctx_per_slot']} tokens per slot, and the other banked runs of "
+        f"{run.model} were not all served that window: " + ", ".join(wrong[:3]),
+    )
+    cache = f"runs/smoke/cache/{rid}"
+    require(
+        prov.get("response_cache") == cache,
+        f"smoke run {rid} records the response cache {prov.get('response_cache')!r}, not its "
+        f"own {cache}, so its replies may come from runs made on another server",
+    )
+    agent = prov.get("agent_config")
+    digest = hashlib.sha256(
+        json.dumps(agent, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    same_arm = [
+        dict(other.record.get("provenance") or {}).get("agent_config")
+        for other in plain
+        if other.record.get("config_id") == run.record.get("config_id")
+    ]
+    require(
+        isinstance(agent, dict) and digest == prov.get("agent_config_sha256") and agent in same_arm,
+        f"smoke run {rid} was made with an agent configuration that is not the one its SHA-256 "
+        "names or that no banked run of its arm recorded, so it is not the same agent",
+    )
+    sha = prov.get("git_sha")
+    require(
+        is_text(sha) and amendment in held.get(sha, []),
+        f"smoke run {rid} records the commit {sha!r}, and no commit of HEAD's history by that "
+        "name holds the amendment that added the run in its smoke plan",
+    )
+    code = prov.get("code")
+    require(
+        (
+            code == "snapshot"
+            and prov.get("snapshot_verified") is True
+            and prov.get("snapshot_of") == sha
+        )
+        or (code == "working tree" and prov.get("uncommitted_at_start") == []),
+        f"smoke run {rid} does not record that the code that ran is its commit {sha!r} (a "
+        "verified code snapshot of it, or a working tree with no uncommitted change)",
+    )
+    sandbox = prov.get("sandbox")
+    require(
+        isinstance(sandbox, dict) and sandbox.get("checkout_hidden") is True,
+        f"smoke run {rid} does not record a sandbox that hid the checkout "
+        "(provenance.sandbox, DECISIONS D67)",
+    )
+
+
+def check_planned_smoke_runs(
+    root: Path,
+    runs: Sequence[BankedRun],
+    plan: Mapping[str, Any],
+    planned: Mapping[str, Mapping[str, Any]],
+    added: Mapping[str, Mapping[str, Any]],
+    held: Mapping[str, Sequence[Any]],
+) -> int:
+    """Every banked smoke run is a run of the smoke plan, made as planned (DECISIONS D71):
     its run.json records the planned task and arm, and its provenance the planned run
-    spec (``run_spec``). No run that a plan amendment replaced is banked, so an excluded
-    run stays excluded. A run an amendment added records that amendment
-    (``plan_amendment``) and a model server that meets its requirement
-    (:func:`check_server_requirement`). Returns the number of real smoke runs an
-    amendment added."""
-    planned, added = smoke_plan_runs(root)
+    spec (``run_spec``); the planned arm's driver and model made it; its ledger ends with
+    its run_end and hidden-check result (:func:`check_run_end`). No run that a plan
+    amendment replaced is banked, so an excluded run stays excluded. A run an amendment
+    added is checked as :func:`check_added_run` says. Returns the number of banked smoke
+    runs an amendment added."""
     for amendment in added.values():
         old = str(amendment.get("replaces"))
         require(
@@ -3143,6 +3659,7 @@ def check_planned_smoke_runs(root: Path, runs: Sequence[BankedRun]) -> int:
             f"{SMOKE_RUN_DIR}/{old} is banked, but it was replaced by a plan amendment, and "
             "an excluded run stays excluded",
         )
+    arms = {str(arm.get("config_id")): arm for arm in plan.get("arms", [])}
     for run in runs:
         rid = str(run.row["run_id"])
         spec = planned.get(rid)
@@ -3160,24 +3677,34 @@ def check_planned_smoke_runs(root: Path, runs: Sequence[BankedRun]) -> int:
             f"smoke run {rid}: its run.json does not record its planned run spec "
             "(provenance.run_spec)",
         )
-        assert isinstance(prov, dict)
-        added_by = added.get(rid)
-        if added_by is not None:
-            require(
-                prov.get("plan_amendment") == added_by,
-                f"smoke run {rid} does not record the plan amendment that added it "
-                "(provenance.plan_amendment)",
-            )
-            check_server_requirement(rid, added_by["server"], prov.get("model_server"))
-    return sum(1 for run in runs if str(run.row["run_id"]) in added)
+        arm = arms.get(str(spec.get("config_id")), {})
+        require(
+            run.driver == arm.get("driver") and run.model == arm.get("model"),
+            f"smoke run {rid} was made by {run.agent}, not by the driver and model of its "
+            f"planned arm {spec.get('config_id')}",
+        )
+        check_run_end(rid, run)
+    plain = [run for run in runs if str(run.row["run_id"]) not in added]
+    count = 0
+    for run in runs:
+        rid = str(run.row["run_id"])
+        if rid in added:
+            check_added_run(root, rid, run, added[rid], plain, held)
+            count += 1
+    return count
 
 
 def g6(ctx: Context) -> str:
     """Benchmark complete: >= 30 tasks, each with hidden checks, reference, manifest, smoke run.
 
-    Each smoke run counts once tied to its banked run (:func:`verified_smoke_runs`) and
-    to the smoke plan (:func:`check_planned_smoke_runs`), and no banked smoke run was
-    changed after it was committed (:func:`require_unchanged_runs`)."""
+    No banked smoke run was changed after it was committed (:func:`require_unchanged_runs`);
+    the smoke plan's amendments keep D71's terms (:func:`smoke_plan_runs`) and its
+    committed history changed no planned run outside them (:func:`check_plan_history`);
+    smoke_runs.json holds one row per banked run as banking derives it
+    (:func:`check_smoke_rows`); every banked smoke run is a real agent run tied to its
+    banked files (:func:`verified_smoke_runs`) and to the smoke plan
+    (:func:`check_planned_smoke_runs`); and the banked failure log agrees with what is
+    banked and with every replaced run's exclusion (:func:`check_failure_log`)."""
     root = ctx.clone
     tasks_dir = root / "bench" / "tasks"
     tasks = sorted(p for p in tasks_dir.glob("*") if (p / "task.toml").is_file())
@@ -3186,9 +3713,21 @@ def g6(ctx: Context) -> str:
     require_provenance("artifacts/bench/reference_validation.json", validation)
     smoke = load_json(root, SMOKE_RUNS)
     require_provenance(SMOKE_RUNS, smoke)
+    require_regular_files(root, SMOKE_RUNS, SMOKE_PLAN, SMOKE_FAILURES)
     require_unchanged_runs(root, "smoke")
+    plan, planned, added = smoke_plan_runs(root)
+    held = check_plan_history(root, plan)
+    banked = check_smoke_rows(root, smoke)
     runs = verified_smoke_runs(root, smoke)
-    amended = check_planned_smoke_runs(root, runs)
+    unreal = sorted(banked - {str(run.row["run_id"]) for run in runs})
+    require(
+        not unreal,
+        f"{len(unreal)} banked smoke run(s) are not real agent runs (marked synthetic, or made "
+        "by a mock, a script, a replay, or a fixture): " + ", ".join(unreal[:3]),
+    )
+    amended = check_planned_smoke_runs(root, runs, plan, planned, added, held)
+    replaced = {str(amendment.get("replaces")) for amendment in added.values()}
+    check_failure_log(root, smoke, banked, replaced)
     smoked = {str(run.row["task_id"]) for run in runs}
     checked = dict(validation.get("tasks", {}))
     problems: list[str] = []
@@ -3429,9 +3968,13 @@ def check_e1_rows(
 
 
 def require_unchanged_runs(root: Path, study: str) -> None:
-    """No committed file of a run banked under artifacts/studies/<study>/runs/ was modified
-    or deleted by a later commit (DECISIONS D62; git log with renames off, so a rename is a
-    deletion): a run is banked once and never changed, and a run redone is a new run."""
+    """No committed file of a run banked under artifacts/studies/<study>/runs/ was modified,
+    deleted, or changed in type or mode by a later commit, and every file HEAD holds
+    there is a regular file (DECISIONS D62): a run is banked once and never changed, and a
+    run redone is a new run. git log walks every commit of HEAD's history (side branches
+    a merge discarded included, ``--full-history``), compares each merge commit with
+    each of its parents (``-m``), and has renames off, so a rename is a deletion; a
+    symlink in place of a file is a type change (review F4)."""
     base = f"artifacts/studies/{study}/runs/"
     # A banked run is never changed or removed afterwards: a run banked after the freeze
     # and then deleted, rewritten, or replaced by another attempt would otherwise vanish
@@ -3444,7 +3987,9 @@ def require_unchanged_runs(root: Path, study: str) -> None:
             "--format=",
             "--name-status",
             "--no-renames",
-            "--diff-filter=MD",
+            "--diff-filter=MDT",
+            "-m",
+            "--full-history",
             "--",
             base,
         ).splitlines()
@@ -3455,6 +4000,16 @@ def require_unchanged_runs(root: Path, study: str) -> None:
         f"{len(changed)} committed file(s) of runs banked under {base} were later changed or "
         "deleted, and a banked run is never changed or removed: "
         + ", ".join(sorted(set(changed))[:3]),
+    )
+    special = sorted(
+        entry.partition("\t")[2]
+        for entry in git(root, "ls-tree", "-r", "-z", "HEAD", "--", base).split("\0")
+        if entry and not entry.startswith("100644 blob ")
+    )
+    require(
+        not special,
+        f"{len(special)} committed path(s) of runs banked under {base} are not a regular file "
+        "(a symlink, an executable, or a submodule): " + ", ".join(special[:3]),
     )
 
 
