@@ -640,8 +640,11 @@ def run_record_problems(plan: Plan, record: Mapping[str, Any]) -> list[str]:
     and is never banked); ``run.json`` records the planned task and arm, the planned
     arm's model, and, in its provenance, the planned run spec. A run an amendment added
     also records that amendment (``provenance.plan_amendment``), a model server that
-    meets its requirement (:func:`server_record_problems`), and its own response cache
-    (``provenance.response_cache``, :func:`amendment_cache`).
+    meets its requirement (:func:`server_record_problems`), its own response cache
+    (``provenance.response_cache``, :func:`amendment_cache`), that the code that ran is
+    its commit (a verified snapshot of ``git_sha``, or a working tree with no
+    uncommitted change), and a sandbox that hid the checkout (``provenance.sandbox``,
+    DECISIONS D67).
     """
     run_id = record.get("run_id")
     spec = next((run for run in plan.runs if run.run_id == run_id), None)
@@ -681,6 +684,24 @@ def run_record_problems(plan: Plan, record: Mapping[str, Any]) -> list[str]:
                 f"run.json records the response cache {provenance.get('response_cache')!r}, "
                 f"not its own {cache}, so its replies may come from runs made on another "
                 "server (provenance.response_cache)"
+            )
+        code = provenance.get("code")
+        snapshot = (
+            code == "snapshot"
+            and provenance.get("snapshot_verified") is True
+            and provenance.get("snapshot_of") == provenance.get("git_sha")
+        )
+        clean = code == "working tree" and provenance.get("uncommitted_at_start") == []
+        if not (snapshot or clean):
+            found.append(
+                "run.json does not record that the code that ran is its commit (a verified "
+                "snapshot of git_sha, or a working tree with no uncommitted change)"
+            )
+        sandbox = provenance.get("sandbox")
+        if not (isinstance(sandbox, Mapping) and sandbox.get("checkout_hidden") is True):
+            found.append(
+                "run.json does not record a sandbox that hid the checkout (provenance.sandbox, "
+                "DECISIONS D67)"
             )
     return found
 

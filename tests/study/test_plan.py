@@ -487,6 +487,11 @@ def run_record(p: plan.Plan, run_id: str, **provenance: Any) -> dict[str, Any]:
             plan_amendment=amendment.to_json(),
             model_server=model_server(),
             response_cache=plan.amendment_cache(p.study, run_id),
+            git_sha="a" * 40,
+            code="snapshot",
+            snapshot_of="a" * 40,
+            snapshot_verified=True,
+            sandbox={"backend": "bwrap", "checkout_hidden": True, "shown_in_checkout": []},
         )
     prov.update(provenance)
     return {
@@ -502,6 +507,8 @@ def test_a_record_made_as_planned_has_no_problems() -> None:
     p = amended()
     assert plan.run_record_problems(p, run_record(p, "smoke-py-alpha-ma-syn")) == []
     assert plan.run_record_problems(p, run_record(p, ADDED)) == []
+    clean_tree = run_record(p, ADDED, code="working tree", uncommitted_at_start=[])
+    assert plan.run_record_problems(p, clean_tree) == []
     assert plan.server_record_problems(WINDOW, model_server()) == []
     assert plan.server_record_problems(WINDOW, model_server(65536)) == []
 
@@ -588,6 +595,21 @@ def test_a_server_record_that_does_not_meet_or_match_itself_is_found(
         ),
         pytest.param(ADDED, {"response_cache": "runs/cache"}, "response cache", id="shared-cache"),
         pytest.param(ADDED, {"response_cache": None}, "response cache", id="no-cache"),
+        pytest.param(ADDED, {"snapshot_verified": False}, "code that ran", id="unverified"),
+        pytest.param(ADDED, {"snapshot_of": "b" * 40}, "code that ran", id="other-snapshot"),
+        pytest.param(
+            ADDED,
+            {"code": "working tree", "uncommitted_at_start": ["src/x.py"]},
+            "code that ran",
+            id="dirty-tree",
+        ),
+        pytest.param(ADDED, {"sandbox": None}, "hid the checkout", id="no-sandbox"),
+        pytest.param(
+            ADDED,
+            {"sandbox": {"backend": "bwrap", "checkout_hidden": False}},
+            "hid the checkout",
+            id="exposed-sandbox",
+        ),
         pytest.param(ADDED, {"provenance": None}, "provenance", id="no-provenance"),
     ],
 )

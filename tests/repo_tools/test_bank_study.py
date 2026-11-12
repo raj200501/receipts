@@ -448,6 +448,11 @@ def stand_in(root: Path, run_id: str = ADDED, **provenance: Any) -> Path:
             else {
                 "plan_amendment": amendment.to_json(),
                 "response_cache": amendment_cache("smoke", run_id),
+                "git_sha": "a" * 40,
+                "code": "snapshot",
+                "snapshot_of": "a" * 40,
+                "snapshot_verified": True,
+                "sandbox": {"backend": "bwrap", "checkout_hidden": True},
             }
         ),
         **provenance,
