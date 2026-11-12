@@ -844,3 +844,29 @@ word, and a key result must link an existing file under `artifacts/` and an exis
 `prereg/NNNN-*.md` file. A derivation that writes invalid JSON, or a committed provenance
 that is not an object, is reported instead of crashing, and `tools/smoke_outcomes.py`
 records `git_sha` as null outside a git checkout.
+
+**D65. Every result artifact a gate reads is re-derived from its banked inputs (review
+B5).** Recorded 2026-11-12, before the change. The review of 02bc774 showed that G7 to G10
+compare bound numbers only with the current content of `artifacts/e1/results.json`,
+`artifacts/e2/mechanism.json`, `artifacts/e3/judges.json`, and `artifacts/e4/results.json`,
+so a hand-set E2 class, E3 count, or E1 or E4 test result would pass. Each of these joins
+the smoke summary in `receipts.report.derived`: the gate that reads it (G7, G8, G9) and
+`make freshness` and `make reproduce` (G10) run its committed script again in the clone,
+with the arguments its provenance records (minus `--out`, and only for the script it
+names), into a temporary file, and require the result to equal the committed artifact in
+everything except when, where, and how it was made (D56). No model is called: E3 is
+re-scored from the banked judge replies (`artifacts/e3/replies.jsonl`), and a reply the
+file lacks fails the check. `make report` still rewrites only the smoke summary; the
+study artifacts are written by their own commands.
+
+**D66. G5 re-runs the held-out scoring and reads the attempt log (review B6).** Recorded
+2026-11-12, before the change. The review of 02bc774 showed that G5 took the predictions in
+`artifacts/e0/seeded_eval.json` on trust. G5 now scores every held-out report again in the
+clone with the instrument at HEAD (which G5 already requires to equal the evaluated one),
+without logging an attempt, and requires the items, per-type results, and requirement
+digests to equal the recorded ones, so a prediction typed into the file, or a requirement
+text edited after scoring, fails. It also reads `artifacts/e0/heldout_attempts.jsonl`: the
+evaluation must be the log's last attempt with the same instrument commit and per-type
+results, and when it is not the first attempt, every earlier attempt must have scored the
+same instrument trees. A held-out half scored again after the instrument changed is no
+longer untouched, so G5 fails rather than reporting it as a deviation.
