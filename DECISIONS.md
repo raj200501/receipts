@@ -906,3 +906,25 @@ attempt's trees must still name the same paths as the last one's, and every atte
 must be git's trees at its commit. Still open: a requirement text edited between two
 held-out attempts is not compared, because the attempt log records no requirement digests;
 it is to be logged per attempt before any held-out scoring.
+
+**D70. A re-derivation re-uses only the options each artifact lists, reads only the banked
+inputs, and compares floats within a tolerance (adversarial checks of the B5 fix).**
+Recorded 2026-11-12, before the change is merged. Verifiers of D65 found that re-using
+every recorded argument let a hand-made input inside the repository pass: an E2 artifact
+written with `--runs <hand-made rows>`, or an E3 artifact re-scored from a hand-made
+replies file, re-derived to itself. And exact equality failed genuine E1 and E4 artifacts
+checked with the Python 3.12 lock resolution or another CPU kernel, whose floats differ in
+the last bits. So: (1) each derived artifact lists the recorded options a re-derivation may
+re-use, spelled in full; an input option is accepted only at its banked default path; the
+options of partial or exploratory runs are refused. (2) Strings, booleans, null, and
+integers must be equal, and 1 stays distinct from 1.0; floats agree within 1e-5 relative or
+absolute, about 30 times the largest drift measured across those environments, and an
+optimizer's `iterations` count is checked only as a count. This corrects D56's statement
+that a derivation on another commit, Python, or machine gives the same content: it gives
+content that agrees. (3) G8 also requires E2 to record the SHA-256 of the committed E1 rows
+and held-out evaluation, and E3 to record the committed replies file. (4)
+`tools/run_judges.py` refuses to write the default `artifacts/e3/judges.json` from replies
+other than the banked ones. (5) `make reproduce` (G13) gets the same time limit as `make
+freshness` (G10), since both re-derive every study artifact. Still open: the banked
+replies file is raw model output that nothing re-derives, so it should become immutable
+after its first commit, as banked runs are (D62).
