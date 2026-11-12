@@ -882,3 +882,13 @@ a hidden path explicitly, a run refuses to start when the checkout is not hidden
 run record says that it was. Smoke runs still running from the e4230cc snapshot keep the
 old sandbox; each is audited before banking for commands or file paths outside its
 workspace, and one that left it is excluded and reported, not banked.
+
+**D68. What counts as leaving the workspace in the D67 path audit.** Recorded 2026-11-12,
+before banking the first run the audit flags. `tools/audit_run_paths.py` also reports paths
+in text an agent writes into files, which is broader than D67's "commands or file paths".
+A run is excluded only when a command or file-tool call reached a path outside its
+workspace. A path in written content alone is reported, with whether it resolves, and does
+not exclude the run. The first such run, smoke-ts-query-string, wrote imports of
+`../../utils` and deeper into `src/stringify.ts`; none of the paths they name exists, and
+every `npm test` after them failed with `ERR_MODULE_NOT_FOUND`, so nothing outside the
+workspace was read. It is banked, and the finding is reported with it.
