@@ -3065,6 +3065,10 @@ def check_rederived(ctx: Context, study: str, rel: str) -> None:
 #: How long a fresh derivation of one study artifact may take in the clone. E1 and E4
 #: fit mixed models and run 2000-resample bootstraps, so the limit is generous.
 DERIVE_TIMEOUT_S = 3600.0
+#: How long ``make freshness`` (G10) and ``make reproduce`` (G13) may take: each rebuilds
+#: the registry (and ``make reproduce`` the figures) and derives each of the four study
+#: artifacts again (``receipts.report.derived``; review F2 of the B5 fix).
+REDERIVE_ALL_TIMEOUT_S = 1200 + 4 * DERIVE_TIMEOUT_S
 
 
 def check_derivation(ctx: Context, rel: str) -> str:
@@ -4303,7 +4307,7 @@ def g10(ctx: Context) -> str:
     script writes from the banked inputs; the limit allows one fresh derivation of each."""
     ctx.make("setup", 900)
     claim = ctx.make("claimcheck", 600)
-    fresh = ctx.make("freshness", 1200 + 4 * DERIVE_TIMEOUT_S)
+    fresh = ctx.make("freshness", REDERIVE_ALL_TIMEOUT_S)
     for result, label in ((claim, "claimcheck"), (fresh, "freshness")):
         covered = all(f"{doc}:" in result.stdout for doc in ("README.md", "docs/REPORT.md"))
         require(result.ok, f"make {label} failed: {result.last_line()[:80]}")
@@ -4528,7 +4532,10 @@ def quickstart_code(readme: str, screen: int = 60) -> str | None:
 
 
 def g13(ctx: Context) -> str:
-    """Documentation: README follows section 11, REPORT.md complete, citecheck passes."""
+    """Documentation: README follows section 11, REPORT.md complete, citecheck passes, and
+    ``make reproduce`` rebuilds every figure and number from the banked artifacts, which
+    includes deriving every study artifact again (as ``make freshness`` does for G10, so
+    with the same limit)."""
     root = ctx.clone
     readme = (root / "README.md").read_text(encoding="utf-8")
     brief = (root / "docs" / "BUILD_BRIEF.md").read_text(encoding="utf-8")
@@ -4617,7 +4624,7 @@ def g13(ctx: Context) -> str:
         )
         require(HYPE.search(text) is None, f"{name} uses a hype word")
     ctx.make("setup", 900)
-    rebuilt = ctx.make("reproduce", 600)
+    rebuilt = ctx.make("reproduce", REDERIVE_ALL_TIMEOUT_S)
     require(
         rebuilt.ok and rebuilt.last_line() == "REPRODUCE: PASS",
         f"make reproduce (figures and numbers rebuilt from artifacts): {rebuilt.last_line()[:60]}",

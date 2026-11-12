@@ -258,6 +258,41 @@ def test_stale_figure_fails_reproduce(tmp_path: Path) -> None:
         ship_check.g13(project(tmp_path, reproduce=reproduce))
 
 
+def recording_limits(ctx: ship_check.Context, monkeypatch: pytest.MonkeyPatch) -> dict[str, float]:
+    """The time limit ``ctx`` gives each make target, recorded as each runs."""
+    limits: dict[str, float] = {}
+    real = ctx.make
+
+    def make(
+        target: str, timeout: float, *args: str, extra_env: dict[str, str] | None = None
+    ) -> ship_check.CmdResult:
+        limits[target] = timeout
+        return real(target, timeout, *args, extra_env=extra_env)
+
+    monkeypatch.setattr(ctx, "make", make)
+    return limits
+
+
+def test_make_reproduce_and_make_freshness_get_the_time_of_every_re_derivation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review F2 of the B5 fix: make reproduce (G13) re-derives every study artifact, as
+    make freshness (G10) does, so both get the time of one fresh derivation of each of
+    the four study artifacts and the rebuild."""
+    every = ship_check.REDERIVE_ALL_TIMEOUT_S
+    assert every == 1200 + 4 * ship_check.DERIVE_TIMEOUT_S
+    ctx = project(tmp_path)
+    limits = recording_limits(ctx, monkeypatch)
+    ship_check.g13(ctx)
+    assert limits["reproduce"] == every
+    # G10's make steps, their SYNTHETIC outcomes given: the limits are what is recorded.
+    covered = "README.md: 1 live number(s) re-derived\ndocs/REPORT.md: 0\n"
+    for target in ("setup", "claimcheck", "freshness"):
+        ctx.results[f"make-{target}"] = ship_check.CmdResult(target, 0, covered, "", 0.0)
+    ship_check.g10(ctx)
+    assert limits["freshness"] == every
+
+
 # ---------------------------------------------------------------- H40 (old code: PASS)
 
 
