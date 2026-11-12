@@ -10,7 +10,10 @@ excluded (DECISIONS D71): :func:`amend_plan` appends the excluded run's planned 
 under a new id and records a :class:`PlanAmendment` (what the new run needs from the
 model server, why, and the SHA-256 of the plan file before), and leaves every other
 byte of the plan as it was. The excluded run stays planned under its own id and is
-never attempted again.
+never attempted again. :func:`check_amendments` holds every amendment to D71's terms:
+the added run is the excluded run's spec, on one slot with a window per slot above the
+pinned one, and the plan without the amendment is, byte for byte, the plan the
+amendment records the SHA-256 of, so nothing else in the plan changed with it.
 """
 
 from __future__ import annotations
@@ -34,6 +37,11 @@ from receipts.study.spec import CONDITION_LEVELS, Arm, RunSpec, StudyText, check
 #: amendment, so the E1 and E4 plans are never amended here.
 AMENDABLE_STUDIES: tuple[str, ...] = ("smoke",)
 
+#: The decision that allows a plan amendment (DECISIONS D71), and the slots the model
+#: server of a run an amendment added has: one.
+AMENDMENT_DECISION = "D71"
+AMENDMENT_SLOTS = 1
+
 #: The planned-run fields an added run shares with the run it replaces (all but its id).
 SAME_AS_REPLACED: tuple[str, ...] = (
     "study",
@@ -49,20 +57,31 @@ _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 
 @dataclass(frozen=True)
 class ServerRequirement:
-    """What a planned run needs from the model server (DECISIONS D71).
+    """What a run a plan amendment added needs from the model server (DECISIONS D71).
 
     Attributes:
         min_n_ctx_per_slot: The least context window per slot, in tokens: what one
-            request's prompt and reply may take together.
-        max_parallel_slots: The most slots the server may run at once.
+            request's prompt and reply may take together. It is above
+            ``pinned_n_ctx_per_slot``.
+        max_parallel_slots: The most slots the server may run at once
+            (:data:`AMENDMENT_SLOTS`, one).
+        pinned_n_ctx_per_slot: The pinned window per slot of the run's model, which the
+            amendment raises; every other run of the study is served with it.
     """
 
     min_n_ctx_per_slot: int
-    max_parallel_slots: int = 1
+    max_parallel_slots: int
+    pinned_n_ctx_per_slot: int
 
     def problems(self, n_ctx_per_slot: int, parallel_slots: int) -> list[str]:
         """How a server with ``n_ctx_per_slot`` tokens per slot on ``parallel_slots``
-        slots falls short of this requirement (an empty list: it meets it)."""
+        slots falls short of this requirement (an empty list: it meets it). A window or
+        slot count that is not a positive integer serves nothing."""
+        if not (_positive_int(n_ctx_per_slot) and _positive_int(parallel_slots)):
+            return [
+                "a server needs a positive window per slot and at least one slot, not "
+                f"{n_ctx_per_slot!r} tokens on {parallel_slots!r} slot(s)"
+            ]
         found = []
         if n_ctx_per_slot < self.min_n_ctx_per_slot:
             found.append(
@@ -77,8 +96,8 @@ class ServerRequirement:
     def describe(self) -> str:
         """The requirement in words."""
         return (
-            f"at least {self.min_n_ctx_per_slot} tokens per slot on at most "
-            f"{self.max_parallel_slots} slot(s)"
+            f"at least {self.min_n_ctx_per_slot} tokens per slot (the pinned window is "
+            f"{self.pinned_n_ctx_per_slot}) on at most {self.max_parallel_slots} slot(s)"
         )
 
 
@@ -91,10 +110,12 @@ class PlanAmendment:
         replaces: The run the runner excluded; it stays planned and is never attempted
             again.
         server: What the added run needs from the model server.
-        decision: The DECISIONS.md entry that allows the amendment, e.g. ``"D71"``.
+        decision: The DECISIONS.md entry that allows the amendment
+            (:data:`AMENDMENT_DECISION`).
         reason: Why the replaced run was excluded and what the added run changes.
         date: The day of the amendment (ISO 8601, ``YYYY-MM-DD``).
-        plan_sha256_before: SHA-256 of the plan file's bytes before the amendment.
+        plan_sha256_before: SHA-256 of the plan file's bytes before the amendment (the
+            text :func:`plan_text` writes for :func:`plan_before` the amendment).
     """
 
     run_id: str
@@ -232,18 +253,26 @@ def _positive_int(value: object) -> TypeGuard[int]:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 1
 
 
+#: The fields of a stored server requirement (``amendments[].server``).
+SERVER_FIELDS: tuple[str, ...] = (
+    "min_n_ctx_per_slot",
+    "max_parallel_slots",
+    "pinned_n_ctx_per_slot",
+)
+
+
 def _amendment_from_json(data: object) -> PlanAmendment:
     """One record of ``plan.json``'s ``amendments``.
 
     Raises:
         ValueError: The record is not an object with every :class:`PlanAmendment`
-            field, or its server requirement is not two positive integers.
+            field, or its server requirement is not three positive integers.
     """
     names = ("run_id", "replaces", "server", "decision", "reason", "date", "plan_sha256_before")
     if not isinstance(data, dict) or any(name not in data for name in names):
         raise ValueError(f"a plan amendment must be an object with {', '.join(names)}")
     server = data["server"]
-    limits = ("min_n_ctx_per_slot", "max_parallel_slots")
+    limits = SERVER_FIELDS
     if not isinstance(server, dict) or not all(_positive_int(server.get(k)) for k in limits):
         raise ValueError(
             f"plan amendment {data['run_id']!r}: its server requirement must give "
@@ -256,6 +285,7 @@ def _amendment_from_json(data: object) -> PlanAmendment:
         server=ServerRequirement(
             min_n_ctx_per_slot=server["min_n_ctx_per_slot"],
             max_parallel_slots=server["max_parallel_slots"],
+            pinned_n_ctx_per_slot=server["pinned_n_ctx_per_slot"],
         ),
         **text,
     )
@@ -298,17 +328,37 @@ def plan_text(plan: Plan) -> str:
     return json.dumps(plan.to_json(), indent=2, sort_keys=True) + "\n"
 
 
-def check_amendments(plan: Plan) -> None:
+def plan_before(plan: Plan, count: int = 0) -> Plan:
+    """``plan`` as it was before its amendments from number ``count`` on (all of them by
+    default): without those amendment records and the runs they added."""
+    later = {amendment.run_id for amendment in plan.amendments[count:]}
+    return replace(
+        plan,
+        runs=[run for run in plan.runs if run.run_id not in later],
+        amendments=tuple(plan.amendments[:count]),
+    )
+
+
+def check_amendments(plan: Plan, pinned_windows: Mapping[str, int] | None = None) -> None:
     """Raise ValueError unless every amendment of ``plan`` holds (DECISIONS D71).
 
     The plan's study is one of :data:`AMENDABLE_STUDIES`. Each amendment adds a planned
     run in place of another planned run, and the two share every planned field but the
     run id (:data:`SAME_AS_REPLACED`): the same task, arm, conditions, seed, and
-    mitigation. Its server requirement is positive, its decision, reason, and date are
-    given (the date in ISO 8601), and it records the SHA-256 of the plan file before
-    it. No task is amended more than once: since an added run and the run it replaces
-    share their task, no run is then added or replaced twice, and an added run is never
-    replaced in turn.
+    mitigation. It is allowed by :data:`AMENDMENT_DECISION`, and its server requirement
+    keeps that decision's terms: positive integers, a window per slot above the pinned
+    one it records, on :data:`AMENDMENT_SLOTS` slot. With ``pinned_windows`` (each
+    pinned model's window per slot), the recorded pinned window must be that of the
+    added run's model. Its reason and date are given (the date in ISO 8601). No task is
+    amended more than once: since an added run and the run it replaces share their
+    task, no run is then added or replaced twice, and an added run is never replaced in
+    turn.
+
+    The runs the amendments added are the plan's last runs, in the order of the
+    amendments, and each amendment records the SHA-256 of the plan before it: the text
+    :func:`plan_text` writes for :func:`plan_before` it. So a planned run, an arm, or any
+    other part of the plan that changed after an amendment, or a run added outside one,
+    is found.
     """
     if not plan.amendments:
         return
@@ -333,17 +383,42 @@ def check_amendments(plan: Plan) -> None:
                 f"{name}: {amendment.run_id} is not the planned run {amendment.replaces} "
                 f"under a new id (they must share {', '.join(SAME_AS_REPLACED)})"
             )
-        server = amendment.server
-        if not (
-            _positive_int(server.min_n_ctx_per_slot) and _positive_int(server.max_parallel_slots)
-        ):
+        if amendment.decision != AMENDMENT_DECISION:
             raise ValueError(
-                f"{name}: the server requirement needs a positive window per slot and a "
-                "positive number of slots"
+                f"{name}: a plan amendment is allowed by {AMENDMENT_DECISION} only, not "
+                f"{amendment.decision!r}"
             )
-        for label, value in (("decision", amendment.decision), ("reason", amendment.reason)):
-            if not value.strip():
-                raise ValueError(f"{name}: the amendment needs a {label}")
+        server = amendment.server
+        if not all(_positive_int(getattr(server, limit)) for limit in SERVER_FIELDS):
+            raise ValueError(
+                f"{name}: the server requirement needs a positive window per slot, a "
+                "positive number of slots, and the positive pinned window it raises"
+            )
+        if server.min_n_ctx_per_slot <= server.pinned_n_ctx_per_slot:
+            raise ValueError(
+                f"{name}: {server.min_n_ctx_per_slot} tokens per slot does not raise the "
+                f"pinned window of {server.pinned_n_ctx_per_slot} ({AMENDMENT_DECISION})"
+            )
+        if server.max_parallel_slots != AMENDMENT_SLOTS:
+            raise ValueError(
+                f"{name}: the added run's server has one slot ({AMENDMENT_DECISION}), not "
+                f"at most {server.max_parallel_slots}"
+            )
+        if pinned_windows is not None:
+            try:
+                model = plan.arm(added.config_id).model
+            except KeyError as exc:
+                raise ValueError(f"{name}: {added.config_id} is not an arm of the plan") from exc
+            pinned = pinned_windows.get(model)
+            if pinned is None:
+                raise ValueError(f"{name}: {model} is not a pinned local model")
+            if pinned != server.pinned_n_ctx_per_slot:
+                raise ValueError(
+                    f"{name}: it records a pinned window of {server.pinned_n_ctx_per_slot} "
+                    f"tokens per slot, and {model} has a pinned window of {pinned}"
+                )
+        if not amendment.reason.strip():
+            raise ValueError(f"{name}: the amendment needs a reason")
         try:
             dt.date.fromisoformat(amendment.date)
         except ValueError as exc:
@@ -359,6 +434,20 @@ def check_amendments(plan: Plan) -> None:
                 "task, DECISIONS D71)"
             )
         tasks.add(added.task_id)
+    tail = [run.run_id for run in plan.runs[len(plan.runs) - len(plan.amendments) :]]
+    if tail != [amendment.run_id for amendment in plan.amendments]:
+        raise ValueError(
+            "the runs that plan amendments added must be the plan's last runs, in the "
+            "order of the amendments, so a run was added outside an amendment"
+        )
+    for index, amendment in enumerate(plan.amendments):
+        if sha256_text(plan_text(plan_before(plan, index))) != amendment.plan_sha256_before:
+            raise ValueError(
+                f"plan amendment {amendment.run_id}: its plan_sha256_before is not the "
+                "SHA-256 of the plan as it was before the amendment (the plan without it "
+                "and any later amendment, as write_plan writes it), so the plan changed "
+                "outside its amendments"
+            )
 
 
 def write_plan(path: Path, plan: Plan) -> None:
@@ -378,6 +467,13 @@ def write_plan(path: Path, plan: Plan) -> None:
     path.write_text(plan_text(plan), encoding="utf-8")
 
 
+def amendment_cache(study: str, run_id: str) -> str:
+    """Where the model responses of the run ``run_id`` that an amendment added are
+    cached, relative to the checkout: a directory of its own (``runs/<study>/cache/<run
+    id>``), so no reply comes from the shared cache of runs made on another server."""
+    return f"runs/{study}/cache/{run_id}"
+
+
 def amendment_run_id(replaces: str, server: ServerRequirement) -> str:
     """The id of the run added in place of ``replaces``: ``<replaces>-ctx<window>``, the
     window in units of 1024 tokens when it is a multiple of 1024 (``-ctx32k``)."""
@@ -393,22 +489,22 @@ def amend_plan(
     decision: str,
     reason: str,
     date: str,
-    plan_sha256_before: str,
 ) -> Plan:
     """``plan`` with one run added in place of the excluded run ``replaces`` (DECISIONS D71).
 
     The added run is ``replaces``'s planned spec (study, task, arm, conditions, seed,
     and mitigation) under the id :func:`amendment_run_id` gives, after every planned run;
     it needs ``server`` from the model server. The amendment record keeps the decision,
-    the reason, the date, and ``plan_sha256_before``, the SHA-256 of the plan file
-    before the amendment. Every other part of the plan stays as it was, and
-    ``replaces`` stays planned under its own id. Whether ``replaces`` was excluded is
-    the caller's to check (``tools/amend_plan.py`` reads the runner's failure log).
+    the reason, the date, and ``plan_sha256_before``, the SHA-256 of the text
+    :func:`write_plan` writes for ``plan`` (the plan file's bytes before the
+    amendment). Every other part of the plan stays as it was, and ``replaces`` stays
+    planned under its own id. Whether ``replaces`` was excluded is the caller's to check
+    (``tools/amend_plan.py`` reads the runner's failure log).
 
     Raises:
         ValueError: The study is not amendable, ``replaces`` is not a planned run, its
             task already has an amendment (one new run per task), the new id is already
-            planned, or the amendment is malformed (:func:`check_amendments`).
+            planned, or the amendment does not hold (:func:`check_amendments`).
     """
     planned = {run.run_id: run for run in plan.runs}
     old = planned.get(replaces)
@@ -430,7 +526,7 @@ def amend_plan(
         decision=decision,
         reason=reason,
         date=date,
-        plan_sha256_before=plan_sha256_before,
+        plan_sha256_before=sha256_text(plan_text(plan)),
     )
     amended = replace(
         plan,
@@ -449,19 +545,27 @@ def _flag(command: Sequence[str], name: str) -> str | None:
     return None
 
 
+#: What the live model server reported serving, as ``tools/run_study.py`` records it
+#: (``provenance.model_server.reported``, from :meth:`LocalServer.confirm_serving`): the
+#: window per slot, the slots, and the model file of llama.cpp's ``GET /props``.
+REPORTED_FIELDS: tuple[str, ...] = ("n_ctx_per_slot", "total_slots", "model_path")
+
+
 def server_record_problems(server: ServerRequirement, record: object) -> list[str]:
     """How a run record's model server (``provenance.model_server``, as
     ``tools/run_study.py`` records it) fails ``server`` or disagrees with itself; an empty
     list when it meets the requirement and every field agrees (DECISIONS D71).
 
-    The server must record its window per slot (``n_ctx_per_slot``) and its slots
-    (``parallel_slots``) as positive integers that meet ``server``; its command line must
-    be the one its SHA-256 names and give the same window and slots (llama.cpp:
-    ``--ctx-size`` is the window times the slots, with ``--parallel`` slots;
-    llama-cpp-python: ``--n_ctx`` is the window on one slot), as must ``ctx_size``; and
-    ``n_ctx_per_slot_is_default`` must say whether the window is
-    ``n_ctx_per_slot_default``, the pinned one. So a run made on a smaller window, or a
-    record edited in one field only, is found.
+    The server must be llama.cpp's and record its window per slot (``n_ctx_per_slot``)
+    and its slots (``parallel_slots``) as positive integers that meet ``server``; its
+    command line must be the one its SHA-256 names and give the same window and slots
+    (``--ctx-size`` is the window times the slots, with ``--parallel`` slots), as must
+    ``ctx_size``; it must record the pinned window ``server`` raises
+    (``n_ctx_per_slot_default``) and say that it did not serve it
+    (``n_ctx_per_slot_is_default``); and what the live server reported serving
+    (``reported``: :data:`REPORTED_FIELDS`) must be that window, those slots, and the
+    model file of its command line. So a run made on a smaller window, a record edited in
+    one field only, or a run served by another server than the one it started, is found.
     """
     if not isinstance(record, Mapping):
         return ["the run records no model server (provenance.model_server)"]
@@ -472,38 +576,59 @@ def server_record_problems(server: ServerRequirement, record: object) -> list[st
             "integers (n_ctx_per_slot, parallel_slots)"
         ]
     found = server.problems(window, slots)
+    engine = record.get("engine")
+    if engine != "llama.cpp":
+        return [
+            *found,
+            f"the model server's engine is {engine!r}, and a run an amendment added is served "
+            "by llama.cpp, whose server reports the window per slot and the slots it serves",
+        ]
     command = record.get("server_command")
     if not (isinstance(command, list) and all(isinstance(word, str) for word in command)):
         return [*found, "the model server records no command line (server_command)"]
     if sha256_text(" ".join(command)) != record.get("server_command_sha256"):
         found.append("the server command is not the one its SHA-256 (server_command_sha256) names")
-    engine = record.get("engine")
-    if engine == "llama.cpp":
-        expected = {"--ctx-size": str(window * slots), "--parallel": str(slots)}
-        size = window * slots
-    elif engine == "llama-cpp-python":
-        expected = {"--n_ctx": str(window)}
-        size = window
-        if slots != 1:
-            found.append(f"llama-cpp-python serves one slot, not the {slots} recorded")
-    else:
-        return [*found, f"the model server's engine {engine!r} is not one the runner starts"]
-    for name, value in expected.items():
+    for name, value in {"--ctx-size": str(window * slots), "--parallel": str(slots)}.items():
         if _flag(command, name) != value:
             found.append(
                 f"the server command gives {name} {_flag(command, name)}, not the {value} that "
                 f"{window} tokens per slot on {slots} slot(s) take"
             )
-    if record.get("ctx_size") != size:
-        found.append(f"ctx_size {record.get('ctx_size')!r} is not the {size} tokens it serves")
+    if record.get("ctx_size") != window * slots:
+        found.append(
+            f"ctx_size {record.get('ctx_size')!r} is not the {window * slots} tokens it serves"
+        )
     default = record.get("n_ctx_per_slot_default")
-    if not _positive_int(default):
-        found.append("the model server does not record the pinned window (n_ctx_per_slot_default)")
+    if default != server.pinned_n_ctx_per_slot:
+        found.append(
+            f"the run records the pinned window {default!r}, and its amendment raises the "
+            f"pinned window of {server.pinned_n_ctx_per_slot} tokens per slot "
+            "(n_ctx_per_slot_default)"
+        )
     elif record.get("n_ctx_per_slot_is_default") is not (window == default):
         found.append(
             f"n_ctx_per_slot_is_default does not say whether {window} tokens per slot is the "
             f"pinned window of {default}"
         )
+    reported = record.get("reported")
+    if not isinstance(reported, Mapping):
+        found.append(
+            "the run records nothing the live server reported serving (reported), so the "
+            "server that answered is not known to be the one it started"
+        )
+        return found
+    expected = {
+        "n_ctx_per_slot": window,
+        "total_slots": slots,
+        "model_path": _flag(command, "--model"),
+    }
+    differing = [
+        f"{name} {reported.get(name)!r}, not {value!r}"
+        for name, value in expected.items()
+        if reported.get(name) != value or isinstance(reported.get(name), bool)
+    ]
+    if differing:
+        found.append(f"the live server reports {'; '.join(differing)} (reported)")
     return found
 
 
@@ -512,10 +637,11 @@ def run_record_problems(plan: Plan, record: Mapping[str, Any]) -> list[str]:
     list when it was (DECISIONS D71).
 
     The run is a planned run that no amendment replaced (an excluded run stays excluded
-    and is never banked); ``run.json`` records the planned task and arm and, in its
-    provenance, the planned run spec. A run an amendment added also records that
-    amendment (``provenance.plan_amendment``) and a model server that meets its
-    requirement (:func:`server_record_problems`).
+    and is never banked); ``run.json`` records the planned task and arm, the planned
+    arm's model, and, in its provenance, the planned run spec. A run an amendment added
+    also records that amendment (``provenance.plan_amendment``), a model server that
+    meets its requirement (:func:`server_record_problems`), and its own response cache
+    (``provenance.response_cache``, :func:`amendment_cache`).
     """
     run_id = record.get("run_id")
     spec = next((run for run in plan.runs if run.run_id == run_id), None)
@@ -528,6 +654,14 @@ def run_record_problems(plan: Plan, record: Mapping[str, Any]) -> list[str]:
         found.append(f"run.json records task {record.get('task_id')!r}, not {spec.task_id}")
     if record.get("config_id") != spec.config_id:
         found.append(f"run.json records arm {record.get('config_id')!r}, not {spec.config_id}")
+    arm = next((arm for arm in plan.arms if arm.config_id == spec.config_id), None)
+    if arm is None:
+        found.append(f"the plan has no arm {spec.config_id} for its run {spec.run_id}")
+    elif record.get("model") != arm.model:
+        found.append(
+            f"run.json records model {record.get('model')!r}, not {arm.model}, the model of "
+            f"its planned arm {spec.config_id}"
+        )
     provenance = record.get("provenance")
     if not isinstance(provenance, Mapping):
         return [*found, "run.json has no provenance"]
@@ -541,6 +675,13 @@ def run_record_problems(plan: Plan, record: Mapping[str, Any]) -> list[str]:
                 f"({amendment.decision}, provenance.plan_amendment)"
             )
         found += server_record_problems(amendment.server, provenance.get("model_server"))
+        cache = amendment_cache(plan.study, spec.run_id)
+        if provenance.get("response_cache") != cache:
+            found.append(
+                f"run.json records the response cache {provenance.get('response_cache')!r}, "
+                f"not its own {cache}, so its replies may come from runs made on another "
+                "server (provenance.response_cache)"
+            )
     return found
 
 

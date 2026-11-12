@@ -89,11 +89,12 @@ def the_plan(amend: bool) -> Plan:
     return amend_plan(
         plan,
         EXCLUDED,
-        ServerRequirement(min_n_ctx_per_slot=32768, max_parallel_slots=1),
+        ServerRequirement(
+            min_n_ctx_per_slot=32768, max_parallel_slots=1, pinned_n_ctx_per_slot=PINNED
+        ),
         decision="D71",
         reason="SYNTHETIC: the request outgrew the window",
         date="2026-11-12",
-        plan_sha256_before="0" * 64,
     )
 
 

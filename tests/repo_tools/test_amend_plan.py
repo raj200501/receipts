@@ -26,7 +26,7 @@ PINNED_N_CTX = 16384
 TASKS = ("py-alpha", "py-beta", "ts-gamma")
 EXCLUDED = "smoke-py-beta-ma-syn"
 ADDED = f"{EXCLUDED}-ctx32k"
-REASON = "SYNTHETIC: after its first turn the request outgrew the 16384-token window per slot"
+REASON = "SYNTHETIC: the final-report request outgrew the 16384-token window per slot"
 
 
 @pytest.fixture
@@ -116,7 +116,11 @@ def test_the_tool_adds_one_run_and_changes_nothing_else(
     assert record == {
         "run_id": ADDED,
         "replaces": EXCLUDED,
-        "server": {"min_n_ctx_per_slot": 32768, "max_parallel_slots": 1},
+        "server": {
+            "min_n_ctx_per_slot": 32768,
+            "max_parallel_slots": 1,
+            "pinned_n_ctx_per_slot": PINNED_N_CTX,
+        },
         "decision": "D71",
         "reason": REASON,
         "date": "2026-11-12",
@@ -195,6 +199,8 @@ def pilot_study(root: Path) -> None:
         pytest.param(None, (), {"replace": "smoke-py-delta-ma-syn"}, "not a planned", id="unknown"),
         pytest.param(pilot_study, (), {}, "not amended", id="other-study"),
         pytest.param(None, ("--date", "November"), {}, "ISO 8601", id="bad-date"),
+        pytest.param(None, ("--decision", "D70"), {}, "D71 only", id="other-decision"),
+        pytest.param(None, ("--reason", " "), {}, "needs a reason", id="no-reason"),
     ],
 )
 def test_the_tool_refuses_and_writes_nothing(
@@ -230,3 +236,18 @@ def test_the_window_must_be_a_positive_number(
     with pytest.raises(SystemExit):
         amend(checkout, n_ctx="0")
     assert "--n-ctx must be a positive number of tokens" in capsys.readouterr().err
+
+
+def test_the_amendment_records_the_pinned_window_of_the_runs_model(
+    checkout: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    small = LocalModel(MODEL, "fam", Path("/nonexistent.gguf"), "0" * 64, "SYNTHETIC", 8192)
+    monkeypatch.setattr(amend_plan, "LOCAL_MODELS", {MODEL: small})
+    assert amend(checkout, n_ctx="16384") == 0
+    (record,) = json.loads(plan_path(checkout).read_text())["amendments"]
+    assert record["run_id"] == f"{EXCLUDED}-ctx16k"
+    assert record["server"] == {
+        "min_n_ctx_per_slot": 16384,
+        "max_parallel_slots": 1,
+        "pinned_n_ctx_per_slot": 8192,
+    }

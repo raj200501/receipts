@@ -5,13 +5,16 @@
 
 The new run (:func:`receipts.study.plan.amend_plan`) is the excluded run's planned spec,
 with the same study, task, arm, conditions, seed, and mitigation, under the id
-``<excluded id>-ctx<window>`` (``-ctx32k`` for 32768 tokens). It needs a model server
-with at least ``--n-ctx`` tokens of context per slot on one slot: ``tools/run_study.py``
-refuses to run it on any other server, and never attempts the excluded run again. The
-plan file gains that run and the amendment record (requirement, decision, reason, date,
-and the SHA-256 of the plan file before) and nothing else. The tool prints the SHA-256
-of the plan file's bytes before and after. It only reads the runner's failure log, and
-it changes no banked run.
+``<excluded id>-ctx<window>`` (``-ctx32k`` for 32768 tokens). It needs a llama.cpp model
+server with at least ``--n-ctx`` tokens of context per slot on one slot, and its own
+response cache (``runs/<study>/cache/<run id>``): ``tools/run_study.py`` refuses to run
+it any other way, and never attempts the excluded run again. The plan file gains that
+run and the amendment record (the requirement with the pinned window it raises, the
+decision, the reason, the date, and the SHA-256 of the plan file before) and nothing
+else. The tool prints the SHA-256 of the plan file's bytes before and after. It only
+reads the runner's failure log, and it changes no banked run. Commit the amended plan
+on its own, before the run: gate G6 requires the recorded SHA-256 to be that of the
+plan file in the parent of the commit that adds the amendment.
 
 It refuses (exit 2, nothing written) when:
 
@@ -26,7 +29,8 @@ It refuses (exit 2, nothing written) when:
   way), or the log cannot be counted;
 - the run's model is not a pinned local model, or ``--n-ctx`` does not raise its pinned
   window per slot;
-- the amendment is malformed (an empty decision or reason, a date that is not ISO 8601).
+- the amendment does not hold (:func:`receipts.study.plan.check_amendments`): a decision
+  other than D71, an empty reason, a date that is not ISO 8601.
 """
 
 from __future__ import annotations
@@ -42,15 +46,13 @@ import run_study
 from receipts.client.models import LOCAL_MODELS
 from receipts.study.plan import (
     AMENDABLE_STUDIES,
+    AMENDMENT_SLOTS,
     ServerRequirement,
     amend_plan,
     load_plan,
     plan_text,
     write_plan,
 )
-
-#: The slots the new run's server may have: one (DECISIONS D71).
-SLOTS = 1
 
 
 class RefusalError(Exception):
@@ -113,21 +115,20 @@ def amend(
             f"--n-ctx {n_ctx} does not raise the pinned window of {pinned.n_ctx} tokens per "
             f"slot of {model}"
         )
-    server = ServerRequirement(min_n_ctx_per_slot=n_ctx, max_parallel_slots=SLOTS)
+    server = ServerRequirement(
+        min_n_ctx_per_slot=n_ctx,
+        max_parallel_slots=AMENDMENT_SLOTS,
+        pinned_n_ctx_per_slot=pinned.n_ctx,
+    )
     try:
-        amended = amend_plan(
-            plan,
-            replaces,
-            server,
-            decision=decision,
-            reason=reason,
-            date=date,
-            plan_sha256_before=sha256(raw),
-        )
+        amended = amend_plan(plan, replaces, server, decision=decision, reason=reason, date=date)
     except ValueError as exc:
         raise RefusalError(str(exc)) from exc
-    write_plan(path, amended)
     added = amended.amendments[-1]
+    # The plan file is the text write_plan writes for the plan (checked above), so the
+    # SHA-256 the amendment records is that of the file's bytes.
+    assert added.plan_sha256_before == sha256(raw)
+    write_plan(path, amended)
     return [
         f"plan_sha256 before: {sha256(raw)}",
         f"added {added.run_id} in place of {replaces} (excluded after {logged} failed "

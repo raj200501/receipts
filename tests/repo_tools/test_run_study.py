@@ -958,11 +958,12 @@ def amended_plan() -> Plan:
     return amend_plan(
         base,
         REPLACED,
-        ServerRequirement(min_n_ctx_per_slot=32768, max_parallel_slots=1),
+        ServerRequirement(
+            min_n_ctx_per_slot=32768, max_parallel_slots=1, pinned_n_ctx_per_slot=PINNED_N_CTX
+        ),
         decision="D71",
         reason="SYNTHETIC: the request outgrew the window",
         date="2026-11-12",
-        plan_sha256_before="0" * 64,
     )
 
 

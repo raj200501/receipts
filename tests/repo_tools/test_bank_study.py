@@ -27,7 +27,14 @@ from receipts.client.models import QWEN_CODER_7B
 from receipts.client.server import LocalServer
 from receipts.evaluation import e0
 from receipts.study import aggregate, rescore
-from receipts.study.plan import Plan, ServerRequirement, amend_plan, load_plan, write_plan
+from receipts.study.plan import (
+    Plan,
+    ServerRequirement,
+    amend_plan,
+    amendment_cache,
+    load_plan,
+    write_plan,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 TASK = "py-api-docs"
@@ -395,22 +402,32 @@ def amend_smoke_plan(root: Path) -> None:
     amended = amend_plan(
         load_plan(path),
         EXCLUDED,
-        ServerRequirement(min_n_ctx_per_slot=32768, max_parallel_slots=1),
+        ServerRequirement(
+            min_n_ctx_per_slot=32768,
+            max_parallel_slots=1,
+            pinned_n_ctx_per_slot=QWEN_CODER_7B.n_ctx,
+        ),
         decision="D71",
         reason="SYNTHETIC test amendment",
         date="2026-11-12",
-        plan_sha256_before=hashlib.sha256(path.read_bytes()).hexdigest(),
     )
     write_plan(path, amended)
 
 
 def model_server(n_ctx: int, slots: int) -> dict[str, Any]:
     """The model server record tools/run_study.py writes for a server of the pinned 7B
-    model with ``n_ctx`` tokens per slot on ``slots`` slots (nothing is served here)."""
+    model with ``n_ctx`` tokens per slot on ``slots`` slots, with what the live server
+    reported serving (nothing is served here)."""
     model = dataclasses.replace(QWEN_CODER_7B, n_ctx=n_ctx)
     record = dict(LocalServer(model, engine="llama.cpp", parallel=slots).provenance())
     record["n_ctx_per_slot_default"] = QWEN_CODER_7B.n_ctx
     record["n_ctx_per_slot_is_default"] = n_ctx == QWEN_CODER_7B.n_ctx
+    record["reported"] = {
+        "source": "GET /props",
+        "n_ctx_per_slot": n_ctx,
+        "total_slots": slots,
+        "model_path": str(QWEN_CODER_7B.path),
+    }
     return record
 
 
@@ -425,7 +442,14 @@ def stand_in(root: Path, run_id: str = ADDED, **provenance: Any) -> Path:
     prov: dict[str, Any] = {
         "run_spec": {**dataclasses.asdict(spec), "conditions": dict(spec.conditions)},
         "model_server": model_server(32768, 1),
-        **({} if amendment is None else {"plan_amendment": amendment.to_json()}),
+        **(
+            {}
+            if amendment is None
+            else {
+                "plan_amendment": amendment.to_json(),
+                "response_cache": amendment_cache("smoke", run_id),
+            }
+        ),
         **provenance,
     }
     record = {
