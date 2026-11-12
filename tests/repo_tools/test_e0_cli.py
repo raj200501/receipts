@@ -521,11 +521,18 @@ def test_artifacts_carry_the_fields_of_the_plan_g5_row(
     for named in (
         "`artifacts/e0/claim_type_counts.json` (`counts`, `source_runs`)",
         "`artifacts/e0/seeded_eval.json` (`split: heldout`, `heldout_manifest`, `items[]` with "
-        "`report_id`, `claim_type`, `gold_verdict`, `pred_verdict`)",
+        "`report_id`, `claim_type`, `gold_verdict`, `pred_verdict`; `verifier_mode`, "
+        "`reports`, `report_requirements`, `per_type`, `top5`, `passes`, `all_top5_pass`, "
+        "`instrument` (`commit`, `paths`, `trees`, `dirty`, `uncommitted`), `attempt`, "
+        "`attempts_log`)",
+        "`artifacts/e0/heldout_attempts.jsonl` (one line per held-out scoring: `attempt`, "
+        "`created`, `command`, `commit`, `trees`, `passes`, `all_top5_pass`, `per_type` with "
+        "`correct`, `predicted`, `gold`)",
         "`artifacts/e0/heldout_manifest.json` (`reports: {id: sha256}`)",
         "`artifacts/e0/seeded/heldout/<id>.json`",
         "`artifacts/e0/ledger_completeness.json` (`runs_dirs`; `runs[]` with "
         "`transcript_commands`, `ledger_commands`, `missing`, `unparsed_actions`)",
+        "the output of `tools/e0.py recheck` run in the clone after `make setup`",
     ):
         assert named in row
     paths = pipeline(git_repo, commit, capsys)
@@ -545,6 +552,27 @@ def test_artifacts_carry_the_fields_of_the_plan_g5_row(
     assert all(
         {"report_id", "claim_type", "gold_verdict", "pred_verdict"} <= set(i)
         for i in evaluation["items"]
+    )
+    # What G5 re-derives with tools/e0.py recheck and compares with the attempt log (D66).
+    assert set(e0.RECHECKED_FIELDS) <= set(evaluation)
+    instrument = evaluation["instrument"]
+    assert {"commit", "paths", "trees", "dirty", "uncommitted"} <= set(instrument)
+    assert set(instrument["trees"]) == set(instrument["paths"])
+    assert evaluation["attempt"] == 1 and evaluation["attempts_log"] == e0.ATTEMPTS
+    (line,) = (git_repo / e0.ATTEMPTS).read_text("utf-8").splitlines()
+    logged = json.loads(line)
+    assert {
+        "attempt",
+        "created",
+        "command",
+        "commit",
+        "trees",
+        "passes",
+        "all_top5_pass",
+        "per_type",
+    } <= set(logged)
+    assert all(
+        set(ship_check.ATTEMPT_COUNTS) <= set(counts) for counts in logged["per_type"].values()
     )
     for report_id, digest in manifest["reports"].items():
         assert e0.sha256_file(git_repo / e0.SEEDED / "heldout" / f"{report_id}.json") == digest
