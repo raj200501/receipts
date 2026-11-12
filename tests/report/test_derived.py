@@ -21,8 +21,11 @@ from typing import Any
 
 import pytest
 
+import analyze
 import freshness
 import report
+import run_judges
+from receipts.evaluation import e3 as e3_judges
 from receipts.report import derived
 from receipts.report.derived import (
     DERIVED,
@@ -36,6 +39,8 @@ from receipts.report.derived import (
     refresh,
     same,
 )
+from receipts.study import results as e1_analysis
+from receipts.study import results_e4
 from tests.repo_tools.test_smoke_outcomes import record
 from tests.report import studies
 
@@ -104,6 +109,62 @@ def test_every_derived_artifact_is_registered_with_how_to_derive_it() -> None:
     assert comparable(art) == {"summary": 1, "provenance": {"x": 2}}
 
 
+#: The inputs tools/analyze.py reads, by option, at their default paths: the banked ones.
+ANALYZE_INPUTS = {
+    "--runs": analyze.RUNS,
+    "--prereg": e1_analysis.PREREG_E1,
+    "--plan": analyze.PLAN,
+    "--seeded": analyze.SEEDED,
+    "--failures": analyze.FAILURES,
+    "--run-dirs": analyze.RUN_DIRS,
+}
+
+
+def test_a_re_derivation_re_uses_only_the_options_each_artifact_lists() -> None:
+    """Review BV1 and BV2 of the B5 fix: a recorded option that names an input may only
+    name its banked default, and an option that makes a partial or exploratory run of a
+    study artifact's default path is not re-used at all."""
+    fixed = {i.path: {o.name: o.fixed for o in i.options if o.fixed is not None} for i in DERIVED}
+    assert fixed == {
+        SMOKE.path: {},
+        E1.path: ANALYZE_INPUTS,
+        E2.path: ANALYZE_INPUTS,
+        E3.path: {"--prereg": e3_judges.PREREG_PATH, "--replies": run_judges.REPLIES},
+        E4.path: {"--prereg": results_e4.PREREG_PATH},
+    }
+    free = {i.path: sorted(o.name for o in i.options if o.fixed is None) for i in DERIVED}
+    assert free == {
+        SMOKE.path: [],
+        E1.path: ["--n-boot"],
+        E2.path: [],
+        E3.path: [
+            "--cache",
+            "--confirmatory",
+            "--engine",
+            "--judges",
+            "--port",
+            "--request-timeout",
+            "--rescore",
+            "--threads",
+        ],
+        E4.path: ["--confirmatory"],
+    }
+    flags = {i.path: sorted(o.name for o in i.options if o.flag) for i in DERIVED}
+    assert flags == {
+        SMOKE.path: [],
+        E1.path: [],
+        E2.path: [],
+        E3.path: ["--confirmatory", "--rescore"],
+        E4.path: ["--confirmatory"],
+    }
+    # Each is an option its script defines, a flag as a store_true option.
+    for item in DERIVED:
+        source = (ROOT / item.script).read_text(encoding="utf-8")
+        for option in item.options:
+            defined = f'"{option.name}", action="store_true"' if option.flag else f'"{option.name}"'
+            assert defined in source, (item.script, option.name)
+
+
 def test_values_are_compared_as_json_values() -> None:
     assert not same(1, True) and not same(1, 1.0) and not same(0, None)
     assert same({"a": [1, {"b": 2.5}]}, {"a": [1, {"b": 2.5}]})
@@ -137,7 +198,13 @@ ACCEPTED = [
         E2,
         "python tools/analyze.py e2 --runs artifacts/e1/runs.jsonl",
         ["e2", "--runs", "artifacts/e1/runs.jsonl"],
-        id="e2",
+        id="e2-banked-rows-named",
+    ),
+    pytest.param(
+        E2,
+        "python tools/analyze.py e2 " + " ".join(f"{k}={v}" for k, v in ANALYZE_INPUTS.items()),
+        ["e2", *(f"{k}={v}" for k, v in ANALYZE_INPUTS.items())],
+        id="e2-every-banked-input-named",
     ),
     pytest.param(
         E3,
@@ -147,11 +214,37 @@ ACCEPTED = [
     ),
     pytest.param(
         E3,
-        "python tools/run_judges.py --limit 3 --judges=qwen7b-transcript --out runs/e3/p.json",
-        ["--limit", "3", "--judges=qwen7b-transcript", "--rescore"],
-        id="e3-partial",
+        "python tools/run_judges.py --rescore --replies artifacts/e3/replies.jsonl",
+        ["--rescore", "--replies", "artifacts/e3/replies.jsonl"],
+        id="e3-a-re-score-of-the-banked-replies",
+    ),
+    pytest.param(
+        E3,
+        "python tools/run_judges.py --judges=granite8b-transcript,qwen7b-transcript "
+        "--threads 4 --port 8091 --engine llama.cpp --request-timeout 600 --cache runs/c2",
+        [
+            "--judges=granite8b-transcript,qwen7b-transcript",
+            "--threads",
+            "4",
+            "--port",
+            "8091",
+            "--engine",
+            "llama.cpp",
+            "--request-timeout",
+            "600",
+            "--cache",
+            "runs/c2",
+            "--rescore",
+        ],
+        id="e3-every-judge-and-server-settings",
     ),
     pytest.param(E4, "python tools/analyze_e4.py", [], id="e4-defaults"),
+    pytest.param(
+        E4,
+        "python tools/analyze_e4.py --confirmatory --prereg prereg/0002-e4-mitigation.md",
+        ["--confirmatory", "--prereg", "prereg/0002-e4-mitigation.md"],
+        id="e4-confirmatory",
+    ),
 ]
 
 
@@ -189,6 +282,93 @@ REFUSED = [
     ),
     pytest.param(E3, "python tools/run_judges.py --cache /tmp/c", "an absolute path", id="cache"),
     pytest.param(E1, "python tools/analyze.py e1 --runs \x00", "NUL", id="nul"),
+    # Review BV1: an E2 (or E1) input other than the banked one, inside the repository.
+    pytest.param(
+        E2,
+        "python tools/analyze.py e2 --runs artifacts/e2/alt_runs.jsonl",
+        "passes --runs artifacts/e2/alt_runs.jsonl, not the banked input artifacts/e1/runs.jsonl",
+        id="e2-other-rows",
+    ),
+    pytest.param(
+        E2,
+        "python tools/analyze.py e2 --run-dirs=artifacts/hand/runs",
+        "passes --run-dirs artifacts/hand/runs, not the banked input artifacts/studies/e1/runs",
+        id="e2-other-runs",
+    ),
+    pytest.param(
+        E2,
+        "python tools/analyze.py e2 --seeded artifacts/e0/other.json",
+        "not the banked input artifacts/e0/seeded_eval.json",
+        id="e2-other-evaluation",
+    ),
+    pytest.param(
+        E1,
+        "python tools/analyze.py e1 --plan artifacts/plan.json",
+        "not the banked input artifacts/studies/e1/plan.json",
+        id="e1-other-plan",
+    ),
+    pytest.param(
+        E1,
+        "python tools/analyze.py e1 --failures artifacts/none.jsonl",
+        "not the banked input artifacts/studies/e1/failures.jsonl",
+        id="e1-other-failure-log",
+    ),
+    pytest.param(
+        E1,
+        "python tools/analyze.py e1 --prereg prereg/9999-other.md",
+        "not the banked input prereg/0001-e1-main-study.md",
+        id="e1-other-prereg",
+    ),
+    pytest.param(
+        E1,
+        "python tools/analyze.py e1 --runs ./artifacts/e1/runs.jsonl",
+        "not the banked input",
+        id="e1-the-rows-spelled-otherwise",
+    ),
+    # Review BV2: a re-score of replies other than the banked ones, and the options that
+    # make a partial or exploratory E3 run, which never writes the default path.
+    pytest.param(
+        E3,
+        "python tools/run_judges.py --rescore --replies artifacts/e3/replies-alt.jsonl",
+        "passes --replies artifacts/e3/replies-alt.jsonl, not the banked input "
+        "artifacts/e3/replies.jsonl",
+        id="e3-other-replies",
+    ),
+    pytest.param(
+        E3,
+        "python tools/run_judges.py --prereg prereg/other.md",
+        "not the banked input prereg/0003-e3-judges.md",
+        id="e3-other-prereg",
+    ),
+    pytest.param(E3, "python tools/run_judges.py --limit 3", "passes --limit, which", id="limit"),
+    pytest.param(
+        E3, "python tools/run_judges.py --sample-runs 12", "passes --sample-runs", id="e3-k"
+    ),
+    pytest.param(
+        E3, "python tools/run_judges.py --sample-seed=7", "passes --sample-seed", id="e3-seed"
+    ),
+    pytest.param(E3, "python tools/run_judges.py --dry-run", "passes --dry-run", id="dry-run"),
+    pytest.param(
+        E3, "python tools/run_judges.py --confirmatory=1", "takes no value", id="flag-with-value"
+    ),
+    pytest.param(E3, "python tools/run_judges.py --judges", "without a value", id="no-value"),
+    pytest.param(
+        E3,
+        "python tools/run_judges.py --judges --limit 3",
+        "passes --judges with the value '--limit'",
+        id="an-option-as-a-value",
+    ),
+    # E2 has no bootstrap, and E4's quick-check settings never write its default path.
+    pytest.param(E2, "python tools/analyze.py e2 --n-boot 10", "passes --n-boot", id="e2-n-boot"),
+    pytest.param(E4, "python tools/analyze_e4.py --n-boot 10", "passes --n-boot", id="e4-n-boot"),
+    pytest.param(E4, "python tools/analyze_e4.py --seed 5", "passes --seed", id="e4-seed"),
+    pytest.param(E4, "python tools/analyze_e4.py --n-agq=3", "passes --n-agq", id="e4-n-agq"),
+    # Options are re-used only as spelled in full, so argparse reads each as the one listed.
+    pytest.param(
+        E1, "python tools/analyze.py e1 --n-b 10", "passes --n-b, which", id="abbreviated"
+    ),
+    pytest.param(E1, "python tools/analyze.py e1 extra", "passes 'extra'", id="a-positional"),
+    pytest.param(E1, "python tools/analyze.py e1 -h", "passes -h, which", id="short-option"),
 ]
 
 
@@ -207,14 +387,19 @@ def test_a_path_through_a_symbolic_link_out_of_the_repository_is_refused(tmp_pat
     outside.mkdir()
     (root / "artifacts").mkdir()
     (root / "artifacts" / "link").symlink_to(outside, target_is_directory=True)
-    command = "python tools/analyze.py e1 --runs artifacts/link/runs.jsonl"
+    command = "python tools/run_judges.py --cache artifacts/link/cache"
     with pytest.raises(DerivedError, match="through a symbolic link"):
-        recorded_arguments(root, E1, command)
+        recorded_arguments(root, E3, command)
     inside = root / "artifacts" / "inner"
     inside.mkdir()
     (root / "artifacts" / "near").symlink_to(inside, target_is_directory=True)
-    near = "python tools/analyze.py e1 --runs artifacts/near/runs.jsonl"
-    assert recorded_arguments(root, E1, near) == ["--runs", "artifacts/near/runs.jsonl"]
+    near = "python tools/run_judges.py --cache artifacts/near/cache"
+    assert recorded_arguments(root, E3, near) == ["--cache", "artifacts/near/cache"]
+    # A banked input reached through a link out of the repository is refused as well.
+    (root / "artifacts" / "e1").symlink_to(outside, target_is_directory=True)
+    banked = "python tools/analyze.py e1 --runs artifacts/e1/runs.jsonl"
+    with pytest.raises(DerivedError, match="through a symbolic link"):
+        recorded_arguments(root, E1, banked)
 
 
 def test_an_item_that_reuses_no_arguments_ignores_the_recorded_command(tmp_path: Path) -> None:
@@ -561,6 +746,83 @@ def test_a_study_artifact_recorded_with_a_root_is_not_derived_again(e4_repo: Pat
         f"{E4.path}: its provenance.command passes --root, and a re-derivation reads this "
         "repository, not another root"
     ]
+
+
+def other_input(option: str, value: str, banked: str) -> str:
+    """How the check refuses a recorded input other than the banked one."""
+    return (
+        f"its provenance.command passes {option} {value}, not the banked input {banked}, and "
+        "a re-derivation reads only the banked inputs"
+    )
+
+
+def freshness_fails(root: Path, said: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """``make freshness`` on ``root`` fails, and says ``said``."""
+    stub_registry(root)
+    (root / "README.md").write_text("SYNTHETIC: no bound numbers.\n", encoding="utf-8")
+    capsys.readouterr()
+    assert freshness.main(["--root", str(root), "README.md"]) == 1
+    assert said in capsys.readouterr().out
+
+
+@pytest.mark.slow  # the SYNTHETIC E1 study is analyzed first
+def test_e2_written_from_a_hand_made_rows_file_fails_the_check_and_make_freshness(
+    e1_repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review BV1 of the B5 fix: ``tools/analyze.py e2 --runs <a rows file committed in the
+    repository>`` writes classes that the same command derives again, so the check must
+    refuse the recorded input, which is not the banked one."""
+    alt = "artifacts/e2/alt_runs.jsonl"
+    genuine = json.loads((e1_repo / E2.path).read_text(encoding="utf-8"))
+    studies.rows_without_evidence(e1_repo, alt)
+    studies.operator(e1_repo, "tools/analyze.py", "e2", "--runs", alt)
+    studies.commit_all(e1_repo, "SYNTHETIC E2 from a hand-made rows file")
+    forged = json.loads((e1_repo / E2.path).read_text(encoding="utf-8"))
+    assert forged["provenance"]["command"] == f"python tools/analyze.py e2 --runs {alt}"
+    assert {c["class"] for c in forged["claims"]} == {"never_saw"}
+    assert {c["class"] for c in genuine["claims"]} != {"never_saw"}
+    refused = other_input("--runs", alt, analyze.RUNS)
+    assert check(e1_repo, [E2]) == [f"{E2.path}: {refused}"]
+    assert derived.main(["--root", str(e1_repo), E2.path]) == 1
+    assert capsys.readouterr().out.splitlines() == [
+        f"problem: {E2.path}: {refused}",
+        "DERIVED: FAIL 1",
+    ]
+    freshness_fails(e1_repo, refused, capsys)
+
+
+def counts(judges: dict[str, Any]) -> dict[str, Any]:
+    """Each judge's per-type detection counts."""
+    keys = ("tp", "fp", "fn", "tn")
+    return {
+        j["judge_id"]: {t: [c[k] for k in keys] for t, c in j["per_type"].items()}
+        for j in judges["judges"]
+    }
+
+
+def test_e3_scored_from_hand_made_replies_fails_the_check_and_make_freshness(
+    e3_repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review BV2 of the B5 fix: a re-score of a replies file committed beside the banked
+    one gives other counts, and its own command re-scores to them, so the check must
+    refuse the recorded replies, which are not the banked ones."""
+    alt = "artifacts/e3/replies-alt.jsonl"
+    banked = (e3_repo / studies.E3_REPLIES).read_bytes()
+    genuine = json.loads((e3_repo / E3.path).read_text(encoding="utf-8"))
+    studies.forged_replies(e3_repo, alt, genuine["judges"][0]["judge_id"])
+    rescored = "artifacts/e3/forged.json"
+    rescore = ["--rescore", "--replies", alt, "--out", rescored]
+    studies.operator(e3_repo, "tools/run_judges.py", *rescore)
+    (e3_repo / rescored).replace(e3_repo / E3.path)  # copied to the default path by hand
+    studies.commit_all(e3_repo, "SYNTHETIC E3 scored from hand-made replies")
+    forged = json.loads((e3_repo / E3.path).read_text(encoding="utf-8"))
+    assert forged["replies"]["path"] == alt and counts(forged) != counts(genuine)
+    assert (e3_repo / studies.E3_REPLIES).read_bytes() == banked
+    refused = other_input("--replies", alt, studies.E3_REPLIES)
+    assert check(e3_repo, [E3]) == [f"{E3.path}: {refused}"]
+    assert derived.main(["--root", str(e3_repo), E3.path]) == 1
+    assert f"problem: {E3.path}: {refused}" in capsys.readouterr().out
+    freshness_fails(e3_repo, refused, capsys)
 
 
 # ---------------------------------------------------------------- the command line

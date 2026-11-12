@@ -109,6 +109,46 @@ def edit(root: Path, rel: str, change: Callable[[dict[str, Any]], None]) -> None
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def jsonl(path: Path) -> list[dict[str, Any]]:
+    """The JSON objects of the JSON lines file at ``path``."""
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
+def rows_without_evidence(root: Path, rel: str) -> None:
+    """Write at ``rel`` a hand-made copy of the banked E1 rows in which no contradicted
+    claim cites a ledger event, so E2 classifies every contradicted claim ``never_saw``
+    (the forgery of review BV1: an input file other than the banked one, committed
+    inside the repository)."""
+    rows = jsonl(root / "artifacts" / "e1" / "runs.jsonl")
+    for row in rows:
+        for claim in row.get("claims") or []:
+            if claim.get("verdict") == "contradicted":
+                claim["evidence"] = []
+    text = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
+    (root / rel).write_text(text, encoding="utf-8")
+
+
+def forged_replies(root: Path, rel: str, judge_id: str) -> None:
+    """Write at ``rel`` a hand-made copy of the banked E3 replies in which every reply of
+    ``judge_id`` labels each claim with its row's verdict (a perfect judge), keeping each
+    record's cache key and run id, so a re-score of the copy is served in full (the
+    forgery of review BV2)."""
+    truth = {
+        (row["run_id"], claim["claim_id"]): claim["verdict"]
+        for row in jsonl(root / "artifacts" / "e1" / "runs.jsonl")
+        for claim in row.get("claims") or []
+    }
+    header, *records = jsonl(root / E3_REPLIES)
+    for record in records:
+        if record["judge_id"] == judge_id:
+            labels = json.loads(record["text"])["labels"]
+            for label in labels:
+                label["label"] = truth[(record["run_id"], label["id"])]
+            record["text"] = json.dumps({"labels": labels})
+    text = "".join(json.dumps(r, sort_keys=True) + "\n" for r in [header, *records])
+    (root / rel).write_text(text, encoding="utf-8")
+
+
 def e1_study(root: Path) -> Path:
     """A SYNTHETIC E1 study banked after a frozen preregistration (the fixture of
     tests/repo_tools/test_analyze.py) with the E1 and E2 artifacts: E1 from an

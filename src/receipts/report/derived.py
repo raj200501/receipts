@@ -23,11 +23,16 @@ files the pattern matches now, so a run banked, removed, or changed after it was
 makes it stale. A study artifact records the inputs it read itself (``provenance.inputs``),
 which are part of the compared content, and is derived again with the arguments its
 ``provenance.command`` records (:func:`recorded_arguments`), so an exploratory artifact
-made with, say, ``--n-boot 10`` is derived again the same way; a recorded command that
-names another script, passes ``--root``, or passes a path that leads out of this
-repository is refused, so a derivation reads only the repository. Every derivation runs with
-``RECEIPTS_OFFLINE=1``, so the model client refuses any call. An item whose artifact is
-absent is skipped, except the smoke summary when its pattern matches a file.
+made with, say, ``--n-boot 10`` is derived again the same way. Only the options each
+item lists (:attr:`Derived.options`) are re-used, and an option that names an input only
+with its default path: so a recorded command that names another script, passes
+``--root``, an input file other than the banked one (``--runs`` of a hand-made rows
+file, or ``--replies`` of hand-made judge replies, both inside the repository), an option
+of a partial or exploratory run that never writes the item's path, or a path that leads
+out of this repository is refused, and a derivation reads only the banked inputs. Every
+derivation runs with ``RECEIPTS_OFFLINE=1``, so the model client refuses any call. An
+item whose artifact is absent is skipped, except the smoke summary when its pattern
+matches a file.
 
 ``make freshness`` and ``make reproduce`` report what :func:`check` finds for every item,
 and gates G7, G8, and G9 run ``python -m receipts.report.derived <path>`` (:func:`main`)
@@ -54,6 +59,25 @@ from typing import Any
 
 
 @dataclass(frozen=True)
+class Option:
+    """A long option that a re-derivation may take from a recorded command.
+
+    Attributes:
+        name: The option as its script defines it, in full (``--n-boot``); a recorded
+            command must spell it so, which is how argparse reads it whatever other
+            options the script has.
+        flag: It takes no value (an ``action="store_true"`` option).
+        fixed: The only value it may have: the script's default for an input, so a
+            re-derivation reads the banked input. None: any value that is not a path
+            out of the repository.
+    """
+
+    name: str
+    flag: bool = False
+    fixed: str | None = None
+
+
+@dataclass(frozen=True)
 class Derived:
     """A derived artifact and how to derive it again.
 
@@ -70,6 +94,8 @@ class Derived:
             command must begin with them.
         recorded: Re-use the arguments recorded in the committed artifact's
             ``provenance.command`` (:func:`recorded_arguments`).
+        options: The recorded options a re-derivation may re-use; any other recorded
+            option but ``--out`` is refused.
         extra: Arguments passed after the recorded ones (E3's ``--rescore``).
         rewritable: ``make report`` may rewrite it (:func:`refresh`).
     """
@@ -79,6 +105,7 @@ class Derived:
     inputs: str | None = None
     args: tuple[str, ...] = ()
     recorded: bool = False
+    options: tuple[Option, ...] = ()
     extra: tuple[str, ...] = ()
     rewritable: bool = False
 
@@ -96,6 +123,35 @@ class Derived:
         return f"derive it again with {self.command}{recorded} and commit it"
 
 
+#: The inputs ``tools/analyze.py`` reads, each only at its default path: the banked rows,
+#: the preregistration, the study plan, the held-out evaluation, the failure log, and the
+#: banked runs.
+ANALYZE_INPUTS: tuple[Option, ...] = (
+    Option("--runs", fixed="artifacts/e1/runs.jsonl"),
+    Option("--prereg", fixed="prereg/0001-e1-main-study.md"),
+    Option("--plan", fixed="artifacts/studies/e1/plan.json"),
+    Option("--seeded", fixed="artifacts/e0/seeded_eval.json"),
+    Option("--failures", fixed="artifacts/studies/e1/failures.jsonl"),
+    Option("--run-dirs", fixed="artifacts/studies/e1/runs"),
+)
+#: What an E3 run may record and its re-score re-use: every judge named, the confirmatory
+#: request, and the model server settings and response cache that a re-score never uses;
+#: the preregistration and the replies only at their defaults. ``--limit``,
+#: ``--sample-runs``, and ``--sample-seed`` make a partial or exploratory run, which never
+#: writes ``artifacts/e3/judges.json``, so they are not re-used.
+JUDGE_OPTIONS: tuple[Option, ...] = (
+    Option("--judges"),
+    Option("--confirmatory", flag=True),
+    Option("--rescore", flag=True),
+    Option("--prereg", fixed="prereg/0003-e3-judges.md"),
+    Option("--replies", fixed="artifacts/e3/replies.jsonl"),
+    Option("--cache"),
+    Option("--port"),
+    Option("--threads"),
+    Option("--engine"),
+    Option("--request-timeout"),
+)
+
 #: Every derived artifact that a gate or a number in README.md or docs/REPORT.md reads.
 DERIVED: tuple[Derived, ...] = (
     Derived(
@@ -104,10 +160,37 @@ DERIVED: tuple[Derived, ...] = (
         "artifacts/studies/smoke/runs/*/run.json",
         rewritable=True,
     ),
-    Derived("artifacts/e1/results.json", "tools/analyze.py", args=("e1",), recorded=True),
-    Derived("artifacts/e2/mechanism.json", "tools/analyze.py", args=("e2",), recorded=True),
-    Derived("artifacts/e3/judges.json", "tools/run_judges.py", recorded=True, extra=("--rescore",)),
-    Derived("artifacts/e4/results.json", "tools/analyze_e4.py", recorded=True),
+    Derived(
+        "artifacts/e1/results.json",
+        "tools/analyze.py",
+        args=("e1",),
+        recorded=True,
+        options=(*ANALYZE_INPUTS, Option("--n-boot")),
+    ),
+    Derived(
+        "artifacts/e2/mechanism.json",
+        "tools/analyze.py",
+        args=("e2",),
+        recorded=True,
+        options=ANALYZE_INPUTS,
+    ),
+    Derived(
+        "artifacts/e3/judges.json",
+        "tools/run_judges.py",
+        recorded=True,
+        options=JUDGE_OPTIONS,
+        extra=("--rescore",),
+    ),
+    # --n-boot, --seed, and --n-agq are quick checks that never write the default path.
+    Derived(
+        "artifacts/e4/results.json",
+        "tools/analyze_e4.py",
+        recorded=True,
+        options=(
+            Option("--confirmatory", flag=True),
+            Option("--prereg", fixed="prereg/0002-e4-mitigation.md"),
+        ),
+    ),
 )
 #: Provenance keys that record when, where, and how an artifact was made, not what it
 #: holds: a derivation on another commit, Python, or machine gives the same content.
@@ -180,16 +263,41 @@ def _option(token: str, name: str) -> bool:
     return len(head) >= 3 and head.startswith("--") and name.startswith(head)
 
 
+def _inside(root: Path, value: str) -> None:
+    """Refuse a recorded value that could lead a re-derivation out of ``root``.
+
+    Raises:
+        DerivedError: ``value`` is an absolute path, has a ``..`` part, or leads out of
+            ``root`` through a symbolic link.
+    """
+    pure = PurePosixPath(value)
+    if pure.is_absolute() or ".." in pure.parts:
+        raise DerivedError(
+            f"its provenance.command passes {value!r}, an absolute path or one with a .. "
+            "part, and a re-derivation reads only this repository"
+        )
+    if not (root / value).resolve().is_relative_to(root.resolve()):
+        raise DerivedError(
+            f"its provenance.command passes {value!r}, which leads out of this repository "
+            "through a symbolic link"
+        )
+
+
 def recorded_arguments(root: Path, item: Derived, command: object) -> list[str]:
     """The arguments a re-derivation of ``item`` takes from the committed artifact's
     ``provenance.command``: those after the script and ``item.args``, without ``--out``
     and its value.
 
     The command is read as the tools record it (``"python <script> <arguments>"``, joined
-    by single spaces). A re-derivation reads only the repository at ``root``: so the
-    command must name ``item.script`` with ``item.args``, and no argument may be
-    ``--root``, an absolute path, a path with a ``..`` part, or a path that leads out of
-    ``root`` through a symbolic link.
+    by single spaces). A re-derivation reads only the banked inputs in the repository at
+    ``root``, so the command must name ``item.script`` with ``item.args``, and every
+    other argument must be one of ``item.options`` spelled in full, a flag without a
+    value or an option with its value (``--name value`` or ``--name=value``). An option
+    with a ``fixed`` value must have that value (an input other than the banked one is
+    refused: review BV1 and BV2 of the B5 fix), and no value may be an absolute path, a
+    path with a ``..`` part, or a path that leads out of ``root`` through a symbolic
+    link. ``--root`` is refused, and ``--out`` (abbreviated as argparse allows) is
+    dropped with its value, whatever it is.
 
     Raises:
         DerivedError: The command is missing or is not one a re-derivation runs.
@@ -211,9 +319,10 @@ def recorded_arguments(root: Path, item: Derived, command: object) -> list[str]:
             f"its provenance.command runs {said}, not {' '.join([item.script, *fixed])}"
         )
     rest = tokens[2 + len(fixed) :]
+    allowed = {option.name: option for option in item.options}
+    reused = ", ".join(allowed) or "none"
     kept: list[str] = []
     index = 0
-    inside = root.resolve()
     while index < len(rest):
         token = rest[index]
         index += 1
@@ -225,26 +334,46 @@ def recorded_arguments(root: Path, item: Derived, command: object) -> list[str]:
                 f"its provenance.command passes {token.split('=', 1)[0]}, and a re-derivation "
                 "reads this repository, not another root"
             )
-        value = token.split("=", 1)[1] if token.startswith("--") and "=" in token else token
-        pure = PurePosixPath(value)
-        if pure.is_absolute() or ".." in pure.parts:
+        head, equals, value = token.partition("=") if token.startswith("--") else (token, "", "")
+        option = allowed.get(head)
+        if option is None:
+            said = head if head.startswith("-") else repr(token)
             raise DerivedError(
-                f"its provenance.command passes {value!r}, an absolute path or one with a .. "
-                "part, and a re-derivation reads only this repository"
+                f"its provenance.command passes {said}, which a re-derivation of {item.path} "
+                f"does not re-use (it re-uses only {reused}, each spelled in full)"
             )
-        if not (root / value).resolve().is_relative_to(inside):
+        if option.flag:
+            if equals:
+                raise DerivedError(
+                    f"its provenance.command passes {token!r}, but {head} takes no value"
+                )
+            kept.append(token)
+            continue
+        if not equals:
+            if index >= len(rest):
+                raise DerivedError(f"its provenance.command passes {head} without a value")
+            value = rest[index]
+            index += 1
+            if value.startswith("-"):
+                raise DerivedError(
+                    f"its provenance.command passes {head} with the value {value!r}, which "
+                    "is an option, not a value"
+                )
+        _inside(root, value)
+        if option.fixed is not None and value != option.fixed:
             raise DerivedError(
-                f"its provenance.command passes {value!r}, which leads out of this repository "
-                "through a symbolic link"
+                f"its provenance.command passes {head} {value}, not the banked input "
+                f"{option.fixed}, and a re-derivation reads only the banked inputs"
             )
-        kept.append(token)
+        kept += [token] if equals else [head, value]
     return kept
 
 
 def arguments(root: Path, item: Derived, committed: Mapping[str, Any] | None) -> list[str]:
     """The arguments a fresh derivation of ``item`` passes its script before ``--out``:
     ``item.args``, then the recorded ones of ``committed`` (when ``item.recorded``), then
-    ``item.extra``.
+    each of ``item.extra`` that the recorded ones lack (a re-score recorded with
+    ``--rescore`` gets it once).
 
     Raises:
         DerivedError: :func:`recorded_arguments` refuses the recorded command.
@@ -254,7 +383,7 @@ def arguments(root: Path, item: Derived, committed: Mapping[str, Any] | None) ->
         prov = committed.get("provenance") if committed is not None else None
         command = prov.get("command") if isinstance(prov, Mapping) else None
         recorded = recorded_arguments(root, item, command)
-    return [*item.args, *recorded, *item.extra]
+    return [*item.args, *recorded, *(arg for arg in item.extra if arg not in recorded)]
 
 
 def derive(root: Path, item: Derived, args: Sequence[str] = ()) -> dict[str, Any]:
