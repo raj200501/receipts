@@ -17,9 +17,12 @@ from __future__ import annotations
 import dataclasses
 import io
 import json
+import os
+import signal
 import subprocess
 import tarfile
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,12 +32,13 @@ import pytest
 
 import receipts
 import run_study
-from receipts.client.server import LocalModel, LocalServer
+from receipts.client.server import LocalModel, LocalServer, ServerStateError
 from receipts.sandbox.bwrap import probe_bwrap
 from receipts.study.plan import (
     Plan,
     ServerRequirement,
     amend_plan,
+    amendment_cache,
     local_arm,
     smoke_plan,
     write_plan,
@@ -320,14 +324,24 @@ def no_setup(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(run_study, "LOCAL_MODELS", models)
 
 
-def call_one_run(spec: RunSpec, plan: Plan | None = None, n_ctx: int | None = None) -> Any:
+def call_one_run(
+    spec: RunSpec,
+    plan: Plan | None = None,
+    n_ctx: int | None = None,
+    *,
+    cache: Path | None = None,
+    engine: str = "llama.cpp",
+) -> Any:
     """one_run with stand-in client and server (serving the model of the run's arm with
-    window ``n_ctx``, the pinned one by default); each test patches execute_run."""
+    window ``n_ctx``, the pinned one by default, on one slot); the client caches in
+    ``cache``, by default the run's own response cache (:func:`run_study.response_cache`).
+    Each test patches execute_run."""
     plan = plan or synthetic_plan()
     pinned = run_study.LOCAL_MODELS[plan.arm(spec.config_id).model]
-    server = FakeServer(run_study.served_model(pinned, n_ctx), parallel=1)
+    server = FakeServer(run_study.served_model(pinned, n_ctx), parallel=1, engine=engine)
+    client = SimpleNamespace(cache_dir=cache or run_study.response_cache(plan, spec))
     code = {"code": "working tree"}
-    return run_study.one_run(plan, spec, object(), Path("/nonexistent"), "a" * 40, server, code)
+    return run_study.one_run(plan, spec, client, Path("/nonexistent"), "a" * 40, server, code)
 
 
 def raise_in_execute_run(*args: Any, **kwargs: Any) -> Any:
@@ -374,10 +388,28 @@ def test_one_run_passes_the_planned_spec_and_provenance(
     assert seen["extra_provenance"]["task_tree_sha256"] == "f" * 64
     assert seen["extra_provenance"]["code"] == "working tree"
     # The run record's model server says which window per slot it served, and that it
-    # is the pinned one (DECISIONS D71).
+    # is the pinned one, and what the live server reported serving (DECISIONS D71).
     server = seen["server_provenance"]
     assert server["n_ctx_per_slot"] == server["n_ctx_per_slot_default"] == PINNED_N_CTX
     assert server["n_ctx_per_slot_is_default"] is True
+    assert server["reported"] == {
+        "source": "GET /props",
+        "n_ctx_per_slot": PINNED_N_CTX,
+        "total_slots": 1,
+        "model_path": str(synthetic_model().path),
+    }
+    assert "response_cache" not in seen["extra_provenance"]
+
+
+def test_one_run_confirms_the_live_server_before_the_run(
+    no_setup: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review F3: a server that is not this session's own (another one on the port, a
+    # dead process, another window reported) refuses the run before it starts.
+    monkeypatch.setattr(run_study, "execute_run", raise_in_execute_run)
+    monkeypatch.setattr(FakeServer, "confirm_error", "SYNTHETIC: the server process exited")
+    with pytest.raises(run_study.ServerMismatchError, match="process exited"):
+        call_one_run(synthetic_plan().runs[0])
 
 
 # The server's context window per slot (DECISIONS D71) -------------------------------------
@@ -438,6 +470,51 @@ def test_main_refuses_a_window_that_is_not_a_positive_number(
     assert FakeServer.started == []
 
 
+@pytest.mark.parametrize("slots", ["0", "-1"])
+@pytest.mark.parametrize("dry_run", [[], ["--dry-run"]])
+def test_main_refuses_fewer_than_one_slot(
+    tmp_path: Path,
+    no_models: None,
+    capsys: pytest.CaptureFixture[str],
+    slots: str,
+    dry_run: list[str],
+) -> None:
+    # Review F7: --parallel 0 would start "--ctx-size 0 --parallel 0" and bank a run
+    # whose record banking and G6 refuse, with no way to redo it.
+    path = plan_file(tmp_path, synthetic_plan(n_runs=1))
+    with pytest.raises(SystemExit):
+        run_study.main(["--plan", str(path), "--parallel", slots, *dry_run])
+    assert "--parallel must be at least 1" in capsys.readouterr().err
+    assert FakeServer.started == []
+
+
+def test_sigterm_stops_the_session_and_its_server(
+    tmp_path: Path, no_models: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review F3: a plain SIGTERM to the runner left its llama-server running. Now the
+    # session stops and the server's context exits, so the server is stopped.
+    path = plan_file(tmp_path, synthetic_plan(n_runs=1))
+
+    def terminated(runs: Any, attempt: Any, state: Path, **kwargs: Any) -> Any:
+        os.kill(os.getpid(), signal.SIGTERM)
+        time.sleep(30)  # the handler raises SystemExit before this ends
+        raise AssertionError("SIGTERM did not stop the session")
+
+    def unhandled(signum: int, frame: object) -> None:
+        raise AssertionError("the session left SIGTERM to the handler it found")
+
+    monkeypatch.setattr(run_study, "run_session", terminated)
+    previous = signal.signal(signal.SIGTERM, unhandled)  # so pytest itself is not killed
+    try:
+        with pytest.raises(SystemExit) as stopped:
+            run_study.main(["--plan", str(path)])
+        assert stopped.value.code == 128 + signal.SIGTERM
+        assert FakeServer.started == FakeServer.stopped == [SYNTHETIC_MODELS[0]]
+        assert signal.getsignal(signal.SIGTERM) is unhandled  # the handler it found is back
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
 # main: what it reports, and what it never re-runs ----------------------------------------
 
 
@@ -485,14 +562,18 @@ def test_main_refuses_a_failure_log_it_cannot_count(
 
 class FakeServer:
     """A SYNTHETIC model server: records which model it serves, with which window per
-    slot and how many slots, and when it runs."""
+    slot and how many slots, and when it runs and stops. It reports serving what it was
+    given, as llama-server's GET /props does, unless ``confirm_error`` is set."""
 
     started: ClassVar[list[str]] = []
+    stopped: ClassVar[list[str]] = []
     served: ClassVar[list[tuple[str, int, int]]] = []
+    confirm_error: ClassVar[str | None] = None
 
     def __init__(self, model: LocalModel, **kwargs: Any) -> None:
         self.model = model
         self.parallel = int(kwargs.get("parallel", 1))
+        self.engine = str(kwargs.get("engine", "llama.cpp"))
         self.base_url = "http://127.0.0.1:1/v1"
 
     def __enter__(self) -> FakeServer:
@@ -501,7 +582,19 @@ class FakeServer:
         return self
 
     def __exit__(self, *exc: object) -> None:
-        return None
+        FakeServer.stopped.append(self.model.name)
+
+    def confirm_serving(self) -> dict[str, Any] | None:
+        if self.confirm_error is not None:
+            raise ServerStateError(self.confirm_error)
+        if self.engine != "llama.cpp":
+            return None
+        return {
+            "source": "GET /props",
+            "n_ctx_per_slot": self.model.n_ctx,
+            "total_slots": self.parallel,
+            "model_path": str(self.model.path),
+        }
 
     def provenance(self) -> dict[str, Any]:
         return {
@@ -516,6 +609,7 @@ def no_models(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Stand-ins for the pinned models, the model server, backend, client, code state,
     and the sandbox preflight (all SYNTHETIC)."""
     FakeServer.started = []
+    FakeServer.stopped = []
     FakeServer.served = []
     models = {name: synthetic_model(name) for name in SYNTHETIC_MODELS}
     monkeypatch.setattr(run_study, "RUNS", tmp_path / "state")
@@ -950,16 +1044,17 @@ REPLACED = "smoke-py-two-arm-a"
 ADDED = "smoke-py-two-arm-a-ctx32k"
 
 
-def amended_plan() -> Plan:
+def amended_plan(pinned: int = PINNED_N_CTX) -> Plan:
     """A SYNTHETIC smoke plan of one arm whose second run an amendment replaced with a run
-    that needs at least 32768 tokens per slot on one slot."""
+    that needs at least 32768 tokens per slot on one slot (raising the pinned window
+    ``pinned``)."""
     arm = local_arm("arm-a", SYNTHETIC_MODELS[0], "fam-a")
     base = smoke_plan("smoke", SMOKE_TASKS, arm)
     return amend_plan(
         base,
         REPLACED,
         ServerRequirement(
-            min_n_ctx_per_slot=32768, max_parallel_slots=1, pinned_n_ctx_per_slot=PINNED_N_CTX
+            min_n_ctx_per_slot=32768, max_parallel_slots=1, pinned_n_ctx_per_slot=pinned
         ),
         decision="D71",
         reason="SYNTHETIC: the request outgrew the window",
@@ -988,12 +1083,18 @@ def test_the_runs_a_server_may_serve(no_setup: None) -> None:
     plan = amended_plan()
     specs = {run.run_id: run for run in plan.runs}
     refusal = run_study.window_refusal
-    # The added run needs at least 32768 tokens per slot on one slot.
-    for n_ctx, slots in ((None, 1), (PINNED_N_CTX, 1), (32767, 1), (32768, 2)):
+    # The added run needs at least 32768 tokens per slot on one slot, from llama.cpp.
+    for n_ctx, slots in ((None, 1), (PINNED_N_CTX, 1), (32767, 1), (32768, 2), (32768, 0)):
         why = refusal(plan, specs[ADDED], n_ctx, slots)
         assert why is not None and "D71" in why, (n_ctx, slots)
     assert refusal(plan, specs[ADDED], 32768, 1) is None
     assert refusal(plan, specs[ADDED], 65536, 1) is None
+    why = refusal(plan, specs[ADDED], 32768, 1, engine="llama-cpp-python")
+    assert why is not None and "llama.cpp" in why
+    # A plan amendment made for another pinned window than the model's is refused too.
+    other = amended_plan(pinned=8192)
+    why = refusal(other, {r.run_id: r for r in other.runs}[ADDED], 32768, 1)
+    assert why is not None and "pinned window" in why
     # Every other run is served only with the pinned window, so a raised window serves
     # the run that needs it and no other.
     other = specs["smoke-py-one-arm-a"]
@@ -1123,15 +1224,83 @@ def test_one_run_refuses_a_server_that_does_not_serve_the_run(
         call_one_run(specs[ADDED], plan)
     with pytest.raises(run_study.ServerMismatchError, match="no server requirement"):
         call_one_run(specs["smoke-py-one-arm-a"], plan, n_ctx=32768)
+    with pytest.raises(run_study.ServerMismatchError, match=r"llama\.cpp"):
+        call_one_run(specs[ADDED], plan, n_ctx=32768, engine="llama-cpp-python")
+    # Review F3 (false rejection): the added run's replies never come from the shared
+    # cache, which holds the replies the excluded run got on the server with the pinned
+    # window.
+    shared = run_study.RUNS / "cache"
+    with pytest.raises(run_study.ServerMismatchError, match="response cache"):
+        call_one_run(specs[ADDED], plan, n_ctx=32768, cache=shared)
     assert seen == []
-    # On the server it needs, the run records its amendment and the raised window.
+    # On the server it needs, the run records its amendment, the raised window, what the
+    # live server reported, and its own response cache.
     call_one_run(specs[ADDED], plan, n_ctx=32768)
     (kwargs,) = seen
-    assert kwargs["extra_provenance"]["plan_amendment"] == plan.amendments[0].to_json()
+    extra = kwargs["extra_provenance"]
+    assert extra["plan_amendment"] == plan.amendments[0].to_json()
+    assert extra["response_cache"] == amendment_cache("smoke", ADDED)
     server = kwargs["server_provenance"]
     assert server["n_ctx_per_slot"] == 32768 and server["n_ctx_per_slot_is_default"] is False
+    assert server["reported"]["n_ctx_per_slot"] == 32768
+    assert server["reported"]["total_slots"] == 1
     call_one_run(specs["smoke-py-one-arm-a"], plan)
     assert "plan_amendment" not in seen[-1]["extra_provenance"]
+    assert "response_cache" not in seen[-1]["extra_provenance"]
+
+
+def test_an_added_run_has_its_own_response_cache_and_other_runs_share_one() -> None:
+    plan = amended_plan()
+    specs = {run.run_id: run for run in plan.runs}
+    assert (
+        run_study.response_cache(plan, specs[ADDED]) == run_study.RUNS / "smoke" / "cache" / ADDED
+    )
+    assert run_study.ROOT / amendment_cache("smoke", ADDED) == run_study.response_cache(
+        plan, specs[ADDED]
+    )
+    assert run_study.response_cache(plan, specs["smoke-py-one-arm-a"]) == run_study.RUNS / "cache"
+
+
+def test_run_model_serves_an_added_run_from_its_own_cache(
+    tmp_path: Path, no_models: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    caches: list[tuple[str, Path]] = []
+
+    class RecordingClient:
+        def __init__(self, root: Path, backends: Any, cache_dir: Path) -> None:
+            self.cache_dir = cache_dir
+
+    def one_run(plan: Plan, spec: RunSpec, client: Any, *rest: Any) -> None:
+        caches.append((spec.run_id, client.cache_dir))
+
+    def each(runs: Any, attempt: Any, state: Path, **kwargs: Any) -> Any:
+        for spec in runs:
+            attempt(spec)
+        return run_study.SessionResult()
+
+    monkeypatch.setattr(run_study, "ModelClient", RecordingClient)
+    monkeypatch.setattr(run_study, "one_run", one_run)
+    monkeypatch.setattr(run_study, "run_session", each)
+    plan = amended_plan()
+    specs = {run.run_id: run for run in plan.runs}
+    args = SimpleNamespace(
+        port=1, threads=1, engine="llama.cpp", parallel=1, request_timeout=1.0, n_ctx=32768
+    )
+    runs = [specs[ADDED], specs["smoke-py-one-arm-a"]]
+    run_study.run_model(plan, SYNTHETIC_MODELS[0], runs, args, tmp_path, tmp_path, "a" * 40, {})
+    state = tmp_path / "state"
+    assert caches == [
+        (ADDED, state / "smoke" / "cache" / ADDED),
+        ("smoke-py-one-arm-a", state / "cache"),
+    ]
+
+
+def test_main_refuses_a_plan_whose_amendment_raises_another_pinned_window(
+    tmp_path: Path, no_models: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = plan_file(tmp_path, amended_plan(pinned=8192))
+    assert run_study.main(["--plan", str(path), "--dry-run"]) == 2
+    assert "pinned window of 8192" in capsys.readouterr().err
 
 
 def test_a_server_mismatch_stops_the_session_and_logs_no_attempt(
@@ -1159,3 +1328,34 @@ def test_main_refuses_a_plan_whose_amendment_does_not_hold(
     path.write_text(json.dumps(data), encoding="utf-8")
     assert run_study.main(["--plan", str(path), "--dry-run"]) == 2
     assert "not the planned run" in capsys.readouterr().err
+
+
+def test_a_server_that_cannot_start_as_its_own_is_a_refusal(
+    tmp_path: Path,
+    no_models: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Review F3: when another server already answers on the port, LocalServer.start
+    # refuses, and the session stops with no attempt logged.
+    def occupied(self: FakeServer) -> FakeServer:
+        raise ServerStateError("SYNTHETIC: something already answers on port 1")
+
+    monkeypatch.setattr(FakeServer, "__enter__", occupied)
+    attempts = record_attempts(monkeypatch)
+    path = plan_file(tmp_path, synthetic_plan(n_runs=1))
+    assert run_study.main(["--plan", str(path)]) == 2
+    assert "REFUSED: SYNTHETIC: something already answers on port 1" in capsys.readouterr().err
+    assert attempts == []
+    assert run_study.failure_counts(tmp_path / "state" / "synthetic-study") == {}
+
+
+def test_an_added_run_needs_a_server_that_reports_what_it_serves(
+    no_setup: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(run_study, "execute_run", raise_in_execute_run)
+    monkeypatch.setattr(FakeServer, "confirm_serving", lambda self: None)
+    plan = amended_plan()
+    specs = {run.run_id: run for run in plan.runs}
+    with pytest.raises(run_study.ServerMismatchError, match="does not report"):
+        call_one_run(specs[ADDED], plan, n_ctx=32768)
