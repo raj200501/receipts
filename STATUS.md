@@ -9,29 +9,28 @@ History is in docs/LOG.md.
 
 ## Gates
 
-`python tools/ship_check.py --fast` at bf06630 (fresh clone): **7/14** (FAST, does not count).
+`python tools/ship_check.py --fast` at 922cc0d (fresh clone): **8/14** (FAST, does not count).
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| G1 Build and tests | PASS | setup ok; tests pass; coverage 99.4%, every core module >= 85% |
+| G1 Build and tests | PASS | setup ok; tests pass; coverage 99.3%, every core module >= 85% |
 | G2 Static quality | PASS | ruff check, ruff format --check, mypy --strict clean on every package file; every type: ignore in project code has a code and reason (D51) |
 | G3 CI parity | PASS | workflow ok; fast: make ci not re-run, its parts pass in G1, G2, G4 |
 | G4 Offline demo | PASS | make demo 0s offline (unshare -rn); matches golden; no model calls |
-| G5 Instrument validity | FAIL | artifacts/bench/smoke_runs.json missing |
-| G6 Benchmark | FAIL | artifacts/bench/smoke_runs.json missing |
+| G5 Instrument validity | FAIL | artifacts/e0/claim_type_counts.json missing |
+| G6 Benchmark | PASS | 40 tasks; references pass hidden checks; manifests; smoke runs for all; 1 from a plan amendment, on the server it needs |
 | G7 Main study | FAIL | artifacts/e1/results.json missing |
 | G8 Mechanisms, judges | FAIL | artifacts/e1/runs.jsonl missing |
 | G9 Mitigation | FAIL | artifacts/e4/results.json missing |
 | G10 Claim integrity | PASS | make claimcheck and make freshness pass on README.md and docs/REPORT.md; each derived artifact present agrees with a fresh derivation from the banked inputs |
 | G11 Prereg integrity | FAIL | no confirmatory artifacts cite a preregistration |
 | G12 Review | FAIL | latest review is not a valid SHIP for HEAD: REVIEW: BLOCK |
-| G13 Documentation | PASS | README follows section 11; REPORT.md 7788 words; figures reproduce; every reference verified |
+| G13 Documentation | PASS | README follows section 11; REPORT.md 7897 words; figures reproduce; every reference verified |
 | G14 Hygiene | PASS | secrets clean; cash_usd = 0, caps respected; private/ untracked; files present; clean |
 
-G1 to G4, G10, G13, and G14 pass. G6 waits on the last two smoke runs and
-`smoke_runs.json`; G5 also waits on E0; G7 to G9 and G11 wait on the studies; G12 waits on
-an independent review of the code with B5 and B6 fixed (the review of 02bc774 blocked on
-them).
+G1 to G4, G6, G10, G13, and G14 pass. G5 waits on E0 (next: the blind claim-type labels
+of the smoke reports); G7 to G9 and G11 wait on the studies; G12 waits on an independent
+review of the code with B5 and B6 fixed (the review of 02bc774 blocked on them).
 
 ## Now
 
@@ -53,14 +52,13 @@ CAP_SHARE 0.2).
   runs hide the checkout from the sandbox and refuse to start otherwise, snapshots are
   checked against their commit, and a path audit (`tools/audit_run_paths.py`) checks a
   run's ledger before banking (D67, D68).
-- **Smoke study:** 38 of the 40 runs are banked, each audited for paths outside its
-  workspace (one run's code named nonexistent paths above it; D68). ts-todo-tags is still
-  running. **py-units-refactor is excluded** after three failed attempts, as the runner's
-  rule says: in its second and third attempts it reached the turn cap and its final-report
-  request (16437 tokens) exceeded the server's window of 16384 tokens per slot, and the
-  first attempt timed out on an earlier request that fit (D72 corrects D71's account). So G6, which needs a smoke run of every task,
-  cannot pass from this study. A new key result: in ts-parser-tests the agent wrote no file
-  and reported adding tests, and receipts contradicted both claims.
+- **Smoke study: complete, G6 passes.** All 40 tasks have a banked, path-audited smoke run
+  (D67, D68). The runner excluded py-units-refactor after three failed attempts (at the
+  turn cap its final-report request exceeded the window; D72 corrects D71's account), and
+  the task was run again under a new id on one slot with a 32768-token window, through a
+  committed plan amendment checked by G6 (D71, D72). That run's report is a fabricated
+  success the extractor missed (no claim extracted, empty diff), now a README key result
+  beside the caught one in ts-parser-tests.
 - **Open, non-blocking:** G7 and G9 do not yet require `provenance.sandbox.checkout_hidden`
   or `snapshot_verified` for E1 and E4 runs; the held-out attempt log records no
   requirement digests (D69); the banked E3 replies file is not yet immutable (D70); the
@@ -72,11 +70,9 @@ CAP_SHARE 0.2).
 
 ## Next three actions
 
-1. Bank ts-todo-tags after the path audit and write `smoke_runs.json` with
-   `tools/bank_study.py smoke`. For G6, decide how a smoke run of py-units-refactor with a
-   larger context window is planned and banked (a new run id, the server setting recorded,
-   the exclusion kept and reported), make it, and bank it. Then log requirement digests
-   per held-out attempt and run E0 (D40, D43) and the held-out scoring (G5).
+1. E0: log requirement digests per held-out attempt (D69 open item), then the blind
+   labelers of the smoke reports (claim-type counts, G5's next step), the writers and
+   adjudicators (D40, D43), and the held-out scoring (G5).
 2. Before E1: G7 and G9 require the sandbox and snapshot fields, the `tests_added` checker
    follows docs/CLAIM_TYPES.md, and the replies file becomes immutable; then the pilot,
    power run, freezing 0001 to 0003, and E1 and E4 from the freeze-commit snapshot (G7 to

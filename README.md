@@ -298,13 +298,13 @@ fast check skips slow steps and does not count as the final check):
   because its scan was narrowed to skip the synthetic benchmark task content under
   `bench/tasks/`, whose own bare ignores stay as frozen task content, DECISIONS D51), G3 CI parity (the workflow runs `make
   ci` on Python 3.11 and 3.12, and `make ci` passes on both), G4 offline demo (matches its golden output, with no network and no model
-  calls), G10 claim integrity (every number in this README and docs/REPORT.md is bound to
-  an artifact and re-derived), G13 documentation, and G14 hygiene (secrets scan clean, no
-  cash spent, nothing private tracked).
-- **Failing, and why:** G6: every task has a smoke run except py-units-refactor, whose
-  final-report request outgrew the model server's context window, so it needs a run with a
-  larger window (D71, D72). G5, G7 to G9, and G11: the instrument validation (E0) and the studies (E1 to E4)
-  have not run. G12: the independent review of 2026-11-12 found gate holes
+  calls), G6 benchmark (every task has hidden checks, a reference solution that passes them,
+  a manipulation manifest, and a smoke run by a real agent, one of them from the D71 plan
+  amendment on the server it needs), G10 claim integrity (every number in this README and
+  docs/REPORT.md is bound to an artifact and re-derived), G13 documentation, and G14
+  hygiene (secrets scan clean, no cash spent, nothing private tracked).
+- **Failing, and why:** G5, G7 to G9, and G11: the instrument validation (E0) and the studies
+  (E1 to E4) have not run; G5 next needs the blind claim-type labels of the smoke reports. G12: the independent review of 2026-11-12 found gate holes
   that could pass on hand-set study results (B5, B6); both are fixed (D65, D66, D69, D70),
   and G12 waits on the next review.
 - **Built and checked:** the ledger, sandboxes, parsers, claim extractor, verifiers,
