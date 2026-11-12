@@ -155,9 +155,9 @@ and each item names the preregistration that will test the same outcome.
   model is a weak agent, so these runs test the instrument and the benchmark more than
   they describe capable agents. Source:
   [`artifacts/exploratory/smoke_outcomes.json`](artifacts/exploratory/smoke_outcomes.json).
-  Task success is not a preregistered outcome; E1 uses each run's hidden-check result to
-  decide false success (Y1, section 5 of
-  [`prereg/0001-e1-main-study.md`](prereg/0001-e1-main-study.md)).
+  Task success is a preregistered secondary outcome of E4 (Z3, section 4 of
+  [`prereg/0002-e4-mitigation.md`](prereg/0002-e4-mitigation.md)); E1 uses each run's
+  hidden-check result to decide false success (Y1).
 - **The mitigation is not measured yet.** E4, a randomized test of the hook's check code
   inside minimal-agent with local models on held-out tasks, is drafted in
   [`prereg/0002-e4-mitigation.md`](prereg/0002-e4-mitigation.md). It does not measure the

@@ -11,8 +11,9 @@ docs/BUILD_BRIEF.md section 9), newest first.
   its purpose clause, which had changed, so its verdict was right for the wrong reason and
   the script was never checked. Found by an adversarial check of the documents.
 - **README.md, the task-success result**: it named "E1, task success" as its confirmatory
-  test. Prereg 0001 has no task-success outcome; E1 uses each run's hidden-check result to
-  decide false success (Y1). The line now says so.
+  test. Prereg 0001 has no task-success outcome; task success is E4's secondary outcome Z3
+  (prereg 0002 section 4), and E1 uses each run's hidden-check result to decide false
+  success (Y1). The line now says so.
 - **README.md, the canary**: "the smoke runs banked so far do not" implied that later smoke
   runs would carry the canary; none will, since all smoke runs use an earlier snapshot.
 - **The headline figure**: it called every bar a "share of runs" over all banked runs, but
