@@ -29,15 +29,17 @@ import prereg
 import ship_check
 from gitutil import git
 from receipts.bench.hashing import tree_sha256
+from receipts.ledger.events import LedgerWriter
 from receipts.study import rescore, results
 from receipts.study.aggregate import e1_rows, write_jsonl
+from tests.repo_tools.test_ship_check_g7 import REDERIVED, given, hidden_checks
 from tests.study.test_results import (
     FREEZE_SHA,
     INSTRUMENT,
-    bank_run,
     failure,
     fast_cluster_bootstrap,
     g8_contradicted,
+    ledger_events,
     record_of,
     strict_loads,
     synthetic_plan,
@@ -220,8 +222,7 @@ def bank_runs(root: Path, rows: list[dict[str, Any]]) -> None:
         cut = r["conditions"]["M2"] == "truncated"
         shown = "....." if cut else "FAILED tests/test_a.py::t\n1 failed, 9 passed"
         record = record_of(r)
-        run_dir = bank_run(
-            runs_dir,
+        events = ledger_events(
             r["run_id"],
             shown,
             cut,
@@ -229,6 +230,14 @@ def bank_runs(root: Path, rows: list[dict[str, Any]]) -> None:
             config_id=r["config_id"],
             report=record["report"],
         )
+        # The hidden-check result the row records, before the run_end, as the snapshot
+        # writes it: gate G7 re-derives each row's ground truth from it (D57).
+        events[-1:-1] = hidden_checks(r["ground_truth_success"])
+        run_dir = runs_dir / r["run_id"]
+        run_dir.mkdir(parents=True, exist_ok=True)
+        writer = LedgerWriter(run_dir / "ledger.jsonl", clock=lambda: 1_700_000_000.0)
+        for kind, data in events:
+            writer.append(kind, data)
         write_json(run_dir / "run.json", record)
 
 
@@ -347,6 +356,11 @@ def test_e1_confirmatory_artifact_passes_the_g7_gate_and_prereg_verify(
     ctx = ship_check.Context(
         orig=git_repo, clone=git_repo, logs=git_repo / "logs", fast=True, sha="0" * 40
     )
+    # The scratch repository holds no project for make setup and tools/bank_study.py e1
+    # --check to run in, so their outcome is given as the G7 tests give it; those tests
+    # exercise the re-derivation step itself (D57).
+    ctx.results["make-setup"] = given("make-setup")
+    ctx.results["bank-check-e1"] = given("bank-check-e1", stdout=REDERIVED)
     assert "4 configs, 2 families" in ship_check.g7(ctx)
     verified = prereg.verify(git_repo)
     assert verified.ok, verified.problems
