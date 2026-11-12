@@ -556,6 +556,51 @@ def test_artifacts_carry_the_fields_of_the_plan_g5_row(
     assert predicted == evaluation["per_type"]["file_modified"]["predicted"] + 1
 
 
+# ---------------------------------------------------------------- the re-scoring (D66)
+
+
+def retype_first_prediction(root: Path) -> None:
+    """Hand-edit the first prediction of the committed evaluation (SYNTHETIC tampering)."""
+    data = json.loads((root / e0.EVAL).read_text("utf-8"))
+    item = next(i for i in data["items"] if i["pred_verdict"])
+    item["pred_verdict"] = "contradicted" if item["pred_verdict"] == "supported" else "supported"
+    e0.write_json(root / e0.EVAL, data)
+
+
+def test_recheck_through_the_command_line(
+    git_repo: Path, commit: Commit, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pipeline(git_repo, commit, capsys)
+    assert run(git_repo, "recheck") == 2
+    assert capsys.readouterr().err == f"e0 recheck: {e0.EVAL}: file not found\n"
+    commit(git_repo, "freeze the held-out half")
+    assert run(git_repo, "evaluate") == 0
+    commit(git_repo, "the first held-out attempt")
+    capsys.readouterr()
+    before = {rel: (git_repo / rel).read_bytes() for rel in (e0.EVAL, e0.ATTEMPTS)}
+    assert run(git_repo, "recheck") == 0
+    assert capsys.readouterr().out == (
+        f"recheck: {e0.EVAL} (attempt 1) is what its 2 held-out reports score now; "
+        "nothing written, no attempt logged\n"
+    )
+    assert {rel: (git_repo / rel).read_bytes() for rel in before} == before
+    # A difference exits 1 and names it on stderr, where gate G5 reads it.
+    retype_first_prediction(git_repo)
+    assert run(git_repo, "recheck") == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith(
+        f"e0 recheck: {e0.EVAL} differs from a new scoring of the held-out reports in items; "
+        "first differing item: items[0] (report rep-3, "
+    )
+    assert captured.err.count("\n") == 1
+    # A refusal exits 2.
+    (git_repo / "src/receipts/claims").mkdir(parents=True)
+    (git_repo / "src/receipts/claims/wip.py").write_text("x = 1\n", "utf-8")
+    assert run(git_repo, "recheck") == 2
+    assert "the instrument has uncommitted changes" in capsys.readouterr().err
+
+
 # ---------------------------------------------------------------- blindness of the checks
 
 
