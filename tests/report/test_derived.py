@@ -141,6 +141,39 @@ def test_missing_scripts_bad_artifacts_and_failing_derivations(tmp_path: Path) -
         refresh(tmp_path)
 
 
+def test_invalid_json_from_a_derivation_is_a_problem_not_a_crash(tmp_path: Path) -> None:
+    item = Derived("artifacts/derived.json", "tools/derive.py", "inputs/*.txt")
+    (tmp_path / "inputs").mkdir()
+    (tmp_path / "inputs" / "a.txt").write_text("synthetic input\n", encoding="utf-8")
+    (tmp_path / "tools").mkdir()
+    (tmp_path / item.script).write_text(
+        "import pathlib, sys\n"
+        "pathlib.Path(sys.argv[sys.argv.index('--out') + 1]).write_text('{not json')\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(DerivedError, match=r"tools/derive\.py wrote invalid JSON"):
+        refresh(tmp_path, [item])
+    (tmp_path / item.path).parent.mkdir(parents=True)
+    (tmp_path / item.path).write_text('{"provenance": {"inputs": {}}}', encoding="utf-8")
+    (problem,) = [p for p in check(tmp_path, [item]) if "invalid JSON" in p]
+    assert problem.startswith(f"{item.path}: tools/derive.py wrote invalid JSON")
+
+
+@pytest.mark.parametrize("provenance", ["a string", [1], 5, None])
+def test_a_committed_provenance_that_is_not_an_object_is_a_problem(
+    git_repo: Path, commit: Commit, provenance: object
+) -> None:
+    root = repo(git_repo, commit)
+    assert refresh(root) == [SMOKE.path]
+    target = root / SMOKE.path
+    art = json.loads(target.read_text(encoding="utf-8"))
+    art["provenance"] = provenance
+    target.write_text(json.dumps(art), encoding="utf-8")
+    assert check(root) == [f"{SMOKE.path}: its provenance is not a JSON object; run make report"]
+    assert refresh(root) == [SMOKE.path]  # make report writes it again from the runs
+    assert check(root) == []
+
+
 def test_make_report_freshness_and_reproduce_follow_the_banked_runs(
     git_repo: Path, commit: Commit, capsys: pytest.CaptureFixture[str]
 ) -> None:
