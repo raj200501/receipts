@@ -38,8 +38,8 @@ commit strictly precedes the evaluation's first commit and that no held-out repo
 changed. It also scores every held-out report again in its clone (`tools/e0.py
 recheck`), so the predictions in the evaluation are never taken on trust, and reads
 `artifacts/e0/heldout_attempts.jsonl`: the evaluation must be the last scoring of the
-held-out half, and an earlier scoring on other instrument trees fails the gate (DECISIONS
-D66; see Recheck).
+held-out half, and an earlier scoring with another instrument (a file that the scoring
+step loads changed in between) fails the gate (DECISIONS D66; see Recheck).
 
 **Scoring.** `receipts.evaluation.seeded`: a predicted claim matches a gold claim of the
 same type when their spans overlap (one to one, largest overlap first). Per claim type,
@@ -373,9 +373,13 @@ undefined, and `meets_thresholds`), `top5` (ranked from `claim_type_counts.json`
 `all_top5_pass` (false unless five types were counted and all pass), `matching`,
 `instrument` (as in the extractor counts, over the five paths above), `attempt`, and
 `attempts_log`. A type with no predictions or no gold claims never passes. `--out FILE`
-writes elsewhere, to re-score and compare. The dev split checks none of the freeze
-conditions, records a dirty instrument instead of refusing, is not logged, and is never
-read by the gate.
+writes the result to another file, but a held-out scoring is still logged as the next
+attempt, and G5 accepts only an evaluation that is the log's last attempt, so after a
+scoring with `--out` the default file must be scored again on the same instrument. To
+score the held-out half again and compare without logging an attempt or writing a
+file, use `recheck` (see Recheck). The dev split checks none of the freeze conditions,
+records a dirty instrument instead of refusing, is not logged, and is never read by the
+gate.
 
 Every item has `report_id`, `claim_type`, `gold_verdict`, `pred_verdict`, `ignored`,
 `gold_claim_id`, `gold_span`, `ignored_claim_id`, `ignored_span`, `ignored_types`,
@@ -413,10 +417,16 @@ have logged its instrument commit and trees, the per-type counts of its top five
 passes, and `all_top5_pass`; attempt n's trees must name exactly the paths the
 evaluation checked for uncommitted changes, so trees that leave a path out cannot hide a
 change to it; every attempt's trees must be git's trees at its commit; and every earlier
-attempt must have scored the same instrument trees. A held-out half scored again after
-the instrument changed is no longer untouched, so G5 fails on it rather than reporting a
-deviation; scoring again on the same trees passes, and the evidence line names the
-attempt.
+attempt must have scored the same instrument as attempt n: each file of the scoring
+step's import closure (the instrument G5 binds, DECISIONS D36) at either attempt's
+commit must be the same git blob at both commits, and the earlier attempt's trees must
+name the same paths as attempt n's. The logged trees are of whole directories, which
+also hold code that the scoring never loads (E2 and E3 code, completeness code, the
+ledger recorder and parsers, the rest of the benchmark code); a change to that code
+between two attempts does not fail the gate, as it does not after the evaluation. A
+held-out half scored again after the instrument changed is no longer untouched, so G5
+fails on it, naming the changed files, rather than reporting a deviation; scoring again
+on the same instrument passes, and the evidence line names the attempt.
 
 **Completeness.** For every real minimal-agent run, the transcript's commands after the
 task request (the user message whose SHA-256 is `provenance.prompt_sha256` in `run.json`,
