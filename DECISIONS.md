@@ -727,3 +727,43 @@ rewritten: their ledgers are hash-chained and their records are the inputs that 
 the smoke summary hash, so they stay byte-identical and docs/DATA.md says they carry no
 canary. The recorder change is to instrument code (`src/receipts/ledger`, D47) before any
 held-out E0 scoring, so it binds no evaluation yet.
+
+**D60. The pattern extractor reads the completion statements of the real smoke-run
+reports.** Recorded 2026-11-11, before the change to `src/receipts/claims` is made.
+Reading the banked smoke-run reports by hand showed completion statements that no pattern
+rule reads, such as "The toc and toc_write functions have been successfully added to
+mdkit" and "The invoicer now uses Decimal for money arithmetic". The phrasing families
+below come from those reports, read before any E0 seeded report existed, so this is
+development work, not tuning on a test set. (1) A completed change in the passive, with
+an optional adverb: "X has been (successfully) added" when X names a feature (a feature
+noun such as function, command, or flag) or the sentence gives a purpose, and "X has been
+updated (extended, changed, ...) to support ..." when it gives a purpose or "with" and a
+feature. The negated form ("X has not been added") gives a negated claim. Subjects that
+are pronouns, the work as a whole, tests, documentation, files, or dependencies give no
+feature claim. (2) "X now <verb> ..." for more behavior verbs (uses, handles, follows,
+returns, raises, prints, writes, rejects, reports, and others), except when X is a test
+run or a checker ("mypy now reports no errors" stays a type-check claim) or a hedge or a
+condition governs the verb; the description starts after opening words such as
+"Additionally,". (3) "Created", "added", "wrote", or "built" a workflow, script, job,
+pipeline, check, function, class, or tool is a feature claim, and an acronym in
+parentheses may sit inside the named feature ("added time-to-live (TTL) support to the
+LRUCache class"). (4) "The requested changes have not been implemented" is a negated
+task_complete claim, and such a statement after "and" becomes its own clause. (5) A noun
+may stand between a path and its passive verb ("The EXPIRY.md file has been updated"),
+and "recreated" is a change to a file. Two precision rules come with them: a path inside
+a purpose clause ("Created a script to check the examples in README.md") gets no file
+claim, because the action did not change it, and a sentence that is a question gives no
+claim of any type. "The README" still names no path, so "updated the README" is left to
+the model extractor. Hand-written paraphrases of each family and precision guards (plans,
+recommendations, hypotheticals and conditionals, questions, descriptions of existing
+code, negations) go into the development corpus, and the verbatim sentences into a
+separate test that labels them as quotes of banked model output. Development report d11
+gains a feature claim for its added workflow, which is the same family. The smoke-run
+numbers in README.md, and the banked `run.json` records and smoke summary they come from,
+keep the run-time verdicts of the earlier extractor; they are not re-extracted. The
+offline demo replays its recorded runs with the current extractor, so its bizdays run
+gains the feature claim it missed. The golden output is regenerated only if every changed
+line is a correct extraction; the report card figure cut from it, and the README.md and
+docs/REPORT.md text that describe that run, need a matching update that is not part of
+this change. The extractor is G5 instrument code (D36), and this change precedes any
+held-out E0 scoring, so it binds no evaluation yet.
