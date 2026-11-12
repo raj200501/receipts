@@ -19,16 +19,19 @@ from __future__ import annotations
 import hashlib
 import json
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 import ship_check
+from receipts.evaluation.e3 import JUDGES as E3_JUDGES
 from receipts.evaluation.e3 import draw_sample
 from receipts.evaluation.judges import score_detection
+from tests.evaluation.test_e3 import seeded_eval
 from tests.repo_tools.test_ship_check_g7 import derived_fails, derived_ok, given, run_for_real
+from tests.report import studies
 
 GateError = ship_check.GateError
 PROV = {
@@ -41,8 +44,11 @@ ARMS = ("ma-qwen7b", "ma-qwen1.5b", "ma-granite8b", "ma-granite2b")
 FAMILY = {"ma-qwen7b": "qwen", "ma-qwen1.5b": "qwen", "ma-granite8b": "granite"}
 JUDGES = ("judge-a", "judge-b")
 RUNS = "artifacts/e1/runs.jsonl"
+RUN_DIRS = "artifacts/studies/e1/runs"
+SEEDED = "artifacts/e0/seeded_eval.json"
 E2 = "artifacts/e2/mechanism.json"
 E3 = "artifacts/e3/judges.json"
+REPLIES = "artifacts/e3/replies.jsonl"
 K, SEED = 8, 20261108  # two runs from each of the four SYNTHETIC arms
 REPORT = """\
 # Report (SYNTHETIC)
@@ -73,6 +79,29 @@ def put(root: Path, rel: str, data: Any) -> None:
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(data if isinstance(data, str) else json.dumps(data, indent=2) + "\n", "utf-8")
+
+
+def sha(root: Path, rel: str) -> str:
+    """SHA-256 of a file's bytes."""
+    return hashlib.sha256((root / rel).read_bytes()).hexdigest()
+
+
+def mechanism_artifact(root: Path, claims: list[dict[str, Any]]) -> dict[str, Any]:
+    """A SYNTHETIC artifacts/e2/mechanism.json classifying ``claims``, with what
+    tools/analyze.py e2 records of the banked inputs it read: the hashes of the E1 rows
+    and the held-out evaluation, and the rows and runs its banking section names."""
+    return {
+        "claims": claims,
+        "banking": {"checked": True, "rows_path": RUNS, "runs_dir": RUN_DIRS},
+        "provenance": {**PROV, "inputs": {RUNS: sha(root, RUNS), SEEDED: sha(root, SEEDED)}},
+    }
+
+
+def banked_replies(root: Path, data: dict[str, Any]) -> None:
+    """A SYNTHETIC stand-in for the banked judge replies of the E3 artifact ``data``, and
+    the ``replies`` section that binds them, as tools/run_judges.py records it."""
+    put(root, REPLIES, "SYNTHETIC stand-in for the banked judge replies\n")
+    data["replies"] = {"path": REPLIES, "sha256": sha(root, REPLIES), "records": 16}
 
 
 def judge(judge_id: str, tp: object = 1, fp: object = 0, fn: object = 0) -> dict[str, Any]:
@@ -193,30 +222,35 @@ def artifacts(
     judges: list[dict[str, Any]] | None = None,
     report: str = REPORT,
     mechanism: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None = None,
+    e2: Edit | None = None,
     e3: Edit | None = None,
     verdict: Callable[[int], str] = contradicted_every_other,
 ) -> ship_check.Context:
-    """SYNTHETIC E1 rows with contradicted claims (``verdict``), their E2 classes, an E3
-    artifact of two judges over the sample (``e3`` edits it), and a report. The clone
-    holds no project for ``make setup`` and the re-derivations to run in, so their
-    outcomes are given (each artifact equals a fresh derivation); a test replaces them in
-    ``ctx.results``."""
+    """SYNTHETIC E1 rows with contradicted claims (``verdict``), a stand-in held-out
+    evaluation, their E2 classes (``e2`` edits the artifact), an E3 artifact of two
+    judges over the sample with its stand-in banked replies (``e3`` edits it), and a
+    report. The clone holds no project for ``make setup`` and the re-derivations to run
+    in, so their outcomes are given (each artifact agrees with a fresh derivation); a
+    test replaces them in ``ctx.results``."""
     rows = e1_rows(verdict)
     put(root, RUNS, "".join(json.dumps(r) + "\n" for r in rows))
+    put(root, SEEDED, {"SYNTHETIC": "stand-in for the held-out evaluation; only hashed"})
     claims = [
         {"run_id": r["run_id"], "claim_id": "c0", "class": CLASSES[n % 3]}
         for n, r in enumerate(rows)
         if r["included"] and r["claims"][0]["verdict"] == "contradicted"
     ]
-    rows_e2 = claims if mechanism is None else mechanism(claims)
-    put(root, "artifacts/e2/mechanism.json", {"claims": rows_e2, "provenance": PROV})
-    runs_sha = hashlib.sha256((root / RUNS).read_bytes()).hexdigest()
-    data = judges_artifact(rows, runs_sha)
+    mech = mechanism_artifact(root, claims if mechanism is None else mechanism(claims))
+    if e2 is not None:
+        e2(mech)
+    put(root, E2, mech)
+    data = judges_artifact(rows, sha(root, RUNS))
+    banked_replies(root, data)
     if judges is not None:
         data["judges"] = judges
     if e3 is not None:
         e3(data)
-    put(root, "artifacts/e3/judges.json", data)
+    put(root, E3, data)
     put(root, "docs/REPORT.md", report)
     numbers = {key: {"value": "0", "source": src} for key, src in SOURCES.items()}
     put(root, "artifacts/report/numbers.json", {"numbers": numbers})
@@ -231,8 +265,101 @@ def test_e2_and_e3_reported_pass(tmp_path: Path) -> None:
     evidence = ship_check.g8(artifacts(tmp_path))
     assert "E2 classified 8 claims" in evidence and "E3 2 judges" in evidence
     assert "sample of 8 runs, 8 judged by every judge, 0 excluded" in evidence
-    assert f"{E2} re-derived by tools/analyze.py e2" in evidence
-    assert f"{E3} re-derived by tools/run_judges.py --rescore from the banked replies" in evidence
+    assert f"{E2} re-derived by python tools/analyze.py e2 from {RUNS} and {RUN_DIRS}" in evidence
+    assert (
+        f"{E3} re-derived by python tools/run_judges.py --rescore from the banked replies "
+        f"{REPLIES}" in evidence
+    )
+
+
+def test_the_evidence_quotes_the_commands_the_derivations_ran(tmp_path: Path) -> None:
+    # Review N1 of the B5 fix: the evidence says what ran, recorded arguments included.
+    ctx = artifacts(tmp_path)
+    ran = "python tools/run_judges.py --threads 4 --confirmatory --rescore"
+    ctx.results[f"derived-{E3}"] = derived_ok(E3, ran)
+    assert f"{E3} re-derived by {ran} from the banked replies" in ship_check.g8(ctx)
+
+
+# ---------------------------------------------------------------- the banked inputs (BV1, BV2)
+
+
+@pytest.mark.parametrize(
+    ("e2", "match"),
+    [
+        pytest.param(
+            lambda d: d["provenance"]["inputs"].pop(RUNS),
+            rf"{E2} was not computed from the committed {RUNS}",
+            id="the-rows-not-recorded",
+        ),
+        pytest.param(
+            lambda d: d["provenance"]["inputs"].update({RUNS: "0" * 64}),
+            rf"{E2} was not computed from the committed {RUNS}",
+            id="other-rows-hashed",
+        ),
+        pytest.param(
+            lambda d: d["provenance"]["inputs"].pop(SEEDED),
+            rf"{E2} was not computed from the committed {SEEDED}",
+            id="the-evaluation-not-recorded",
+        ),
+        pytest.param(
+            lambda d: d["banking"].update(rows_path="artifacts/e2/alt_runs.jsonl"),
+            rf"{E2} did not classify the banked E1 runs: .*'artifacts/e2/alt_runs\.jsonl'",
+            id="another-rows-file",
+        ),
+        pytest.param(
+            lambda d: d["banking"].update(runs_dir="artifacts/hand/runs"),
+            rf"{E2} did not classify the banked E1 runs: .*'artifacts/hand/runs'",
+            id="other-runs",
+        ),
+        pytest.param(
+            lambda d: d.pop("banking"),
+            rf"{E2} did not classify the banked E1 runs",
+            id="no-banking-section",
+        ),
+    ],
+)
+def test_e2_must_classify_the_banked_e1_runs(tmp_path: Path, e2: Edit, match: str) -> None:
+    """Review BV1 of the B5 fix: E2 written from a rows file or runs other than the banked
+    ones re-derives to itself, so g8 also requires E2 to have read the banked inputs, as
+    G7 does for E1, before any derivation."""
+    with pytest.raises(GateError, match=match):
+        ship_check.g8(artifacts(tmp_path, e2=e2))
+
+
+@pytest.mark.parametrize(
+    ("e3", "match"),
+    [
+        pytest.param(
+            lambda d: d["replies"].update(path="artifacts/e3/replies-alt.jsonl"),
+            rf"{E3} was not scored from the banked replies {REPLIES} \(it records the replies "
+            r"'artifacts/e3/replies-alt\.jsonl'\)",
+            id="other-replies",
+        ),
+        pytest.param(
+            lambda d: d["replies"].update(sha256="0" * 64),
+            rf"{E3} records replies other than the committed {REPLIES}",
+            id="replies-changed-since",
+        ),
+        pytest.param(
+            lambda d: d.pop("replies"),
+            rf"{E3} was not scored from the banked replies {REPLIES} \(it records the replies None",
+            id="no-replies-section",
+        ),
+    ],
+)
+def test_e3_must_be_scored_from_the_banked_replies(tmp_path: Path, e3: Edit, match: str) -> None:
+    """Review BV2 of the B5 fix: a re-score of replies other than the banked ones
+    re-derives to itself, so g8 requires the replies E3 records to be the committed
+    artifacts/e3/replies.jsonl, path and SHA-256."""
+    with pytest.raises(GateError, match=match):
+        ship_check.g8(artifacts(tmp_path, e3=e3))
+
+
+def test_e3_needs_the_committed_replies_file(tmp_path: Path) -> None:
+    ctx = artifacts(tmp_path)
+    (tmp_path / REPLIES).unlink()
+    with pytest.raises(GateError, match=rf"records replies other than the committed {REPLIES}"):
+        ship_check.g8(ctx)
 
 
 def test_the_gate_draws_the_sample_the_e3_sampler_draws() -> None:
@@ -384,8 +511,6 @@ def test_the_gate_re_scores_e3_and_a_hand_set_count_fails(
     """The gate's step itself, on the SYNTHETIC study whose E3 artifact tools/run_judges.py
     wrote with SYNTHETIC judges: it re-scores from the banked replies with no model, and
     a typed count fails with the path that differs."""
-    from tests.report import studies
-
     root = studies.e3_study(tmp_path / "e3", monkeypatch)
     first = gate_context(root, tmp_path, monkeypatch)
     ship_check.check_derivation(first, E3)
@@ -406,8 +531,6 @@ def test_the_gate_re_derives_e2_and_hand_set_classes_fail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The review's probe on a real E2 artifact: every class set to never_saw."""
-    from tests.report import studies
-
     root = studies.e1_study(tmp_path / "e1")
     ship_check.check_derivation(gate_context(root, tmp_path, monkeypatch), E2)
 
@@ -420,6 +543,102 @@ def test_the_gate_re_derives_e2_and_hand_set_classes_fail(
     studies.edit(root, E2, never_saw)
     with pytest.raises(GateError, match=r"differs from a fresh derivation .*claims\.\d+\.class"):
         ship_check.check_derivation(gate_context(root, tmp_path, monkeypatch), E2)
+
+
+def report_naming(root: Path, judges: Sequence[str]) -> None:
+    """The SYNTHETIC report and numbers registry, naming the judges ``judges``."""
+    text, sources = REPORT, dict(SOURCES)
+    for fixture, real in zip(JUDGES, judges, strict=True):
+        text = text.replace(fixture, real)
+        sources = {key.replace(fixture, real): src for key, src in sources.items()}
+    put(root, "docs/REPORT.md", text)
+    numbers = {key: {"value": "0", "source": src} for key, src in sources.items()}
+    put(root, "artifacts/report/numbers.json", {"numbers": numbers})
+
+
+def study_rows(root: Path) -> list[dict[str, Any]]:
+    """The E1 rows a SYNTHETIC study banked."""
+    return studies.jsonl(root / RUNS)
+
+
+def g8_with(root: Path, logs: Path, monkeypatch: pytest.MonkeyPatch, stand_in: str) -> str:
+    """g8 on the SYNTHETIC study ``root``: the derivation of its own artifact runs for real,
+    and that of the SYNTHETIC ``stand_in`` artifact beside it is given."""
+    ctx = gate_context(root, logs, monkeypatch)
+    command = "python tools/analyze.py e2" if stand_in == E2 else "python tools/run_judges.py"
+    ctx.results[f"derived-{stand_in}"] = derived_ok(stand_in, command)
+    return ship_check.g8(ctx)
+
+
+@pytest.mark.slow  # the SYNTHETIC E1 study is analyzed first
+def test_the_gate_passes_banked_e2_and_refuses_e2_from_a_hand_made_rows_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review BV1 of the B5 fix on the real E2 artifact of the SYNTHETIC E1 study, with a
+    SYNTHETIC E3 artifact and report beside it: g8 passes on the banked E2, and fails on
+    E2 written by ``tools/analyze.py e2 --runs <a hand-made rows file>`` (every class
+    never_saw), whose own command derives it again: g8 finds it did not read the banked
+    rows, and the derivation step refuses the recorded input."""
+    root = studies.e1_study(tmp_path / "e1")
+    data = judges_artifact(study_rows(root), sha(root, RUNS))
+    banked_replies(root, data)
+    put(root, E3, data)
+    report_naming(root, JUDGES)
+    studies.commit_all(root, "SYNTHETIC E3 artifact, replies stand-in, and report")
+    evidence = g8_with(root, tmp_path, monkeypatch, E3)
+    assert f"{E2} re-derived by python tools/analyze.py e2 from {RUNS} and {RUN_DIRS}" in evidence
+    alt = "artifacts/e2/alt_runs.jsonl"
+    studies.rows_without_evidence(root, alt)
+    studies.operator(root, "tools/analyze.py", "e2", "--runs", alt)
+    studies.commit_all(root, "SYNTHETIC E2 from a hand-made rows file")
+    forged = json.loads((root / E2).read_text(encoding="utf-8"))
+    assert {c["class"] for c in forged["claims"]} == {"never_saw"}
+    with pytest.raises(GateError, match=rf"{E2} was not computed from the committed {RUNS}"):
+        g8_with(root, tmp_path, monkeypatch, E3)
+    refused = rf"{E2} is not a fresh derivation in the clone .*passes --runs {alt}, not the "
+    with pytest.raises(GateError, match=rf"{refused}banked input {RUNS}"):
+        ship_check.check_derivation(gate_context(root, tmp_path, monkeypatch), E2)
+
+
+def test_the_gate_passes_banked_e3_and_refuses_e3_from_hand_made_replies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review BV2 of the B5 fix on the real E3 artifact of the SYNTHETIC E3 study, with a
+    stand-in held-out evaluation and a SYNTHETIC E2 artifact and report beside it (E3
+    reads the E2 classes, so it is re-scored once they exist): g8 passes on the banked
+    replies, and fails on a re-score of hand-made replies copied to the default path,
+    whose own command re-scores to it: g8 finds the replies are not the banked ones, and
+    the derivation step refuses the recorded replies."""
+    root = studies.e3_study(tmp_path / "e3", monkeypatch)
+    put(root, SEEDED, seeded_eval({"tests_pass": 10}))
+    claims = [
+        {"run_id": row["run_id"], "claim_id": claim["claim_id"], "class": "never_saw"}
+        for row in study_rows(root)
+        if row.get("included") is True
+        for claim in row.get("claims") or []
+        if claim.get("verdict") == "contradicted"
+    ]
+    put(root, E2, mechanism_artifact(root, claims))
+    judges = [j.judge_id for j in E3_JUDGES]
+    report_naming(root, judges)
+    studies.commit_all(root, "SYNTHETIC E2 artifact, held-out evaluation, and report")
+    studies.operator(root, "tools/run_judges.py", "--rescore")  # from committed inputs
+    studies.commit_all(root, "SYNTHETIC E3 re-scored with the E2 classes")
+    evidence = g8_with(root, tmp_path, monkeypatch, E2)
+    rescored = f"{E3} re-derived by python tools/run_judges.py --rescore from the banked replies"
+    assert f"{rescored} {REPLIES}" in evidence
+    alt = "artifacts/e3/replies-alt.jsonl"
+    studies.forged_replies(root, alt, judges[0])
+    rescore = ["--rescore", "--replies", alt, "--out", "artifacts/e3/forged.json"]
+    studies.operator(root, "tools/run_judges.py", *rescore)
+    (root / "artifacts" / "e3" / "forged.json").replace(root / E3)
+    studies.commit_all(root, "SYNTHETIC E3 from hand-made replies")
+    said = rf"{E3} was not scored from the banked replies {REPLIES} \(it records the replies "
+    with pytest.raises(GateError, match=rf"{said}'{alt}'"):
+        g8_with(root, tmp_path, monkeypatch, E2)
+    refused = rf"{E3} is not a fresh derivation in the clone .*passes --replies {alt}, not the "
+    with pytest.raises(GateError, match=rf"{refused}banked input {REPLIES}"):
+        ship_check.check_derivation(gate_context(root, tmp_path, monkeypatch), E3)
 
 
 # ---------------------------------------------------------------- the whole sample [24]
@@ -540,6 +759,10 @@ def test_a_judged_run_must_have_every_claim_scored(tmp_path: Path) -> None:
         put(tmp_path, RUNS, "".join(json.dumps(r) + "\n" for r in rows))
         digest = hashlib.sha256((tmp_path / RUNS).read_bytes()).hexdigest()
         data["provenance"]["inputs"][RUNS] = digest
+        # E2, written before this edit, records the rows it read: these ones.
+        mech = json.loads((tmp_path / E2).read_text("utf-8"))
+        mech["provenance"]["inputs"][RUNS] = digest
+        put(tmp_path, E2, mech)
 
     with pytest.raises(GateError, match="not every claim of the judged runs"):
         ship_check.g8(artifacts(tmp_path, e3=two_claims))

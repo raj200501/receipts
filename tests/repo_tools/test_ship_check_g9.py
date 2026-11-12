@@ -574,7 +574,7 @@ def test_a_complete_mitigation_package_passes(git_repo: Path, commit: Commit) ->
     assert "E4 on 2 held-out tasks" in evidence and "demo transcript reproduces" in evidence
     assert "evaluated instrument" in evidence
     assert "re-derived from the 32 banked runs" in evidence
-    assert f"{RESULTS} re-derived by tools/analyze_e4.py" in evidence
+    assert f"{RESULTS} re-derived by python tools/analyze_e4.py" in evidence
 
 
 def test_the_e4_fixture_passes_the_e4_checks(git_repo: Path, commit: Commit) -> None:

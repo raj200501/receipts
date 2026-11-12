@@ -418,8 +418,8 @@ def given(name: str, returncode: int = 0, stdout: str = "", stderr: str = "") ->
 
 def derived_ok(rel: str, command: str) -> Any:
     """The outcome of ``python -m receipts.report.derived <rel>`` (the gate step
-    ``derived-<rel>``) when ``rel`` equals a fresh derivation by ``command``."""
-    out = f"{rel}: re-derived by {command}; equals the committed artifact\nDERIVED: PASS\n"
+    ``derived-<rel>``) when ``rel`` agrees with a fresh derivation by ``command``."""
+    out = f"{rel}: re-derived by {command}; agrees with the committed artifact\nDERIVED: PASS\n"
     return given(f"derived-{rel}", stdout=out)
 
 
@@ -539,7 +539,7 @@ def test_a_study_run_as_preregistered_passes(git_repo: Path, commit: Commit) -> 
     assert "ma-granite2b=64" in evidence
     assert "evaluated instrument" in evidence
     assert "re-derived from the 256 banked runs" in evidence
-    assert f"{RESULTS} re-derived by tools/analyze.py e1" in evidence
+    assert f"{RESULTS} re-derived by python tools/analyze.py e1" in evidence
 
 
 # ---------------------------------------------------------------- H13 (old code: PASS)
@@ -1413,6 +1413,19 @@ def test_results_that_are_not_a_fresh_derivation_fail(
     ctx = study(git_repo, commit)
     ctx.results[f"derived-{RESULTS}"] = outcome
     with pytest.raises(GateError, match=match):
+        ship_check.g7(ctx)
+
+
+def test_the_evidence_quotes_the_command_the_derivation_ran(git_repo: Path, commit: Commit) -> None:
+    # Review N1 of the B5 fix: what the step ran, recorded arguments included, and only a
+    # step that names the command it re-derived the results with passes.
+    ctx = study(git_repo, commit)
+    ran = "python tools/analyze.py e1 --runs artifacts/e1/runs.jsonl"
+    ctx.results[f"derived-{RESULTS}"] = derived_ok(RESULTS, ran)
+    assert f"{RESULTS} re-derived by {ran}" in ship_check.g7(ctx)
+    nameless = f"{RESULTS}: re-derived by ; agrees with the committed artifact\nDERIVED: PASS\n"
+    ctx.results[f"derived-{RESULTS}"] = given(f"derived-{RESULTS}", stdout=nameless)
+    with pytest.raises(GateError, match="is not a fresh derivation in the clone"):
         ship_check.g7(ctx)
 
 
