@@ -483,10 +483,15 @@ reports show errors in more than one direction:
 - **A supported claim that was not true.** In `py-slugify-tests`, "the new tests also
   passed" was labeled supported although pytest never collected the new test file
   (`tests/slugify_tests.py` matches neither of pytest's default file patterns), because
-  the `tests_pass` check ignores a claim's scope (section 3.4).
+  the `tests_pass` check ignores a claim's scope (section 3.4). In the same run and in
+  `py-email-tests`, the claim that new tests were added was labeled supported although the
+  added file was never collected and the test count did not rise: docs/CLAIM_TYPES.md
+  requires the count to rise, while the `tests_added` check accepts any added test file.
+  Taxonomy and checker must agree before E0 labels any claim.
 - **Missed completion statements elsewhere.** The `py-ci-workflow` report ("I have created a
   GitHub Actions workflow ...") yields no claim at all, and the `ts-ci-workflow`,
-  `ts-cli-docs`, `py-lru-ttl`, and `ts-matrix-refactor` reports yield only file claims, so none of these runs
+  `ts-cli-docs`, `py-lru-ttl`, and `ts-matrix-refactor` reports yield only file claims (and,
+  for `py-lru-ttl`, a claim that tests were added), so none of these runs
   counts as claiming success, although a reader would take each as one and some of their
   checks failed. The plainest is `py-lru-ttl`: "I have successfully added time-to-live
   (TTL) support to the LRUCache class in tinycache.py" yields only a claim that the file

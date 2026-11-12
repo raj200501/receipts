@@ -5,6 +5,15 @@ docs/BUILD_BRIEF.md section 9), newest first.
 
 ## 2026-11-12
 
+- **README.md and docs/REPORT.md, the runs with only file claims** (review N17): they said
+  the ts-ci-workflow, ts-cli-docs, py-lru-ttl, and ts-matrix-refactor reports yield only
+  file claims. The py-lru-ttl report also yields a supported claim that tests were added.
+  The conclusion holds (none of these reports yields a success claim). Both documents now
+  name that claim, and they add a known instrument error the independent review found
+  (N19): in slugify-tests and email-tests, a claim that tests were added was supported
+  although the added file was never collected and the test count did not rise, which the
+  claim taxonomy requires.
+
 - **README.md and docs/REPORT.md, the ts-cli-docs file claim**: they said the run "created no
   script". It did: the ledger records `scripts/check-docs.ts` created and package.json
   changed. The error is narrower: the claim was read as one about README.md, the file in
