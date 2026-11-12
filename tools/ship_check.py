@@ -2716,8 +2716,9 @@ def rescored_heldout(ctx: Context) -> None:
     a prediction or a per-type value typed into the file, or a requirement text edited
     after the scoring, fails. Scoring needs the extractor and the verifier, which this
     stdlib-only file cannot run and must not copy; :func:`evaluated_instrument` holds the
-    clone's instrument files to the evaluated ones. The FAIL line quotes the tool's own
-    reason from stderr (D64)."""
+    clone's instrument files to the evaluated ones, and the tool itself refuses to report
+    a scoring made with code other than the evaluated commit's. The FAIL line quotes the
+    tool's own reason from stderr (D64)."""
     setup = ctx.make("setup", 900)
     require(
         setup.ok,

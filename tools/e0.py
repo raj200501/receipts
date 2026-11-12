@@ -281,8 +281,8 @@ def cmd_recheck(args: argparse.Namespace, root: Path, command: str) -> int:
     The check gate G5 runs in its clone (DECISIONS D66): it calls no model, writes no
     file, and logs no attempt. Exits 1, with the differing fields and the first
     differing item on one stderr line, when ``artifacts/e0/seeded_eval.json`` is not what
-    the held-out reports score now, and 2 (through :func:`main`) when it cannot score
-    them again.
+    the held-out reports score now, and 2 (through :func:`main`) when it refuses: it
+    cannot score them again, or could only with code other than the evaluated commit's.
     """
     del args, command
     try:

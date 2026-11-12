@@ -392,7 +392,12 @@ frozen held-out manifest again on the code path `evaluate` takes
 (`receipts.evaluation.e0.score_split`), with the instrument at HEAD: it refuses while any
 of the five paths above has an uncommitted change, and every refusal of the evaluate step
 (a manifest, held-out report, or ledger that changed, unchecked counts, a task whose
-requirements do not load) applies. It calls no model, writes no file, and logs no
+requirements do not load) applies. It also refuses, before it reports anything, unless
+every file of the repository's `src/` that the scoring loaded (`src/receipts/__init__.py`,
+which holds only the version, aside) has no uncommitted change and is the file of the
+evaluation's instrument commit: it never reports a scoring of the held-out half made with
+other code, which would be an attempt no log records (scoring a revised instrument is a
+new attempt, which `evaluate` logs). It calls no model, writes no file, and logs no
 attempt. The evaluation's `verifier_mode`, `reports`, `report_requirements`, `items`,
 `per_type`, `top5`, `passes`, and `all_top5_pass` must equal the new result as JSON (a
 `true` is not a `1`); when, where, and on which commit it ran (`instrument`, `attempt`,

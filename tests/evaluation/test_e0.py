@@ -9,6 +9,7 @@ tests/evaluation/test_e0_labels.py and tests/repo_tools/test_e0_cli.py.
 
 from __future__ import annotations
 
+import importlib.util
 import itertools
 import json
 import re
@@ -2566,6 +2567,8 @@ def test_recheck_names_every_differing_field(git_repo: Path, commit: Commit) -> 
         "dirty-task-loader",
         "changed-report",
         "changed-ledger",
+        "no-evaluated-commit",
+        "evaluated-commit-is-a-tree",
     ],
 )
 def test_recheck_refuses_what_it_cannot_score_again(
@@ -2596,14 +2599,72 @@ def test_recheck_refuses_what_it_cannot_score_again(
         text = report.read_text("utf-8")
         report.write_text(text.replace("All tests pass", "Tests pass"), "utf-8")
         expected = "held-out report rep-3 changed since the manifest"
-    else:
+    elif problem == "changed-ledger":
         ledger = git_repo / "artifacts/studies/smoke/runs/r1/ledger.jsonl"
         write_ledger(ledger, "r1", "py-alpha", "A report banked later.", gap=True)
         expected = "ledger artifacts/studies/smoke/runs/r1/ledger.jsonl is missing or changed"
+    else:
+        # An id that names no object, or one that names an object other than a commit.
+        fake = "0" * 40 if problem == "no-evaluated-commit" else e0.tree_id(git_repo, "")
+        assert fake is not None and len(fake) == 40
+        edit_evaluation(git_repo, lambda d: d["instrument"].update(commit=fake))
+        expected = f"{e0.EVAL} records no evaluated commit of this repository"
     with pytest.raises(e0.E0Error, match=re.escape(expected)) as caught:
         e0.recheck(git_repo)
     assert not isinstance(caught.value, e0.RecheckMismatchError)
     assert len((git_repo / e0.ATTEMPTS).read_text("utf-8").splitlines()) == 1
+
+
+def load_module(name: str, path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Load the Python file ``path`` as module ``name`` into this process for the test."""
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setitem(sys.modules, name, module)
+
+
+def test_recheck_scores_only_with_the_code_of_the_evaluated_commit(
+    git_repo: Path, commit: Commit, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A module of the repository's own src/ that the process has loaded, as every module
+    # of the scoring step is when tools/e0.py runs in a checkout (gate G5's clone). A
+    # revised instrument scored on the held-out half is an attempt that no log records.
+    probe = git_repo / "src" / "probe_scoring.py"
+    probe.parent.mkdir(parents=True)
+    probe.write_text("# SYNTHETIC scoring module\nRULES = 1\n", "utf-8")
+    recorded = evaluated(git_repo, commit)
+    load_module("receipts_b6_probe_scoring", probe, monkeypatch)
+    assert e0.loaded_sources(git_repo) == ["src/probe_scoring.py"]
+    assert e0.recheck(git_repo) == recorded
+    expected = re.escape(
+        f"the code recheck scored with is not the code of the evaluated commit "
+        f"{recorded['instrument']['commit'][:12]} (src/probe_scoring.py)"
+    )
+    probe.write_text("# SYNTHETIC scoring module, revised\nRULES = 2\n", "utf-8")
+    with pytest.raises(e0.E0Error, match=expected) as caught:
+        e0.recheck(git_repo)  # revised, not committed
+    assert not isinstance(caught.value, e0.RecheckMismatchError)
+    commit(git_repo, "revise a scoring module after the held-out scoring")
+    with pytest.raises(e0.E0Error, match=expected) as caught:
+        e0.recheck(git_repo)  # revised and committed: still not the evaluated code
+    assert not isinstance(caught.value, e0.RecheckMismatchError)
+    assert len((git_repo / e0.ATTEMPTS).read_text("utf-8").splitlines()) == 1
+
+
+def test_loaded_sources_are_the_repositorys_modules_but_the_version_file(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name, rel in (
+        ("receipts_b6_probe_version", e0.PACKAGE_INIT),
+        ("receipts_b6_probe_rules", "src/receipts/claims/rules.py"),
+        ("receipts_b6_probe_outside", "scripts/outside.py"),
+    ):
+        path = git_repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# SYNTHETIC module\n", "utf-8")
+        load_module(name, path, monkeypatch)
+    assert e0.loaded_sources(git_repo) == ["src/receipts/claims/rules.py"]
 
 
 def test_evaluate_records_what_score_split_gives(git_repo: Path, commit: Commit) -> None:

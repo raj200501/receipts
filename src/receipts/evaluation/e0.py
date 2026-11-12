@@ -51,6 +51,7 @@ import hashlib
 import json
 import re
 import subprocess
+import sys
 import tomllib
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
@@ -173,6 +174,9 @@ RECHECKED_FIELDS: tuple[str, ...] = (
     "passes",
     "all_top5_pass",
 )
+#: The ``receipts`` package's own ``__init__.py``, which holds only the version: gate G5
+#: leaves it out of the instrument it binds, and :func:`loaded_sources` leaves it out.
+PACKAGE_INIT = "src/receipts/__init__.py"
 COMPLETENESS = "artifacts/e0/ledger_completeness.json"
 BLINDNESS = "artifacts/e0/blindness.json"
 CLAIM_TYPES_DOC = "docs/CLAIM_TYPES.md"
@@ -2836,6 +2840,67 @@ def evaluate(
     return result
 
 
+_HEX40 = re.compile(r"[0-9a-f]{40}")
+
+
+def is_commit(root: Path, sha: object) -> bool:
+    """True if ``sha`` is the full hex name of a commit of ``root``."""
+    if not isinstance(sha, str) or _HEX40.fullmatch(sha) is None:
+        return False
+    proc = subprocess.run(
+        ["git", "-C", str(root), "cat-file", "-e", f"{sha}^{{commit}}"],
+        capture_output=True,
+        check=False,
+    )
+    return proc.returncode == 0
+
+
+def loaded_sources(root: Path) -> list[str]:
+    """The files under ``root/src`` of the modules this process has loaded, relative to
+    ``root`` and sorted: after a scoring, the code that scoring ran. :data:`PACKAGE_INIT`
+    is left out, as gate G5 leaves it out of the instrument it binds."""
+    base, top = (root / "src").resolve(), root.resolve()
+    found: set[str] = set()
+    for module in list(sys.modules.values()):
+        name = getattr(module, "__file__", None)
+        if isinstance(name, str):
+            path = Path(name).resolve()
+            if path.is_relative_to(base):
+                found.add(path.relative_to(top).as_posix())
+    found.discard(PACKAGE_INIT)
+    return sorted(found)
+
+
+def require_evaluated_code(root: Path, recorded: Mapping[str, Any]) -> None:
+    """Refuse unless this process scored with the code of the evaluation's instrument
+    commit (``instrument.commit`` in ``recorded``, a commit of ``root``): every file
+    :func:`loaded_sources` lists must have no uncommitted change and be the same git blob
+    at HEAD as at that commit. So :func:`recheck` never reports a scoring of the held-out
+    half made with other code, which would be a held-out attempt that no log records;
+    scoring a revised instrument is a new attempt, which :func:`evaluate` logs. Gate G5
+    already holds the instrument files unchanged since that commit, so in its clone this
+    refuses nothing G5 would pass. Raises E0Error naming up to five differing files."""
+    instrument = recorded.get("instrument")
+    sha = instrument.get("commit") if isinstance(instrument, dict) else None
+    if not is_commit(root, sha):
+        raise E0Error(
+            f"{EVAL} records no evaluated commit of this repository (instrument.commit "
+            f"{sha!r}), so recheck cannot tell which code to score with"
+        )
+    loaded = loaded_sources(root)
+    if not loaded:
+        return
+    changed = set(uncommitted(root, *loaded))
+    changed |= {rel for rel in loaded if tree_id(root, rel, str(sha)) != tree_id(root, rel)}
+    if changed:
+        listed = ", ".join(sorted(changed)[:5]) + (", ..." if len(changed) > 5 else "")
+        raise E0Error(
+            f"the code recheck scored with is not the code of the evaluated commit "
+            f"{str(sha)[:12]} ({listed}): recheck scores the held-out half only with the "
+            "instrument the evaluation scored"
+        )
+
+
 _ABSENT = object()
 
 
@@ -2926,15 +2991,17 @@ def recheck(root: Path) -> dict[str, Any]:
     reads ``EVAL``, requires the held-out split, and scores every report of the frozen
     held-out manifest again through :func:`score_split`, the path :func:`evaluate`
     takes, with the committed instrument at HEAD (SCORING_PATHS must have no uncommitted
-    change, so the code re-run is the code a commit holds). Every field of
-    :data:`RECHECKED_FIELDS` must equal the new result as JSON (:func:`recheck_differences`),
-    so a prediction typed into the file, a typed per-type value or pass, or a requirement
-    text edited after the scoring (its digest in ``report_requirements``, D54) shows.
+    change, so the code re-run is the code a commit holds), and reports nothing unless the
+    code it scored with is the code of the evaluated commit (:func:`require_evaluated_code`).
+    Every field of :data:`RECHECKED_FIELDS` must equal the new result as JSON
+    (:func:`recheck_differences`), so a prediction typed into the file, a typed per-type
+    value or pass, or a requirement text edited after the scoring (its digest in
+    ``report_requirements``, D54) shows.
     Raises :class:`RecheckMismatchError` naming the differing fields and the first differing
     item, and E0Error when it cannot score again: ``EVAL`` missing, not a JSON object, or
-    not the held-out split; a dirty instrument; or a step :func:`score_split` refuses
-    (a held-out half or ledger changed since it was frozen, unchecked counts, or a task
-    whose requirements do not load).
+    not the held-out split; a dirty instrument; a step :func:`score_split` refuses (a
+    held-out half or ledger changed since it was frozen, unchecked counts, or a task whose
+    requirements do not load); or scoring code other than the evaluated commit's.
     """
     recorded, error = read_json(root / EVAL)
     if error is not None:
@@ -2949,6 +3016,7 @@ def recheck(root: Path) -> dict[str, Any]:
     instrument = instrument_state(root, SCORING_PATHS)
     refuse_dirty(instrument)
     fresh = json.loads(dump_json(score_split(root, "heldout", instrument)))
+    require_evaluated_code(root, recorded)
     differences = recheck_differences(recorded, fresh)
     if differences:
         fields = [d for d in differences if not d.startswith("first differing item: ")]
