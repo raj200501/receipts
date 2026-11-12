@@ -1949,6 +1949,11 @@ E0_VERIFIER_MODE = "task_requirements"
 E0_MANIFEST = "artifacts/e0/heldout_manifest.json"
 E0_HELDOUT = "artifacts/e0/seeded/heldout"
 E0_COMPLETENESS = "artifacts/e0/ledger_completeness.json"
+# One line per scoring of the held-out half (receipts.evaluation.e0.log_attempt), so every
+# attempt stays visible once committed (DECISIONS D38, D66).
+E0_ATTEMPTS = "artifacts/e0/heldout_attempts.jsonl"
+# The per-type counts an attempt-log line keeps for each top-five type.
+ATTEMPT_COUNTS = ("correct", "predicted", "gold")
 # The claim types are counted from blind labels of the real smoke reports, by labelers
 # who never saw the instrument, so a common type the extractor misses still counts.
 COUNT_METHOD = "blind-labels"
@@ -2521,6 +2526,185 @@ def scored_items(
     return scored
 
 
+def same_json(first: object, second: object) -> bool:
+    """True when two JSON values are the same value, compared as canonical JSON: a
+    ``true`` is not a ``1`` and a ``1.0`` is not a ``1``, though Python's ``==`` takes
+    both pairs as equal."""
+    return json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
+
+
+def well_formed_attempt(entry: object) -> bool:
+    """True for a line of the held-out attempt log as
+    ``receipts.evaluation.e0.log_attempt`` writes it: a JSON object with a positive
+    integer ``attempt``; ``created``, ``command``, and ``commit`` texts; ``trees``, a
+    non-empty object of instrument path to git tree id (a text, or null for a path the
+    commit lacks); ``passes``, an object of booleans; a boolean ``all_top5_pass``; and
+    ``per_type``, an object whose entries count ``correct``, ``predicted``, and ``gold``."""
+    if not isinstance(entry, dict):
+        return False
+    attempt, trees = entry.get("attempt"), entry.get("trees")
+    passes, per_type = entry.get("passes"), entry.get("per_type")
+    return (
+        is_count(attempt)
+        and attempt >= 1
+        and all(is_text(entry.get(key)) for key in ("created", "command", "commit"))
+        and isinstance(trees, dict)
+        and bool(trees)
+        and all(tree is None or is_text(tree) for tree in trees.values())
+        and isinstance(passes, dict)
+        and all(isinstance(flag, bool) for flag in passes.values())
+        and isinstance(entry.get("all_top5_pass"), bool)
+        and isinstance(per_type, dict)
+        and all(
+            isinstance(counts, dict) and all(is_count(counts.get(key)) for key in ATTEMPT_COUNTS)
+            for counts in per_type.values()
+        )
+    )
+
+
+def committed_attempts(root: Path) -> list[dict[str, Any]]:
+    """The entries of the held-out attempt log as HEAD commits it (review B6, DECISIONS
+    D66). The log must be committed, and no commit may have deleted it or removed or
+    rewritten a line that an earlier commit holds: every committed version of the log is
+    the start of the one at HEAD, so a scoring of the held-out half stays in the log once
+    it is committed (D38 makes evaluate refuse to score again before the last line is
+    committed). Every line must be a well-formed attempt (:func:`well_formed_attempt`)."""
+    text = git_or_none(root, "show", f"HEAD:{E0_ATTEMPTS}")
+    require(
+        text is not None,
+        f"{E0_ATTEMPTS} is not committed, so the scorings of the held-out half cannot be "
+        "checked (D66)",
+    )
+    assert text is not None
+    for sha in git(root, "log", "--full-history", "--format=%H", "--", E0_ATTEMPTS).split():
+        earlier = git_or_none(root, "show", f"{sha}:{E0_ATTEMPTS}")
+        require(
+            earlier is not None,
+            f"commit {sha[:12]} deleted {E0_ATTEMPTS}; every scoring of the held-out half "
+            "stays in the log once committed (D66)",
+        )
+        assert earlier is not None
+        require(
+            text.startswith(earlier),
+            f"the {E0_ATTEMPTS} committed in {sha[:12]} is not the start of the one at HEAD: "
+            "a later commit removed or rewrote an attempt it logged, and every scoring of "
+            "the held-out half stays in the log once committed (D66)",
+        )
+    entries: list[dict[str, Any]] = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            entry = None
+        require(
+            well_formed_attempt(entry),
+            f"{E0_ATTEMPTS} line {number} is not a well-formed attempt (an object with a "
+            "positive attempt, created, command, commit, trees, passes, all_top5_pass, and "
+            "per_type counts, as tools/e0.py evaluate writes it)",
+        )
+        entries.append(entry)
+    require(bool(entries), f"{E0_ATTEMPTS} logs no held-out attempt")
+    return entries
+
+
+def logged_fields(seeded: Mapping[str, Any]) -> dict[str, object]:
+    """What ``receipts.evaluation.e0.log_attempt`` logs of the held-out evaluation: its
+    instrument's ``commit`` and ``trees``, the ``correct``, ``predicted``, and ``gold``
+    counts of each ``top5`` type in its ``per_type``, its ``passes``, and its
+    ``all_top5_pass`` (None for what the evaluation lacks)."""
+    instrument = seeded.get("instrument")
+    record: Mapping[str, Any] = instrument if isinstance(instrument, dict) else {}
+    per_type, top5 = seeded.get("per_type"), seeded.get("top5")
+    counts: dict[str, dict[str, object]] | None = None
+    if (
+        isinstance(per_type, dict)
+        and isinstance(top5, list)
+        and all(isinstance(name, str) and isinstance(per_type.get(name), dict) for name in top5)
+    ):
+        counts = {name: {key: per_type[name].get(key) for key in ATTEMPT_COUNTS} for name in top5}
+    return {
+        "commit": record.get("commit"),
+        "trees": record.get("trees"),
+        "per_type": counts,
+        "passes": seeded.get("passes"),
+        "all_top5_pass": seeded.get("all_top5_pass"),
+    }
+
+
+def heldout_attempt(root: Path, seeded: Mapping[str, Any]) -> int:
+    """The attempt number of the held-out evaluation, after checking it against the
+    committed attempt log (review B6, DECISIONS D66): the evaluation cites the log; the
+    log (:func:`committed_attempts`) numbers its attempts 1 to n in order; the evaluation
+    is attempt n, and attempt n logged the evaluation's instrument commit and trees,
+    per-type counts, passes, and ``all_top5_pass`` (:func:`logged_fields`, compared as
+    JSON); attempt n's trees name exactly the paths the evaluation checked for
+    uncommitted changes (``instrument.paths``, which :func:`evaluated_instrument` holds
+    to cover every instrument file), so trees that leave a path out cannot hide a change
+    to it; every attempt's trees are git's trees of those paths at its commit, so the log
+    says what each attempt scored; and when n is above 1, every earlier attempt scored
+    the same instrument trees as attempt n. A held-out half scored again after the
+    instrument changed is no longer untouched (prereg 0001: the held-out half is scored
+    once), so G5 fails on it rather than reporting it as a deviation."""
+    require(
+        seeded.get("attempts_log") == E0_ATTEMPTS,
+        f"seeded_eval.json does not cite {E0_ATTEMPTS}, the log of every scoring of the "
+        "held-out half",
+    )
+    entries = committed_attempts(root)
+    n = len(entries)
+    for number, entry in enumerate(entries, start=1):
+        require(
+            entry["attempt"] == number,
+            f"{E0_ATTEMPTS} is not numbered 1 to {n} in order: line {number} logs attempt "
+            f"{entry['attempt']}",
+        )
+    attempt = seeded.get("attempt")
+    require(
+        is_count(attempt) and attempt == n,
+        f"the held-out evaluation is attempt {attempt!r}, not attempt {n}, the last one in "
+        f"{E0_ATTEMPTS}: G5 reads only the latest scoring of the held-out half",
+    )
+    last = entries[-1]
+    logged = logged_fields(seeded)
+    differ = [name for name, value in logged.items() if not same_json(last.get(name), value)]
+    require(
+        not differ,
+        f"attempt {n} of {E0_ATTEMPTS} does not log the held-out evaluation: they differ in "
+        + ", ".join(differ),
+    )
+    instrument = seeded.get("instrument")
+    checked = instrument.get("paths") if isinstance(instrument, dict) else None
+    paths = {str(rel) for rel in checked} if isinstance(checked, list) else set()
+    off = sorted(set(last["trees"]) ^ paths)
+    require(
+        bool(paths) and not off,
+        f"attempt {n} of {E0_ATTEMPTS} records trees for other paths than the evaluation "
+        f"checked ({', '.join(off[:3]) or 'no paths checked'}), so it does not show which "
+        "instrument the held-out half was scored with",
+    )
+    for entry in entries:
+        sha, trees = entry["commit"], entry["trees"]
+        require(
+            is_commit(root, sha) and git_trees(root, sha, trees) == trees,
+            f"attempt {entry['attempt']} of {E0_ATTEMPTS} records instrument trees that git "
+            f"does not hold at its commit {str(sha)[:12]}",
+        )
+    for entry in entries[:-1]:
+        before, after = entry["trees"], last["trees"]
+        changed = sorted(
+            rel
+            for rel in set(before) | set(after)
+            if rel not in before or rel not in after or before[rel] != after[rel]
+        )
+        require(
+            not changed,
+            f"attempt {entry['attempt']} of {E0_ATTEMPTS} scored other instrument trees than "
+            f"attempt {n} ({', '.join(changed[:3])}): the held-out half was scored again "
+            "after the instrument changed, so it is no longer untouched (D66)",
+        )
+    return n
+
+
 # A runs directory the completeness re-derivation may read: a study's banked runs.
 STUDY_RUNS_DIR = re.compile(r"artifacts/studies/[A-Za-z0-9][A-Za-z0-9._-]*/runs")
 
@@ -2651,7 +2835,9 @@ def ledger_completeness(
 
 
 def g5(ctx: Context) -> str:
-    """Instrument validity on the held-out seeded set, plus ledger completeness."""
+    """Instrument validity on the held-out seeded set, plus ledger completeness. The
+    evaluation is checked against the attempt log (:func:`heldout_attempt`), so the
+    attempt history is not taken on trust (review B6, DECISIONS D66)."""
     root = ctx.clone
     banked = {
         str(r.row["run_id"]): r for r in verified_smoke_runs(root, load_json(root, SMOKE_RUNS))
@@ -2670,6 +2856,7 @@ def g5(ctx: Context) -> str:
     reports = frozen_heldout(root)
     gold, ignorable = heldout_claims(root, reports)
     items = scored_items(seeded, reports, gold, ignorable)
+    attempt = heldout_attempt(root, seeded)
     parts: list[str] = []
     failing: list[str] = []
     for ctype in top5:
@@ -2688,8 +2875,14 @@ def g5(ctx: Context) -> str:
     runs, compared, gaps, unparsed = ledger_completeness(root, banked, fresh)
     require(not failing, "below P>=0.95/R>=0.90: " + "; ".join(failing) + " | " + "; ".join(parts))
     require(gaps == 0, f"ledger completeness gap: {gaps} command(s) missing from ledgers")
+    earlier = (
+        f" ({attempt - 1} earlier attempt{'s' if attempt > 2 else ''} on the same instrument trees)"
+        if attempt > 1
+        else ""
+    )
     return (
         "; ".join(parts)
+        + f"; held-out attempt {attempt}{earlier}"
         + f"; instrument at {instrument[:12]} unchanged at HEAD"
         + f"; ledger completeness 100% on {runs} runs ({compared} commands, re-derived; "
         f"{unparsed} unparsed actions)"

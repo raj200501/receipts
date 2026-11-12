@@ -1,11 +1,12 @@
 """Gate G5 of tools/ship_check.py on synthetic E0 artifacts (H12, H14, H19 to H21, H23,
-and review-3 of the harness review round).
+review-3 of the harness review round, and review B6 of 02bc774).
 
 Every artifact here is SYNTHETIC, made up only to exercise ``ship_check.g5`` in throwaway
 git repositories: smoke-run rows, blind labels, seeded reports and their gold claims,
-scoring items, and ledger completeness rows. Smoke rows are marked ``synthetic: false``
-only so the gate treats them as real runs. The "instrument" is a small stand-in package
-of one-line modules. Nothing here is a model result or a real-world result.
+scoring items, held-out attempt logs, and ledger completeness rows. Smoke rows are
+marked ``synthetic: false`` only so the gate treats them as real runs. The "instrument"
+is a small stand-in package of one-line modules. Nothing here is a model result or a
+real-world result.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ import pytest
 
 import e0 as e0_cli
 import ship_check
+from receipts.evaluation import e0
+from receipts.evaluation.seeded import TypeScore, score
 from receipts.ledger.events import GENESIS, Event
 
 Commit = Callable[[Path, str], str]
@@ -47,6 +50,7 @@ COUNTS = {
 }
 MANIFEST = "artifacts/e0/heldout_manifest.json"
 EVAL = "artifacts/e0/seeded_eval.json"
+ATTEMPTS = "artifacts/e0/heldout_attempts.jsonl"
 E0_MODULE = "src/receipts/evaluation/e0.py"
 SEEDED = "src/receipts/evaluation/seeded.py"
 CHECKERS = "src/receipts/verify/checkers.py"
@@ -213,25 +217,85 @@ def seeded_eval(
     *,
     dirty: bool = False,
     paths: Sequence[str] = CHECKED_PATHS,
+    trees: Mapping[str, str | None] | None = None,
     **over: Any,
 ) -> dict[str, Any]:
     """A SYNTHETIC held-out evaluation of the stand-in instrument at commit ``instrument``;
-    ``paths`` are the paths it checked for uncommitted changes."""
+    ``paths`` are the paths it checked for uncommitted changes and ``trees`` their git
+    trees. Its per-type results and passes are what receipts.evaluation.e0 records for
+    ``items`` with TYPES as the top five; it is attempt 1 of the attempt log."""
+    top5 = list(TYPES)
+    scores = score(items)
+    for name in top5:
+        scores.setdefault(name, TypeScore(name, 0, 0, 0))
+    per_type = {name: e0.type_entry(result) for name, result in sorted(scores.items())}
+    passes = {name: bool(per_type[name]["meets_thresholds"]) for name in top5}
     data: dict[str, Any] = {
         "split": "heldout",
         "heldout_manifest": MANIFEST,
         "verifier_mode": "task_requirements",
         "items": list(items),
+        "per_type": per_type,
+        "top5": top5,
+        "passes": passes,
+        "all_top5_pass": all(passes.values()),
         "instrument": {
             "commit": instrument,
             "paths": list(paths),
+            "trees": dict(trees or {}),
             "dirty": dirty,
             "uncommitted": [],
         },
+        "attempt": 1,
+        "attempts_log": ATTEMPTS,
         "provenance": PROV,
     }
     data.update(over)
     return data
+
+
+def trees_at(root: Path, sha: str, paths: Sequence[str]) -> dict[str, str | None]:
+    """git's tree of each of ``paths`` at ``sha`` (None when absent), as an evaluation
+    records the trees of its instrument."""
+    out: dict[str, str | None] = {}
+    for rel in paths:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--verify", "-q", f"{sha}:{rel}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        out[rel] = proc.stdout.strip() if proc.returncode == 0 else None
+    return out
+
+
+def put_evaluation(
+    root: Path,
+    items: Sequence[Mapping[str, Any]],
+    instrument: str,
+    *,
+    dirty: bool = False,
+    paths: Sequence[str] = CHECKED_PATHS,
+    trees: Mapping[str, str | None] | None = None,
+) -> dict[str, Any]:
+    """Write a SYNTHETIC held-out evaluation of the stand-in instrument at ``instrument``
+    and log it as the next held-out attempt with receipts.evaluation.e0.log_attempt, as
+    ``tools/e0.py evaluate`` does. ``trees`` default to git's trees at ``instrument``."""
+    recorded = trees_at(root, instrument, paths) if trees is None else dict(trees)
+    data = seeded_eval(items, instrument, dirty=dirty, paths=paths, trees=recorded)
+    data["attempt"] = e0.log_attempt(root, data, "SYNTHETIC python tools/e0.py evaluate")
+    put(root, EVAL, data)
+    return data
+
+
+def logged(root: Path) -> list[dict[str, Any]]:
+    """The entries of the SYNTHETIC held-out attempt log."""
+    return [json.loads(line) for line in (root / ATTEMPTS).read_text("utf-8").splitlines()]
+
+
+def write_log(root: Path, entries: Sequence[Mapping[str, Any]]) -> None:
+    """Write the SYNTHETIC attempt log, one JSON object per line, as log_attempt does."""
+    put(root, ATTEMPTS, "".join(json.dumps(dict(e), sort_keys=True) + "\n" for e in entries))
 
 
 COMMANDS = ("ls", "pytest -q")
@@ -352,8 +416,12 @@ def project(
     commands: Mapping[str, Sequence[str]] | None = None,
     sources: Mapping[str, str] = INSTRUMENT,
     paths: Sequence[str] = CHECKED_PATHS,
+    trees: Mapping[str, str | None] | None = None,
+    log: Callable[[str], str] | None = None,
 ) -> tuple[ship_check.Context, str]:
-    """A SYNTHETIC E0 history: base, then the frozen held-out half, then the evaluation.
+    """A SYNTHETIC E0 history: base, then the frozen held-out half, then the evaluation,
+    logged as held-out attempt 1 (``trees`` replace the git trees it records, and ``log``
+    rewrites the attempt log's text before it is first committed).
 
     Returns the Context and the commit the stand-in instrument was evaluated at.
     """
@@ -364,7 +432,9 @@ def project(
     commit(root, "freeze the held-out half")
     chosen = perfect_items(docs) if items is None else list(items)
     at = evaluated if instrument is None else instrument
-    put(root, EVAL, seeded_eval(chosen, at, dirty=dirty, paths=paths))
+    put_evaluation(root, chosen, at, dirty=dirty, paths=paths, trees=trees)
+    if log is not None:
+        put(root, ATTEMPTS, log((root / ATTEMPTS).read_text("utf-8")))
     put(root, "artifacts/e0/ledger_completeness.json", completeness(completeness_rows))
     return context(root, commit(root, "evaluate the held-out half")), evaluated
 
@@ -373,6 +443,7 @@ def test_valid_e0_artifacts_pass(git_repo: Path, commit: Commit) -> None:
     ctx, _ = project(git_repo, commit)
     evidence = ship_check.g5(ctx)
     assert "tests_pass P=1.000" in evidence
+    assert "held-out attempt 1;" in evidence
     assert "ledger completeness 100% on 5 runs" in evidence
 
 
@@ -453,7 +524,7 @@ def test_a_dev_evaluation_committed_earlier_does_not_misdate_the_heldout_one(
     commit(git_repo, "the development loop")
     write_heldout(git_repo, DOCS)
     commit(git_repo, "freeze the held-out half")
-    put(git_repo, EVAL, seeded_eval(perfect_items(DOCS), evaluated))
+    put_evaluation(git_repo, perfect_items(DOCS), evaluated)
     put(git_repo, "artifacts/e0/ledger_completeness.json", completeness())
     sha = commit(git_repo, "evaluate the held-out half")
     assert "ledger completeness 100%" in ship_check.g5(context(git_repo, sha))
@@ -467,7 +538,7 @@ def test_reports_committed_after_their_frozen_hashes_pass(git_repo: Path, commit
     commit(git_repo, "freeze the hashes only")
     write_reports(git_repo, DOCS)
     commit(git_repo, "add the byte-identical held-out reports")
-    put(git_repo, EVAL, seeded_eval(perfect_items(DOCS), evaluated))
+    put_evaluation(git_repo, perfect_items(DOCS), evaluated)
     put(git_repo, "artifacts/e0/ledger_completeness.json", completeness())
     sha = commit(git_repo, "evaluate")
     assert "ledger completeness 100%" in ship_check.g5(context(git_repo, sha))
@@ -1142,3 +1213,284 @@ def test_runs_dirs_must_be_committed_study_runs_in_the_clone(
     with pytest.raises(GateError, match=r"runs_dirs entry .* committed artifacts/studies/"):
         ORIGINAL_REDERIVE(ctx, data)
     assert ctx.calls == []  # refused before tools/e0.py reads anything
+
+
+# ---------------------------------------------------------------- review B6: attempt log (D66)
+
+
+def test_an_evaluation_must_cite_the_attempt_log(git_repo: Path, commit: Commit) -> None:
+    project(git_repo, commit)
+    data = json.loads((git_repo / EVAL).read_text(encoding="utf-8"))
+    data["attempts_log"] = None
+    put(git_repo, EVAL, data)
+    sha = commit(git_repo, "an evaluation that cites no attempt log")
+    with pytest.raises(GateError, match=re.escape(f"does not cite {ATTEMPTS}")):
+        ship_check.g5(context(git_repo, sha))
+
+
+def test_a_missing_attempt_log_fails(git_repo: Path, commit: Commit) -> None:
+    project(git_repo, commit)
+    (git_repo / ATTEMPTS).unlink()
+    sha = commit(git_repo, "drop the attempt log")
+    with pytest.raises(GateError, match=re.escape(f"{ATTEMPTS} is not committed")):
+        ship_check.g5(context(git_repo, sha))
+
+
+def test_an_untracked_attempt_log_fails(git_repo: Path, commit: Commit) -> None:
+    ctx, _ = project(git_repo, commit)
+    # Committed without ``git add -A``, so the log stays in the working tree, untracked.
+    for argv in (["rm", "-q", "--cached", ATTEMPTS], ["commit", "-q", "-m", "untrack the log"]):
+        subprocess.run(["git", "-C", str(git_repo), *argv], check=True)
+    assert (git_repo / ATTEMPTS).is_file()
+    with pytest.raises(GateError, match=re.escape(f"{ATTEMPTS} is not committed")):
+        ship_check.g5(ctx)
+
+
+def _set_first(**fields: Any) -> Callable[[str], str]:
+    """A log rewrite that sets ``fields`` in the first attempt."""
+
+    def rewrite(text: str) -> str:
+        first, *rest = text.splitlines()
+        entry = {**json.loads(first), **fields}
+        return "".join(line + "\n" for line in [json.dumps(entry, sort_keys=True), *rest])
+
+    return rewrite
+
+
+def _drop_first(key: str) -> Callable[[str], str]:
+    """A log rewrite that removes ``key`` from the first attempt."""
+
+    def rewrite(text: str) -> str:
+        entry = json.loads(text.splitlines()[0])
+        del entry[key]
+        return json.dumps(entry, sort_keys=True) + "\n"
+
+    return rewrite
+
+
+@pytest.mark.parametrize(
+    "log",
+    [
+        pytest.param(lambda text: text + "not JSON\n", id="not-json"),
+        pytest.param(lambda text: text + "\n", id="blank-line"),
+        pytest.param(lambda text: text + "[1]\n", id="not-an-object"),
+        pytest.param(lambda text: "", id="empty"),
+        pytest.param(_drop_first("per_type"), id="no-per-type"),
+        pytest.param(_drop_first("created"), id="no-created"),
+        pytest.param(_set_first(attempt=True), id="attempt-bool"),
+        pytest.param(_set_first(attempt=0), id="attempt-0"),
+        pytest.param(_set_first(trees={}), id="no-trees"),
+        pytest.param(_set_first(trees={"src/receipts/claims": 5}), id="tree-not-text"),
+        pytest.param(_set_first(passes={"tests_pass": 1}), id="pass-not-bool"),
+        pytest.param(_set_first(all_top5_pass=None), id="all-pass-null"),
+        pytest.param(_set_first(per_type={"tests_pass": {"correct": 1}}), id="counts-missing"),
+        pytest.param(_set_first(commit=""), id="no-commit"),
+    ],
+)
+def test_a_malformed_attempt_log_fails(
+    git_repo: Path, commit: Commit, log: Callable[[str], str]
+) -> None:
+    ctx, _ = project(git_repo, commit, log=log)
+    with pytest.raises(GateError, match=rf"^{re.escape(ATTEMPTS)} (line \d+ is not|logs no)"):
+        ship_check.g5(ctx)
+
+
+def test_a_gap_in_the_attempt_numbers_fails(git_repo: Path, commit: Commit) -> None:
+    # Attempt 2 was scored and its line deleted before it was committed (D38: an
+    # uncommitted line can be deleted); attempt 3 is the evaluation.
+    _, evaluated = project(git_repo, commit)
+    put_evaluation(git_repo, perfect_items(DOCS), evaluated)
+    put_evaluation(git_repo, perfect_items(DOCS), evaluated)
+    first, _, third = logged(git_repo)
+    write_log(git_repo, [first, third])
+    sha = commit(git_repo, "score the held-out half twice more and drop attempt 2")
+    with pytest.raises(GateError, match=r"not numbered 1 to 2 in order: line 2 logs attempt 3"):
+        ship_check.g5(context(git_repo, sha))
+
+
+def test_an_evaluation_that_is_not_the_last_attempt_fails(git_repo: Path, commit: Commit) -> None:
+    # The held-out half was scored again (to another file) and the earlier evaluation kept.
+    _, evaluated = project(git_repo, commit)
+    first = (git_repo / EVAL).read_text(encoding="utf-8")
+    put_evaluation(git_repo, perfect_items(DOCS), evaluated)
+    put(git_repo, EVAL, first)
+    sha = commit(git_repo, "score again and keep the first evaluation")
+    with pytest.raises(GateError, match=r"is attempt 1, not attempt 2, the last one"):
+        ship_check.g5(context(git_repo, sha))
+
+
+@pytest.mark.parametrize("field", ["commit", "trees", "per_type", "passes", "all_top5_pass"])
+def test_the_last_attempt_must_log_the_evaluation(
+    git_repo: Path, commit: Commit, field: str
+) -> None:
+    project(git_repo, commit)
+    data = json.loads((git_repo / EVAL).read_text(encoding="utf-8"))
+    if field == "commit":
+        # The freeze commit holds the same instrument, so only the log tells them apart.
+        freeze = subprocess.run(
+            ["git", "-C", str(git_repo), "rev-parse", "HEAD~1"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        data["instrument"]["commit"] = freeze
+    elif field == "trees":
+        data["instrument"]["trees"]["src/receipts/claims"] = "0" * 40
+    elif field == "per_type":
+        data["per_type"]["tests_pass"]["correct"] -= 1
+    elif field == "passes":
+        data["passes"]["tests_pass"] = False
+    else:
+        data["all_top5_pass"] = 0  # the logged false, as a JSON 0
+    put(git_repo, EVAL, data)
+    sha = commit(git_repo, f"edit the evaluation's {field}")
+    pattern = (
+        rf"attempt 1 of {re.escape(ATTEMPTS)} does not log the held-out evaluation: they "
+        rf"differ in {field}$"
+    )
+    with pytest.raises(GateError, match=pattern):
+        ship_check.g5(context(git_repo, sha))
+
+
+def test_recorded_trees_must_be_the_git_trees_of_their_commit(
+    git_repo: Path, commit: Commit
+) -> None:
+    # The evaluation and its attempt agree on trees that git does not hold at the commit.
+    forged = {rel: "f" * 40 for rel in CHECKED_PATHS}
+    ctx, evaluated = project(git_repo, commit, trees=forged)
+    with pytest.raises(
+        GateError,
+        match=rf"attempt 1 of {re.escape(ATTEMPTS)} records instrument trees that git does "
+        rf"not hold at its commit {evaluated[:12]}",
+    ):
+        ship_check.g5(ctx)
+
+
+def evaluate_with_trees(
+    root: Path, commit: Commit, at: str, trees: Callable[[str], dict[str, str | None]]
+) -> str:
+    """Log a SYNTHETIC held-out attempt at commit ``at`` whose trees are ``trees(at)``,
+    with the evaluation that agrees with it, and commit both. Returns the new commit."""
+    put_evaluation(root, perfect_items(DOCS), at, trees=trees(at))
+    put(root, "artifacts/e0/ledger_completeness.json", completeness())
+    return commit(root, f"score the held-out half at {at[:12]}")
+
+
+@pytest.mark.parametrize(
+    ("change", "named"),
+    [
+        pytest.param("drop", "src/receipts/claims", id="a-checked-path-left-out"),
+        pytest.param("add", "README.md", id="a-path-not-checked"),
+    ],
+)
+def test_attempt_trees_must_name_exactly_the_checked_paths(
+    git_repo: Path, commit: Commit, change: str, named: str
+) -> None:
+    # Old code: PASS. The trees are git's trees at the commit, and the evaluation and its
+    # attempt agree on them, but they do not name the paths the evaluation checked.
+    def trees(sha: str) -> dict[str, str | None]:
+        found = trees_at(git_repo, sha, CHECKED_PATHS)
+        if change == "drop":
+            del found[named]
+        else:
+            found.update(trees_at(git_repo, sha, [named]))
+        return found
+
+    evaluated = base(git_repo, commit)
+    write_heldout(git_repo, DOCS)
+    commit(git_repo, "freeze the held-out half")
+    sha = evaluate_with_trees(git_repo, commit, evaluated, trees)
+    with pytest.raises(
+        GateError,
+        match=rf"^attempt 1 of {re.escape(ATTEMPTS)} records trees for other paths than the "
+        rf"evaluation checked \({re.escape(named)}\)",
+    ):
+        ship_check.g5(context(git_repo, sha))
+
+
+def test_trees_that_leave_the_extractor_out_cannot_hide_a_revision(
+    git_repo: Path, commit: Commit
+) -> None:
+    # Old code: PASS. Two attempts whose trees leave src/receipts/claims out agree, though
+    # the extractor was revised between them.
+    def without_extractor(sha: str) -> dict[str, str | None]:
+        found = trees_at(git_repo, sha, CHECKED_PATHS)
+        del found["src/receipts/claims"]
+        return found
+
+    evaluated = base(git_repo, commit)
+    write_heldout(git_repo, DOCS)
+    commit(git_repo, "freeze the held-out half")
+    evaluate_with_trees(git_repo, commit, evaluated, without_extractor)
+    put(git_repo, "src/receipts/claims/patterns.py", "# SYNTHETIC stand-in, revised\nRULES = 2\n")
+    revised = commit(git_repo, "revise the extractor after the first held-out attempt")
+    sha = evaluate_with_trees(git_repo, commit, revised, without_extractor)
+    assert [entry["trees"] for entry in logged(git_repo)] == [without_extractor(revised)] * 2
+    with pytest.raises(
+        GateError,
+        match=rf"^attempt 2 of {re.escape(ATTEMPTS)} records trees for other paths than the "
+        r"evaluation checked \(src/receipts/claims\)",
+    ):
+        ship_check.g5(context(git_repo, sha))
+
+
+def revise_and_rescore(root: Path, commit: Commit) -> str:
+    """After project(): revise the stand-in extractor, commit, and score the held-out
+    half again as attempt 2 on the revised instrument. Returns the revised commit."""
+    put(root, "src/receipts/claims/patterns.py", "# SYNTHETIC stand-in, revised\nRULES = 2\n")
+    revised = commit(root, "revise the extractor after the first held-out attempt")
+    put_evaluation(root, perfect_items(DOCS), revised)
+    return revised
+
+
+def test_an_earlier_attempt_on_other_instrument_trees_fails(git_repo: Path, commit: Commit) -> None:
+    # Old code: PASS. The held-out half was scored, the instrument revised, and the half
+    # scored again: it is no longer untouched, so G5 fails rather than passing on it.
+    project(git_repo, commit)
+    revise_and_rescore(git_repo, commit)
+    sha = commit(git_repo, "score the held-out half again after the revision")
+    with pytest.raises(
+        GateError,
+        match=rf"attempt 1 of {re.escape(ATTEMPTS)} scored other instrument trees than "
+        r"attempt 2 \(src/receipts/claims\): the held-out half was scored again after the "
+        r"instrument changed",
+    ):
+        ship_check.g5(context(git_repo, sha))
+
+
+def test_a_rescore_on_the_same_instrument_trees_passes(git_repo: Path, commit: Commit) -> None:
+    project(git_repo, commit)
+    put(git_repo, "README.md", "SYNTHETIC G5 test project, edited\n")
+    later = commit(git_repo, "an unrelated change")
+    put_evaluation(git_repo, perfect_items(DOCS), later)
+    sha = commit(git_repo, "score the held-out half again on the same instrument")
+    evidence = ship_check.g5(context(git_repo, sha))
+    assert "held-out attempt 2 (1 earlier attempt on the same instrument trees);" in evidence
+
+
+def test_an_attempt_removed_from_the_log_later_fails(git_repo: Path, commit: Commit) -> None:
+    # Attempt 1 is committed; after the revision, attempt 2 is renumbered as the only one.
+    project(git_repo, commit)
+    revise_and_rescore(git_repo, commit)
+    write_log(git_repo, [{**logged(git_repo)[1], "attempt": 1}])
+    data = json.loads((git_repo / EVAL).read_text(encoding="utf-8"))
+    data["attempt"] = 1
+    put(git_repo, EVAL, data)
+    sha = commit(git_repo, "hide the first held-out attempt")
+    with pytest.raises(
+        GateError,
+        match=rf"the {re.escape(ATTEMPTS)} committed in \w{{12}} is not the start of the one "
+        r"at HEAD",
+    ):
+        ship_check.g5(context(git_repo, sha))
+
+
+def test_a_deleted_and_restored_attempt_log_fails(git_repo: Path, commit: Commit) -> None:
+    project(git_repo, commit)
+    text = (git_repo / ATTEMPTS).read_text(encoding="utf-8")
+    (git_repo / ATTEMPTS).unlink()
+    gone = commit(git_repo, "delete the attempt log")
+    put(git_repo, ATTEMPTS, text)
+    sha = commit(git_repo, "restore it")
+    with pytest.raises(GateError, match=rf"commit {gone[:12]} deleted {re.escape(ATTEMPTS)}"):
+        ship_check.g5(context(git_repo, sha))

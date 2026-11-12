@@ -559,6 +559,16 @@ def test_artifacts_carry_the_fields_of_the_plan_g5_row(
 # ---------------------------------------------------------------- the re-scoring (D66)
 
 
+def evaluated(root: Path, commit: Commit, capsys: pytest.CaptureFixture[str]) -> str:
+    """The command-line pipeline, a frozen held-out half, and one committed held-out
+    attempt (``tools/e0.py evaluate``). Returns the commit that holds them."""
+    pipeline(root, commit, capsys)
+    commit(root, "freeze the held-out half")
+    assert run(root, "evaluate") == 0
+    capsys.readouterr()
+    return commit(root, "the first held-out attempt")
+
+
 def retype_first_prediction(root: Path) -> None:
     """Hand-edit the first prediction of the committed evaluation (SYNTHETIC tampering)."""
     data = json.loads((root / e0.EVAL).read_text("utf-8"))
@@ -599,6 +609,35 @@ def test_recheck_through_the_command_line(
     (git_repo / "src/receipts/claims/wip.py").write_text("x = 1\n", "utf-8")
     assert run(git_repo, "recheck") == 2
     assert "the instrument has uncommitted changes" in capsys.readouterr().err
+
+
+def test_g5_reads_the_attempt_log_this_tool_writes(
+    git_repo: Path, commit: Commit, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ship_check.heldout_attempt reads the log that ``tools/e0.py evaluate`` appends to
+    (receipts.evaluation.e0.log_attempt): a re-score on the same instrument trees is
+    attempt 2, and one after the instrument changed fails (D66)."""
+    evaluated(git_repo, commit, capsys)
+
+    def evaluation() -> dict[str, Any]:
+        return dict(json.loads((git_repo / e0.EVAL).read_text("utf-8")))
+
+    assert ship_check.heldout_attempt(git_repo, evaluation()) == 1
+    assert run(git_repo, "evaluate") == 0
+    commit(git_repo, "the held-out half scored again, same instrument")
+    assert ship_check.heldout_attempt(git_repo, evaluation()) == 2
+    (git_repo / "src/receipts/claims").mkdir(parents=True)
+    (git_repo / "src/receipts/claims/rules.py").write_text("RULES = 2\n", "utf-8")
+    commit(git_repo, "revise the extractor")
+    assert run(git_repo, "evaluate") == 0
+    commit(git_repo, "the held-out half scored after the revision")
+    capsys.readouterr()
+    with pytest.raises(
+        ship_check.GateError,
+        match=r"attempt 1 of artifacts/e0/heldout_attempts\.jsonl scored other instrument "
+        r"trees than attempt 3 \(src/receipts/claims\)",
+    ):
+        ship_check.heldout_attempt(git_repo, evaluation())
 
 
 # ---------------------------------------------------------------- blindness of the checks
