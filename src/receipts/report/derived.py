@@ -84,7 +84,8 @@ def derive(root: Path, item: Derived) -> dict[str, Any]:
     """Run ``item``'s script into a temporary file and return what it wrote.
 
     Raises:
-        DerivedError: The script is missing, fails, or writes no JSON object.
+        DerivedError: The script is missing, fails, writes invalid JSON, or writes no
+            JSON object.
     """
     script = root / item.script
     if not script.is_file():
@@ -101,7 +102,10 @@ def derive(root: Path, item: Derived) -> dict[str, Any]:
         if proc.returncode != 0 or not out.is_file():
             tail = (proc.stdout + proc.stderr).strip().splitlines()[-1:] or ["no output"]
             raise DerivedError(f"{item.script} failed: {tail[0]}")
-        data = json.loads(out.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(out.read_text(encoding="utf-8"))
+        except ValueError as exc:  # also a file that is not UTF-8
+            raise DerivedError(f"{item.script} wrote invalid JSON ({exc})") from exc
     if not isinstance(data, dict):
         raise DerivedError(f"{item.script} wrote no JSON object")
     return data
@@ -131,13 +135,17 @@ def check(root: Path, items: Sequence[Derived] = DERIVED) -> list[str]:
             continue
         try:
             committed = json.loads(target.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
+        except ValueError as exc:  # also a file that is not UTF-8
             problems.append(f"{item.path}: not JSON ({exc})")
             continue
         if not isinstance(committed, dict):
             problems.append(f"{item.path}: not a JSON object")
             continue
-        recorded = (committed.get("provenance") or {}).get("inputs")
+        prov = committed.get("provenance")
+        if not isinstance(prov, dict):
+            problems.append(f"{item.path}: its provenance is not a JSON object; run make report")
+            continue
+        recorded = prov.get("inputs")
         if recorded != inputs:
             recorded = recorded if isinstance(recorded, dict) else {}
             added = sorted(inputs.keys() - recorded.keys())
@@ -184,7 +192,7 @@ def refresh(root: Path, items: Sequence[Derived] = DERIVED) -> list[str]:
         if target.is_file():
             try:
                 committed = json.loads(target.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
+            except ValueError:  # also a file that is not UTF-8; written again below
                 committed = None
             if isinstance(committed, dict) and comparable(committed) == comparable(fresh):
                 continue

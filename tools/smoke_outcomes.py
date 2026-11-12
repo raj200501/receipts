@@ -110,17 +110,32 @@ def _distinct(values: Sequence[Any]) -> list[Any]:
     return [seen[k] for k in sorted(seen)]
 
 
+def git_head() -> str | None:
+    """The commit checked out at ``ROOT``, or None when git cannot tell (not a git
+    checkout, no commit yet, or no git)."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(ROOT), "rev-parse", "--verify", "-q", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    sha = proc.stdout.strip()
+    return sha if proc.returncode == 0 and sha else None
+
+
 def provenance(paths: Sequence[Path], records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """Git SHA, command, time, environment, and the SHA-256 of every run record read,
     with the models, agent-config hashes, seeds, and usage those records give.
 
     This step makes no model call; ``usage`` sums the token counts the runs recorded.
     The environment and the first three keys say when and where the file was made, so
-    re-derivation ignores them (``receipts.report.derived.VOLATILE``).
+    re-derivation ignores them (``receipts.report.derived.VOLATILE``); ``git_sha`` is
+    null outside a git checkout (:func:`git_head`), so ``make report`` runs there too.
     """
-    sha = subprocess.run(
-        ["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
-    ).stdout.strip()
+    sha = git_head()
     provs = [r.get("provenance") or {} for r in records]
     servers = [p.get("model_server") or {} for p in provs]
     return {

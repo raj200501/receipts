@@ -241,6 +241,12 @@ class CmdResult:
         lines = [line for line in self.stdout.splitlines() if line.strip()]
         return lines[-1].strip() if lines else ""
 
+    def last_output_line(self) -> str:
+        """Return the last non-empty line of stdout and then stderr (where a tool that
+        refuses says why)."""
+        lines = [line for line in f"{self.stdout}\n{self.stderr}".splitlines() if line.strip()]
+        return lines[-1].strip() if lines else ""
+
     def first_line(self) -> str:
         """Return the first non-empty line of stdout, else of stderr (a tool's first error)."""
         for stream in (self.stdout, self.stderr):
@@ -447,6 +453,12 @@ FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 FENCE_CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
 HEADING_LINE = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$")
 INLINE_COMMENT = re.compile(r"<!--(?!n:|/n).*?-->")
+# What a text line shows that is not prose: an HTML comment other than a claimcheck
+# marker, or an inline code span (a backtick run, its text within one paragraph, and a
+# closing run as long). One left-to-right pass, so whichever opens first wins.
+HIDDEN_INLINE = re.compile(
+    INLINE_COMMENT.pattern + r"|(?<!`)(`+)(?!`)(?:(?!\n[ \t]*\n)[\s\S])+?(?<!`)\1(?!`)"
+)
 
 
 def _fence_opens(line: str) -> str | None:
@@ -542,6 +554,33 @@ def strip_code(text: str) -> str:
         else:
             out.append(line)
     return "\n".join(out)
+
+
+def _text_lines(text: str) -> str:
+    """Markdown ``text`` with every line of fenced code or of a multi-line HTML comment
+    made empty, so the blocks around it stay apart."""
+    return "\n".join(line if kind == "text" else "" for line, kind in md_lines(text))
+
+
+def visible_text(text: str) -> str:
+    """Markdown ``text`` as it renders: fenced code and HTML comments removed, except the
+    claimcheck markers (``<!--n:KEY-->value<!--/n-->``), whose values are visible. Apply
+    it to a whole document before taking sections: a section body from
+    :func:`md_sections` has lost the line that opens a multi-line comment."""
+    return INLINE_COMMENT.sub("", _text_lines(text))
+
+
+def visible_prose(text: str) -> str:
+    """:func:`visible_text` without inline code spans either: the prose a reader follows
+    links in. Claimcheck markers stay."""
+    return HIDDEN_INLINE.sub("", _text_lines(text))
+
+
+def names_word(text: str, word: str) -> bool:
+    """True if ``word`` (an id such as ``judge-a``) is in ``text`` as a whole word, not
+    as part of a longer id (letters, digits, ``_``, ``-``, and a ``.`` between them)."""
+    edge = r"(?<![\w-])(?<![\w-]\.)" + re.escape(word) + r"(?![\w-])(?!\.[\w-])"
+    return re.search(edge, text) is not None
 
 
 HEX40 = re.compile(r"[0-9a-f]{40}")
@@ -2482,26 +2521,56 @@ def scored_items(
     return scored
 
 
+# A runs directory the completeness re-derivation may read: a study's banked runs.
+STUDY_RUNS_DIR = re.compile(r"artifacts/studies/[A-Za-z0-9][A-Za-z0-9._-]*/runs")
+
+
+def committed_runs_dir(ctx: Context, rel: str) -> bool:
+    """True if ``rel`` is a relative path, ``artifacts/studies/<study>/runs`` (so not
+    absolute and without ``..``), to a directory of the clone that is committed at the
+    checked commit and reached through no symlink, so it cannot point at a doctored copy."""
+    if STUDY_RUNS_DIR.fullmatch(rel) is None:
+        return False
+    root = ctx.clone.resolve()
+    path = root / rel
+    return (
+        path.is_dir()
+        and path.resolve() == path
+        and git_or_none(root, "cat-file", "-t", f"{ctx.sha}:{rel}") == "tree\n"
+    )
+
+
 def rederived_completeness(ctx: Context, data: Mapping[str, Any]) -> dict[str, Any]:
     """Each run's completeness row as ``tools/e0.py completeness`` derives it again, on
     the clone, from the committed transcripts and ledgers of the runs directories the
     artifact records (review N5): the gate never takes a row's transcript side from the
-    artifact, where a hand edit could hide a command the ledger missed."""
+    artifact, where a hand edit could hide a command the ledger missed. Each recorded
+    directory must be a committed study runs directory of the clone
+    (:func:`committed_runs_dir`), and the tool gets one ``--runs`` with all of them (its
+    ``--runs`` takes several values, and a repeated flag would keep only the last)."""
     dirs = data.get("runs_dirs")
     require(
         isinstance(dirs, list) and bool(dirs) and all(is_text(d) for d in dirs),
         f"{E0_COMPLETENESS} does not record the runs_dirs it was derived from",
     )
     assert isinstance(dirs, list)
+    for entry in dirs:
+        require(
+            committed_runs_dir(ctx, str(entry)),
+            f"{E0_COMPLETENESS} runs_dirs entry {str(entry)[:60]!r} is not a relative path to "
+            "a committed artifacts/studies/<study>/runs directory in the clone",
+        )
     ctx.make("setup", 900)
     out = ctx.logs / "e0-completeness.json"
-    runs_args = [arg for d in dirs for arg in ("--runs", str(d))]
     result = ctx.python(
-        "e0-completeness", ["tools/e0.py", "completeness", *runs_args, "--out", str(out)], 900
+        "e0-completeness",
+        ["tools/e0.py", "completeness", "--runs", *map(str, dirs), "--out", str(out)],
+        900,
     )
     require(
         result.ok and out.is_file(),
-        f"tools/e0.py completeness did not re-derive {E0_COMPLETENESS}: {result.last_line()[:80]}",
+        f"tools/e0.py completeness did not re-derive {E0_COMPLETENESS}: "
+        + result.last_output_line()[:80],
     )
     fresh = json.loads(out.read_text(encoding="utf-8")).get("runs")
     require(
@@ -3276,13 +3345,15 @@ def registry_sources(root: Path) -> dict[str, str]:
 def reported_from(
     text: str, title: re.Pattern[str], sources: Mapping[str, str], artifact: str
 ) -> str:
-    """The body of every section of ``text`` whose heading matches ``title`` and that binds
-    a number derived from ``artifact`` (a claimcheck marker whose registry entry names it
-    as its source), joined; empty when no section does. Design text without results
-    binds no such number, so it is not a report of them (review B3)."""
+    """The visible text (:func:`visible_text`) of every section of ``text`` whose heading
+    matches ``title`` and that binds a number derived from ``artifact`` (a claimcheck
+    marker whose registry entry names it as its source), joined; empty when no section
+    does. Design text without results binds no such number, so it is not a report of
+    them (review B3), and a marker in a comment or in fenced code binds nothing a
+    reader sees."""
     return "\n\n".join(
         body
-        for head, body in md_sections(text)
+        for head, body in md_sections(visible_text(text))
         if title.search(head)
         and any(sources.get(key) == artifact for key, _ in MARKER.findall(body))
     )
@@ -3542,7 +3613,9 @@ def g8(ctx: Context) -> str:
         f"REPORT.md has no E3 section that binds a number from {E3_JUDGES}: the judge "
         "results, null results included, are not reported",
     )
-    unnamed = [str(i) for i in ids if str(i) not in e3_text]
+    # Named means in the prose a reader sees: a marker's value, not its key.
+    shown = MARKER.sub(r"\2", e3_text)
+    unnamed = [str(i) for i in ids if not names_word(shown, str(i))]
     require(
         not unnamed,
         f"REPORT.md's E3 results do not name judge configuration(s) {', '.join(unnamed)}",
@@ -4204,9 +4277,11 @@ TOP_LIST_ITEM = re.compile(r"^ ?(?:[-*+]|\d{1,9}[.)])[ \t]")
 
 
 def result_items(text: str) -> list[str]:
-    """The paragraphs, top-level list items, and tables of the visible Markdown ``text``
-    (no code, comments, or headings); each list item, with its continuation lines and
-    nested items, and each table is one item."""
+    """The paragraphs, top-level list items, and tables of the Markdown ``text`` outside
+    code, multi-line comments, and headings; each list item, with its continuation lines
+    and nested items, and each table is one item. One-line comments and inline code stay
+    in their item: G13 passes :func:`visible_text` here and reads links from
+    :func:`visible_prose` of each item."""
     out: list[str] = []
     current: list[str] = []
     in_table = False
@@ -4225,6 +4300,29 @@ def result_items(text: str) -> list[str]:
     if current:
         out.append("\n".join(current))
     return out
+
+
+# A preregistration: a numbered Markdown file directly under prereg/.
+PREREG_FILE = re.compile(r"prereg/[0-9]{4}-[^/]*\.md")
+
+
+def file_within(root: Path, rel: str, top: str) -> bool:
+    """True if ``rel`` is an existing file inside directory ``top`` of ``root``, symlinks
+    resolved."""
+    path = (root / rel).resolve()
+    return path.is_file() and path.is_relative_to((root / top).resolve())
+
+
+def links_artifact(root: Path, paths: Sequence[str]) -> bool:
+    """True if one of the repository ``paths`` is an existing file under artifacts/."""
+    return any(p.startswith("artifacts/") and file_within(root, p, "artifacts") for p in paths)
+
+
+def links_prereg(root: Path, paths: Sequence[str]) -> bool:
+    """True if one of the repository ``paths`` is an existing ``prereg/NNNN-*.md`` file."""
+    return any(
+        PREREG_FILE.fullmatch(p) is not None and file_within(root, p, "prereg") for p in paths
+    )
 
 
 def link_paths(text: str, base: str) -> list[str]:
@@ -4306,28 +4404,29 @@ def g13(ctx: Context) -> str:
     heads = headings(readme)
     missing = [s for s in README_SECTIONS if not any(s in h for h in heads)]
     require(not missing, "README lacks sections: " + ", ".join(missing))
-    results = link_paths(strip_code(section_text(readme, "result")), "")
+    # A link counts only in visible prose (not in a comment or inline code), and only to
+    # an existing artifact file and an existing prereg/NNNN-*.md preregistration.
+    results_text = section_text(visible_text(readme), "result")
+    results = link_paths(visible_prose(results_text), "")
     require(
-        any(p.startswith("artifacts/") and (root / p).exists() for p in results),
-        "README key results link to no artifact under artifacts/",
+        links_artifact(root, results), "README key results link to no artifact under artifacts/"
     )
     require(
-        any(p.startswith("prereg/") and (root / p).exists() for p in results),
-        "README key results link to no preregistration under prereg/",
+        links_prereg(root, results), "README key results link to no preregistration under prereg/"
     )
     # Section 11: key results, each linked to its artifact and preregistration. A key
     # result is an item of the results section that binds a number.
-    for item in result_items(strip_code(section_text(readme, "result"))):
+    for item in result_items(results_text):
         if MARKER.search(item) is None:
             continue
-        paths = link_paths(item, "")
+        paths = link_paths(visible_prose(item), "")
         start = " ".join(MARKER.sub(r"\2", item).split())[:60]
         require(
-            any(p.startswith("artifacts/") and (root / p).exists() for p in paths),
+            links_artifact(root, paths),
             f"README key result links to no artifact under artifacts/: {start!r}",
         )
         require(
-            any(p.startswith("prereg/") and (root / p).exists() for p in paths),
+            links_prereg(root, paths),
             f"README key result links to no preregistration under prereg/: {start!r}",
         )
     how = section_text(readme, "how it works")

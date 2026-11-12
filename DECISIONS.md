@@ -833,3 +833,14 @@ a top-level key spelled that way could overwrite the nested field; the flattened
 use a separator no row key can contain. (2) A working-tree run recorded only tracked files
 with uncommitted changes, so an untracked module under `src/` could change what ran while
 G9 accepted the run as committed code; the run record now lists untracked files too.
+
+**D64. Gates G5, G8, and G13 read only what the clone commits and what a reader sees.**
+Recorded 2026-11-12, before the change is committed (adversarial check of D58). G5 accepts
+`runs_dirs` entries only as relative `artifacts/studies/<study>/runs` directories committed
+in the clone, passes them all after one `--runs` flag, and quotes the refusal that
+`tools/e0.py` writes to stderr. G8 and G13 ignore numbers, judge ids, and links inside HTML
+comments or fenced code (G13 also ignores inline code), a judge id must appear as a whole
+word, and a key result must link an existing file under `artifacts/` and an existing
+`prereg/NNNN-*.md` file. A derivation that writes invalid JSON, or a committed provenance
+that is not an object, is reported instead of crashing, and `tools/smoke_outcomes.py`
+records `git_sha` as null outside a git checkout.

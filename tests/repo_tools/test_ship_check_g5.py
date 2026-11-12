@@ -20,6 +20,7 @@ from typing import Any
 
 import pytest
 
+import e0 as e0_cli
 import ship_check
 from receipts.ledger.events import GENESIS, Event
 
@@ -1061,18 +1062,83 @@ class ToolContext(ship_check.Context):
         return ship_check.CmdResult(name, 0, "", "", 0.0)
 
 
-def test_rederivation_runs_the_completeness_tool_on_the_recorded_dirs(tmp_path: Path) -> None:
-    # ORIGINAL_REDERIVE is the real function, taken before the autouse stand-in.
-    ctx = ToolContext(orig=tmp_path, clone=tmp_path, logs=tmp_path, fast=True, sha="0" * 40)
+def committed_runs(root: Path, commit: Commit, *studies: str) -> str:
+    """Commit one SYNTHETIC banked file under each study's runs directory; the SHA."""
+    for study in studies:
+        path = root / "artifacts" / "studies" / study / "runs" / "r1" / "run.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}\n", encoding="utf-8")
+    return commit(root, "SYNTHETIC runs")
+
+
+def tool_context(root: Path, sha: str) -> ToolContext:
+    ctx = ToolContext(orig=root, clone=root, logs=root, fast=True, sha=sha)
     ctx.calls, ctx.rows = [], [{"run_id": "r1", "unparsed_actions": 0}]
-    data = {"runs_dirs": ["a/runs", "b/runs"]}
+    return ctx
+
+
+def test_rederivation_runs_the_completeness_tool_on_the_recorded_dirs(
+    git_repo: Path, commit: Commit
+) -> None:
+    # ORIGINAL_REDERIVE is the real function, taken before the autouse stand-in.
+    ctx = tool_context(git_repo, committed_runs(git_repo, commit, "a", "b"))
+    data = {"runs_dirs": ["artifacts/studies/a/runs", "artifacts/studies/b/runs"]}
     fresh = ORIGINAL_REDERIVE(ctx, data)
     assert fresh == {"r1": {"run_id": "r1", "unparsed_actions": 0}}
     (argv,) = ctx.calls
     assert argv[:2] == ["tools/e0.py", "completeness"]
-    assert argv[2:6] == ["--runs", "a/runs", "--runs", "b/runs"]
+    # One --runs with every directory: tools/e0.py declares it nargs="+" with the store
+    # action, so a second --runs would replace the first.
+    assert argv[2:6] == ["--runs", "artifacts/studies/a/runs", "artifacts/studies/b/runs", "--out"]
     with pytest.raises(GateError, match="does not record the runs_dirs"):
         ORIGINAL_REDERIVE(ctx, {"runs_dirs": []})
     ctx.rows = None
-    with pytest.raises(GateError, match="did not re-derive"):
+    # tools/e0.py prints its refusal on stderr, so the FAIL line must quote it.
+    with pytest.raises(GateError, match=r"did not re-derive .*: boom$"):
         ORIGINAL_REDERIVE(ctx, data)
+
+
+def test_the_completeness_tool_parses_one_runs_flag_with_every_directory() -> None:
+    args = e0_cli.build_parser().parse_args(
+        ["completeness", "--runs", "artifacts/studies/a/runs", "artifacts/studies/b/runs"]
+    )
+    assert args.runs == ["artifacts/studies/a/runs", "artifacts/studies/b/runs"]
+    args = e0_cli.build_parser().parse_args(
+        ["completeness", "--runs", "artifacts/studies/a/runs", "--runs", "artifacts/studies/b/runs"]
+    )
+    assert args.runs == ["artifacts/studies/b/runs"]  # why the gate passes a single --runs
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        pytest.param("ABSOLUTE", id="absolute"),
+        pytest.param("../elsewhere/artifacts/studies/a/runs", id="parent-of-the-clone"),
+        pytest.param("artifacts/studies/a/runs/../../doctored/runs", id="dot-dot-inside"),
+        pytest.param("./artifacts/studies/a/runs", id="not-normalized"),
+        pytest.param("artifacts/doctored/runs", id="outside-artifacts-studies"),
+        pytest.param("artifacts/studies/a/runs/r1", id="below-a-runs-directory"),
+        pytest.param("artifacts/studies/missing/runs", id="missing"),
+        pytest.param("artifacts/studies/untracked/runs", id="not-committed"),
+        pytest.param("artifacts/studies/linked/runs", id="through-a-committed-symlink"),
+    ],
+)
+def test_runs_dirs_must_be_committed_study_runs_in_the_clone(
+    git_repo: Path, commit: Commit, tmp_path: Path, entry: str
+) -> None:
+    # A SYNTHETIC doctored copy outside the clone that a runs_dirs entry could point at.
+    doctored = tmp_path / "doctored" / "runs" / "r1" / "run.json"
+    doctored.parent.mkdir(parents=True)
+    doctored.write_text("{}\n", encoding="utf-8")
+    (git_repo / "artifacts" / "studies").mkdir(parents=True)
+    (git_repo / "artifacts" / "studies" / "linked").symlink_to(tmp_path / "doctored")
+    sha = committed_runs(git_repo, commit, "a")
+    untracked = git_repo / "artifacts" / "studies" / "untracked" / "runs" / "r1"
+    untracked.mkdir(parents=True)
+    ctx = tool_context(git_repo, sha)
+    if entry == "ABSOLUTE":
+        entry = str(git_repo / "artifacts" / "studies" / "a" / "runs")
+    data = {"runs_dirs": ["artifacts/studies/a/runs", entry]}
+    with pytest.raises(GateError, match=r"runs_dirs entry .* committed artifacts/studies/"):
+        ORIGINAL_REDERIVE(ctx, data)
+    assert ctx.calls == []  # refused before tools/e0.py reads anything

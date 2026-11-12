@@ -350,6 +350,99 @@ def test_links_to_missing_files_do_not_count(tmp_path: Path) -> None:
         ship_check.g13(project(tmp_path, readme=readme))
 
 
+ARTIFACT_LINK = "[the E1 results](artifacts/e1/results.json)"
+PREREG_LINK = "[the preregistration](prereg/0001-e1.md)"
+RATE = "- A SYNTHETIC rate of <!--n:e1.fsr-->0.23<!--/n-->; see "
+
+
+@pytest.mark.parametrize(
+    ("links", "match"),
+    [
+        pytest.param(
+            f"<!-- {ARTIFACT_LINK} --> {PREREG_LINK}", "no artifact", id="artifact-in-a-comment"
+        ),
+        pytest.param(
+            f"{ARTIFACT_LINK} <!-- {PREREG_LINK} -->",
+            "no preregistration",
+            id="prereg-in-a-comment",
+        ),
+        pytest.param(
+            f"{PREREG_LINK} <!--\n{ARTIFACT_LINK}\n-->",
+            "no artifact",
+            id="artifact-in-a-multi-line-comment",
+        ),
+        pytest.param(
+            f"`{ARTIFACT_LINK}` and {PREREG_LINK}", "no artifact", id="artifact-in-inline-code"
+        ),
+        pytest.param(
+            f"{ARTIFACT_LINK} and ``{PREREG_LINK}``", "no preregistration", id="prereg-in-code"
+        ),
+        pytest.param(
+            f"[the E1 directory](artifacts/e1/) and {PREREG_LINK}",
+            "no artifact",
+            id="artifact-directory",
+        ),
+        pytest.param(
+            f"{ARTIFACT_LINK} and [the lock](prereg/LOCK.json)",
+            "no preregistration",
+            id="prereg-lock-file",
+        ),
+        pytest.param(
+            f"{ARTIFACT_LINK} and [notes](prereg/notes/0001-e1.md)",
+            "no preregistration",
+            id="prereg-in-a-subdirectory",
+        ),
+        pytest.param(
+            f"{ARTIFACT_LINK} and [a draft](prereg/draft-e1.md)",
+            "no preregistration",
+            id="prereg-without-its-number",
+        ),
+    ],
+)
+def test_key_result_links_count_only_in_visible_prose_and_to_real_files(
+    tmp_path: Path, links: str, match: str
+) -> None:
+    # The first paragraph links both properly, so the section as a whole passes and
+    # only the per-item rule can catch the key result below it.
+    section = f"{LINKED}.\n\n{RATE}{links}.\n"
+    ctx = project(tmp_path, readme=edit(README, (OLD_KEY, section)))
+    for rel in ("prereg/LOCK.json", "prereg/notes/0001-e1.md", "prereg/draft-e1.md"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("{}\n", encoding="utf-8")
+    with pytest.raises(ship_check.GateError, match=f"README key result links to {match}"):
+        ship_check.g13(ctx)
+
+
+@pytest.mark.parametrize(
+    "section",
+    [
+        pytest.param(f"Rates: <!-- {LINKED} -->.\n", id="comment"),
+        pytest.param(f"Rates: `{LINKED}`.\n", id="inline-code"),
+        pytest.param(
+            "Rates: [results](artifacts/e1/) under [the lock](prereg/LOCK.json).\n",
+            id="directory-and-lock",
+        ),
+    ],
+)
+def test_key_results_section_links_count_only_in_visible_prose(
+    tmp_path: Path, section: str
+) -> None:
+    ctx = project(tmp_path, readme=edit(README, (OLD_KEY, section)))
+    (tmp_path / "prereg" / "LOCK.json").write_text("{}\n", encoding="utf-8")
+    with pytest.raises(ship_check.GateError, match="README key results link to no"):
+        ship_check.g13(ctx)
+
+
+def test_links_with_code_in_their_text_count(tmp_path: Path) -> None:
+    section = (
+        f"{RATE}[`artifacts/e1/results.json`](artifacts/e1/results.json) and "
+        "[`prereg/0001-e1.md`](prereg/0001-e1.md).\n"
+    )
+    assert "README follows section 11" in ship_check.g13(
+        project(tmp_path, readme=edit(README, (OLD_KEY, section)))
+    )
+
+
 def test_how_it_works_needs_a_diagram(tmp_path: Path) -> None:
     readme = edit(README, ("![Pipeline diagram](docs/figures/pipeline.svg)", "Synthetic text."))
     with pytest.raises(ship_check.GateError, match="no diagram"):

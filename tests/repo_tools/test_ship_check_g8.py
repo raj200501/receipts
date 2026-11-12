@@ -508,6 +508,80 @@ def test_design_text_is_not_a_report_of_results(tmp_path: Path, report: str, mat
         ship_check.g8(artifacts(tmp_path, report=f"# SYNTHETIC\n\n{report}"))
 
 
+# The E3 numbers, bound in visible prose, without naming either judge.
+E3_NUMBERS = (
+    "SYNTHETIC precision <!--n:e3.judge-a.precision-->0.75<!--/n--> and "
+    "<!--n:e3.judge-b.precision-->0.75<!--/n-->"
+)
+
+
+@pytest.mark.parametrize(
+    ("report", "match"),
+    [
+        pytest.param(
+            f"## E2: mechanisms\n\n{E2_BODY}\n## E3: judges\n\nThe design: judge-a and "
+            f"judge-b.\n\n<!--\n{E3_BODY}-->\n",
+            r"no E3 section that binds a number from artifacts/e3/judges\.json",
+            id="e3-numbers-in-a-comment",
+        ),
+        pytest.param(
+            f"## E2: mechanisms\n\nThe design. <!-- {E2_BODY.strip()} -->\n\n"
+            f"## E3: judges\n\n{E3_BODY}",
+            r"no E2 section that binds a number from artifacts/e2/mechanism\.json",
+            id="e2-numbers-in-a-one-line-comment",
+        ),
+        pytest.param(
+            f"## E2: mechanisms\n\nThe design.\n\n```text\n{E2_BODY}```\n\n"
+            f"## E3: judges\n\n{E3_BODY}",
+            r"no E2 section that binds a number from artifacts/e2/mechanism\.json",
+            id="e2-numbers-in-code",
+        ),
+        pytest.param(
+            f"## E2: mechanisms\n\n{E2_BODY}\n## E3: judges\n\n{E3_NUMBERS} (judge-a).\n",
+            r"do not name judge configuration\(s\) judge-b",
+            id="judge-only-in-a-marker-key",
+        ),
+        pytest.param(
+            f"## E2: mechanisms\n\n{E2_BODY}\n## E3: judges\n\n{E3_NUMBERS} (judge-a)."
+            "\n<!-- judge-b -->\n",
+            r"do not name judge configuration\(s\) judge-b",
+            id="judge-only-in-a-comment",
+        ),
+        pytest.param(
+            f"## E2: mechanisms\n\n{E2_BODY}\n## E3: judges\n\n{E3_NUMBERS} (judge-a). <!--"
+            "\njudge-b\n-->\n",
+            r"do not name judge configuration\(s\) judge-b",
+            id="judge-only-in-a-multi-line-comment",
+        ),
+        pytest.param(
+            f"## E2: mechanisms\n\n{E2_BODY}\n## E3: judges\n\n{E3_NUMBERS} (judge-a)."
+            "\n\n```text\njudge-b\n```\n",
+            r"do not name judge configuration\(s\) judge-b",
+            id="judge-only-in-code",
+        ),
+        pytest.param(
+            f"## E2: mechanisms\n\n{E2_BODY}\n## E3: judges\n\n{E3_NUMBERS} (judge-a and "
+            "judge-b-v2, judge-b.v2, and xjudge-b).\n",
+            r"do not name judge configuration\(s\) judge-b",
+            id="judge-only-inside-longer-ids",
+        ),
+    ],
+)
+def test_only_visible_prose_reports_and_names_the_judges(
+    tmp_path: Path, report: str, match: str
+) -> None:
+    with pytest.raises(GateError, match=match):
+        ship_check.g8(artifacts(tmp_path, report=f"# SYNTHETIC\n\n{report}"))
+
+
+def test_a_judge_named_as_a_whole_word_in_visible_prose_passes(tmp_path: Path) -> None:
+    report = (
+        f"# SYNTHETIC\n\n## E2: mechanisms\n\n{E2_BODY}\n## E3: judges\n\n{E3_NUMBERS}"
+        " for `judge-a` and **judge-b**, the two judges.\n"
+    )
+    assert "E3 2 judges" in ship_check.g8(artifacts(tmp_path, report=report))
+
+
 def test_the_report_needs_the_numbers_registry(tmp_path: Path) -> None:
     ctx = artifacts(tmp_path)
     (tmp_path / "artifacts" / "report" / "numbers.json").unlink()

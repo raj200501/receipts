@@ -6,8 +6,11 @@ Every record here is a synthetic test fixture, never model output.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 import smoke_outcomes
 from receipts.report import build as report_build
@@ -81,6 +84,31 @@ def test_refuses_synthetic_or_missing_runs(tmp_path: Path) -> None:
     marked["synthetic"] = True
     assert smoke_outcomes.main(["--runs", str(bank(tmp_path, [marked])), "--out", str(out)]) == 2
     assert not out.exists()
+
+
+def test_git_sha_is_null_outside_a_git_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A copy of the repository without git: make report and make reproduce must still run.
+    monkeypatch.setattr(smoke_outcomes, "ROOT", tmp_path)
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
+    runs = bank(tmp_path, RECORDS)
+    out = tmp_path / "out.json"
+    assert smoke_outcomes.main(["--runs", str(runs), "--out", str(out)]) == 0
+    prov = json.loads(out.read_text(encoding="utf-8"))["provenance"]
+    assert prov["git_sha"] is None and len(prov["inputs"]) == 4
+    monkeypatch.setenv("PATH", "")  # no git at all
+    assert smoke_outcomes.main(["--runs", str(runs), "--out", str(out)]) == 0
+    assert json.loads(out.read_text(encoding="utf-8"))["provenance"]["git_sha"] is None
+
+
+def test_git_sha_is_the_checkout_head_inside_one(
+    git_repo: Path, commit: Callable[[Path, str], str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(smoke_outcomes, "ROOT", git_repo)
+    assert smoke_outcomes.provenance([], [])["git_sha"] is None  # no commit yet
+    head = commit(git_repo, "SYNTHETIC start")
+    assert smoke_outcomes.provenance([], [])["git_sha"] == head
 
 
 def test_report_derives_smoke_numbers_and_the_headline_figure(tmp_path: Path) -> None:
