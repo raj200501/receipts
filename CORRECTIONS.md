@@ -5,6 +5,15 @@ docs/BUILD_BRIEF.md section 9), newest first.
 
 ## 2026-11-12
 
+- **docs/REPORT.md section 3.1 and docs/BENCH.md section 6, "the agent never sees" the hidden
+  checks** (review N18): true of the agent's workspace, which receives them only after the
+  agent stops, but the sandbox did not hide the checkout that stores them for runs made from
+  a code snapshot, so every banked smoke run could have read them under the read-only host
+  root. A path audit of the smoke ledgers finds no command or file-tool call that reached
+  outside its workspace. Study runs now hide the checkout and refuse to start otherwise
+  (D67); both documents and the README's Limitations say so. docs/BENCH.md also named
+  `unshare -rn` as a sandbox for task commands and for task validation; neither uses it.
+
 - **README.md and docs/REPORT.md, the runs with only file claims** (review N17): they said
   the ts-ci-workflow, ts-cli-docs, py-lru-ttl, and ts-matrix-refactor reports yield only
   file claims. The py-lru-ttl report also yields a supported claim that tests were added.

@@ -227,8 +227,10 @@ validator records which repository files the reference replaces and which it add
 ## 6. Hidden checks (hidden/)
 
 `hidden/` is copied into the workspace as `.receipts_hidden/` only after the agent
-finished, so the agent never sees it, and `hidden_check_cmd` runs from the workspace
-root. The contract shared with the ledger recorder
+finished, so it is never in the agent's workspace, and `hidden_check_cmd` runs from the
+workspace root. The study sandbox also hides the checkout that holds `bench/tasks/`, and a
+run refuses to start when it does not (DECISIONS D67; runs made from a code snapshot before
+D67 did not hide it, see docs/REPORT.md section 3.1). The contract shared with the ledger recorder
 (`receipts.ledger.parsers.hidden`): the **last non-blank line of stdout** is one JSON
 object
 
@@ -463,8 +465,9 @@ Rules:
 
 ## 9. The environment task commands run in
 
-- Every command runs in a sandbox (Docker, bubblewrap, or `unshare -rn`; see
-  `receipts.sandbox.api`) with **no network**, a clean environment built from an
+- Every command runs in a sandbox (Docker or bubblewrap; see `receipts.sandbox.api`) with
+  this repository's checkout hidden apart from the toolchain and the workspace (D67), with
+  **no network**, a clean environment built from an
   allowlist (`HOME` is the workspace root; `LANG=C.UTF-8`; no credentials), and the
   workspace as the only writable host path (under bubblewrap `/tmp` and `/run` are
   private and empty).
@@ -514,8 +517,9 @@ when every phase ran, the reference ran twice, and every expectation held; its
 `tree_sha256` is the task tree hash (`receipts.bench.hashing.tree_sha256`, the same
 function as in `tools/ship_check.py`).
 
-`tools/bench_validate.py` validates the tasks with the project's sandboxes (bubblewrap,
-then `unshare -rn`) and the pinned Python toolchain:
+`tools/bench_validate.py` validates the tasks with the project's sandboxes (bubblewrap or
+Docker, never `unshare -rn`, with the checkout and the task directory hidden) and the pinned
+Python toolchain:
 
 - `python tools/bench_validate.py --task <id>` validates one task and writes nothing;
 - `python tools/bench_validate.py` validates every task and writes
