@@ -1,12 +1,14 @@
 """``make report`` and ``make reproduce``: numbers, figures, and their manifest.
 
-- ``python tools/report.py`` first re-derives each derived artifact that has changed
-  (``receipts.report.derived``: the smoke summary from the banked run records), then
-  writes ``artifacts/report/numbers.json``, the SVG figures, and
+- ``python tools/report.py`` first re-derives the smoke summary from the banked run
+  records when that changes it (``receipts.report.derived``; a study artifact is
+  written by its own command, never here), then writes
+  ``artifacts/report/numbers.json``, the SVG figures, and
   ``artifacts/report/manifest.json`` from banked artifacts only.
 - ``--numbers-only --out PATH`` rebuilds just the registry into PATH (``make freshness``).
-- ``--reproduce`` re-derives the derived artifacts and rebuilds everything in a
-  temporary directory, and fails if any committed output differs.
+- ``--reproduce`` checks every derived artifact (the smoke summary and the E1 to E4
+  study artifacts) against a fresh derivation, rebuilds everything in a temporary
+  directory, and fails if any committed output differs.
 """
 
 from __future__ import annotations

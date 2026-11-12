@@ -14,8 +14,10 @@ Order of work:
    and every make command line pins ``PY=3.11`` and ``PYTEST_ARGS`` (D14, D16).
 
 It verifies banked artifacts (presence, provenance, hashes, preregistration
-links, thresholds) and recomputes statistics from them. It never runs an
-experiment and never calls a model. It writes nothing inside the working tree;
+links, thresholds) and recomputes statistics from them; what needs the project's
+own code (the banked rows, the E1 to E4 study artifacts) it has the clone derive
+again with the committed tools (DECISIONS D57, D65). It never runs an experiment
+and never calls a model. It writes nothing inside the working tree;
 sub-command logs and the harness's own settings files (coverage and mypy
 settings, a pytest trace plugin for contract tests) go to the temporary
 directory, named on stderr.
@@ -3011,6 +3013,7 @@ def g6(ctx: Context) -> str:
 
 E1_RESULTS = "artifacts/e1/results.json"
 E1_RUNS = "artifacts/e1/runs.jsonl"
+E1_RUN_DIRS = "artifacts/studies/e1/runs"
 E1_PLAN = "artifacts/studies/e1/plan.json"
 # E1's confirmatory data, first committed after the freeze (the roots tools/prereg.py uses).
 E1_DATA = ("artifacts/e1", "artifacts/studies/e1/runs")
@@ -3338,6 +3341,55 @@ def check_rederived(ctx: Context, study: str, rel: str) -> None:
     )
 
 
+#: How long a fresh derivation of one study artifact may take in the clone. E1 and E4
+#: fit mixed models and run 2000-resample bootstraps, so the limit is generous.
+DERIVE_TIMEOUT_S = 3600.0
+#: How long ``make freshness`` (G10) and ``make reproduce`` (G13) may take: each rebuilds
+#: the registry (and ``make reproduce`` the figures) and derives each of the four study
+#: artifacts again (``receipts.report.derived``; review F2 of the B5 fix).
+REDERIVE_ALL_TIMEOUT_S = 1200 + 4 * DERIVE_TIMEOUT_S
+
+
+def check_derivation(ctx: Context, rel: str) -> str:
+    """The committed artifact ``rel`` agrees with a fresh derivation in the clone
+    (DECISIONS D65): ``python -m receipts.report.derived rel``, run after ``make setup``,
+    runs the committed script that wrote it again from the banked inputs, with the
+    recorded arguments its ``provenance.command`` may pass on (without ``--out``; a
+    recorded command that names another script, ``--root``, an input other than the
+    banked one, an option the artifact does not re-use, or a path outside the clone is
+    refused), into a temporary file, with model calls disabled, and compares every field
+    but when, where, and how the artifact was made, floats within the tolerance another
+    BLAS kernel, numpy, or scipy needs. E3 is re-scored from the banked judge replies with
+    no model call. So a value typed into the artifact (an E1 or E4 test statistic or
+    decision, an E2 class, an E3 count) fails here. The tool must say that it re-derived
+    ``rel``; its first problem is the evidence. Returns the command the derivation ran,
+    every argument but ``--out`` (review N1 of the B5 fix)."""
+    setup = ctx.make("setup", 900)
+    require(
+        setup.ok,
+        f"make setup failed in the clone (exit {setup.returncode}), so {rel} was not derived again",
+    )
+    result = ctx.python(f"derived-{rel}", ["-m", "receipts.report.derived", rel], DERIVE_TIMEOUT_S)
+    said = [
+        line.strip()[len("problem: ") :]
+        for line in result.stdout.splitlines()
+        if line.strip().startswith("problem: ")
+    ]
+    lead = f"{rel}: re-derived by "
+    ran = [
+        line.strip()[len(lead) :].split("; ", 1)[0]
+        for line in result.stdout.splitlines()
+        if line.strip().startswith(lead)
+    ]
+    detail = said[0] if said else result.last_output_line()
+    require(
+        result.ok and bool(ran) and bool(ran[0]),
+        f"{rel} is not a fresh derivation in the clone (python -m receipts.report.derived, "
+        f"exit {result.returncode}): {detail}",
+    )
+    return ran[0]
+
+
 def check_e1_banked(
     root: Path, runs: Sequence[Mapping[str, Any]], arms: Arms, prereg: str, fz: str
 ) -> int:
@@ -3526,7 +3578,10 @@ def check_wilson(label: str, stat: object, successes: int, n: int) -> None:
 
 
 def g7(ctx: Context) -> str:
-    """Main study: as preregistered, >= 3 configs, >= 2 families, >= 60 runs each, intervals."""
+    """Main study: as preregistered, >= 3 configs, >= 2 families, >= 60 runs each, intervals;
+    the rows are what banking writes from the banked runs (:func:`check_rederived`), and
+    the results are what ``tools/analyze.py e1`` writes from them (:func:`check_derivation`),
+    so no rate, test statistic, or test decision can be typed in."""
     root = ctx.clone
     results = load_json(root, E1_RESULTS)
     require_provenance(E1_RESULTS, results)
@@ -3592,12 +3647,13 @@ def g7(ctx: Context) -> str:
         for metric, successes, n in stats:
             check_wilson(f"{config}.{metric}", entry.get(metric), successes, n)
     check_rederived(ctx, "e1", E1_RUNS)
+    command = check_derivation(ctx, E1_RESULTS)
     sizes = ", ".join(f"{c}={n}" for c, n in sorted(banked.items()))
     return (
         f"{len(banked)} configs, {len(families)} families, runs {sizes}; "
         f"plan and freeze of {prereg} hold; rows from the evaluated instrument at "
         f"{evaluated[0][:12]}, re-derived from the {n_banked} banked runs; rates and "
-        "Wilson intervals recompute"
+        f"Wilson intervals recompute; {E1_RESULTS} re-derived by {command}"
     )
 
 
@@ -3639,6 +3695,8 @@ def reported_from(
 
 
 E3_JUDGES = "artifacts/e3/judges.json"
+#: The banked raw judge replies that ``artifacts/e3/judges.json`` is scored from.
+E3_REPLIES = "artifacts/e3/replies.jsonl"
 # The E3 sample takes K // 4 runs from each of the four E1 arms (prereg 0003 section 3).
 E3_ARMS = 4
 #: The attempts after which an unservable E3 call excludes its run (prereg 0003
@@ -3814,9 +3872,97 @@ def check_e3_sample(
     return len(recorded), len(judged), len(excluded)
 
 
+#: The detection counts of an E3 judge per claim type.
+DETECTION = ("tp", "fp", "fn", "tn")
+
+
+def check_e3_tallies(judges: Mapping[str, Any]) -> None:
+    """Each judge's per-type counts are the tally of the artifact's own items (review B5),
+    as ``receipts.evaluation.judges.score_detection`` counts them, with ``contradicted``
+    the positive class: a scored claim whose ledger verdict (``truth``) is contradicted
+    is a true positive when the judge labels it contradicted and a false negative
+    otherwise (an unlabeled claim included), and any other claim is a false positive
+    when labeled contradicted and a true negative otherwise. So a count typed into a
+    judge's results fails even before the re-derivation. The items are those
+    :func:`check_e3_sample` checked."""
+    items = judges.get("items")
+    assert isinstance(items, list)
+    for entry in judges.get("judges", []):
+        name = str(entry.get("judge_id"))
+        tally: dict[str, dict[str, int]] = {}
+        for item in items:
+            counts = tally.setdefault(str(item.get("claim_type")), dict.fromkeys(DETECTION, 0))
+            labels = item.get("labels")
+            flagged = isinstance(labels, dict) and labels.get(name) == "contradicted"
+            if item.get("truth") == "contradicted":
+                counts["tp" if flagged else "fn"] += 1
+            else:
+                counts["fp" if flagged else "tn"] += 1
+        per_type = entry.get("per_type")
+        assert isinstance(per_type, dict)
+        recorded = {
+            str(ctype): {key: c.get(key) for key in DETECTION}
+            for ctype, c in per_type.items()
+            if isinstance(c, dict)
+        }
+        wrong = sorted(set(recorded) ^ set(tally)) + sorted(
+            ctype for ctype in set(recorded) & set(tally) if recorded[ctype] != tally[ctype]
+        )
+        require(
+            not wrong,
+            f"judge {name}'s per-type counts are not the tally of its labels in the E3 items "
+            f"(contradicted the positive class) for claim type(s) {', '.join(wrong[:3])}",
+        )
+
+
+def check_e2_inputs(root: Path, mech_rel: str, mech: Mapping[str, Any]) -> None:
+    """E2 classified the banked E1 runs (review BV1 of the B5 fix): its provenance
+    records the SHA-256 of the committed E1 rows and held-out evaluation
+    (:func:`check_inputs`), and its banking section names the banked rows and runs as the
+    ones it read. ``tools/analyze.py e2`` with another ``--runs`` or ``--run-dirs`` (a
+    hand-made file inside the repository) still writes E2, as an artifact that is not
+    confirmatory, and G8 does not require E2 to be confirmatory, so this is checked here,
+    as G7 checks it for E1."""
+    check_inputs(root, mech_rel, mech, (E1_RUNS, E0_EVAL))
+    read = (dig(mech, "banking", "rows_path"), dig(mech, "banking", "runs_dir"))
+    require(
+        read == (E1_RUNS, E1_RUN_DIRS),
+        f"{mech_rel} did not classify the banked E1 runs: its banking section names the rows "
+        f"{read[0]!r} and the runs {read[1]!r}, not {E1_RUNS} and {E1_RUN_DIRS}",
+    )
+
+
+def check_e3_replies(root: Path, judges: Mapping[str, Any]) -> None:
+    """E3 was scored from the banked replies (review BV2 of the B5 fix): its ``replies``
+    section names ``artifacts/e3/replies.jsonl`` and records that committed file's
+    SHA-256, which a live run records when it writes the file and a re-score when it
+    reads it. A re-score of other replies, committed beside them, re-derives to itself."""
+    replies = judges.get("replies")
+    path = replies.get("path") if isinstance(replies, dict) else None
+    require(
+        path == E3_REPLIES,
+        f"{E3_JUDGES} was not scored from the banked replies {E3_REPLIES} (it records the "
+        f"replies {path!r})",
+    )
+    assert isinstance(replies, dict)
+    banked = root / E3_REPLIES
+    require(
+        banked.is_file() and replies.get("sha256") == sha256_file(banked),
+        f"{E3_JUDGES} records replies other than the committed {E3_REPLIES} (its "
+        "replies.sha256 is not that file's SHA-256, or the file is missing)",
+    )
+
+
 def g8(ctx: Context) -> str:
-    """Mechanisms (E2) and judges (E3) ran and are reported, including null results; E3
-    judged its whole recorded sample (:func:`check_e3_sample`)."""
+    """Mechanisms (E2) and judges (E3) ran and are reported, including null results; E2
+    classified the banked E1 runs (:func:`check_e2_inputs`); E3 judged its whole recorded
+    sample (:func:`check_e3_sample`), from the banked replies (:func:`check_e3_replies`),
+    and each judge's counts are the tally of its labels (:func:`check_e3_tallies`); and
+    both artifacts are what their committed scripts write from the banked inputs
+    (:func:`check_derivation`: ``tools/analyze.py e2``, and ``tools/run_judges.py
+    --rescore`` from the banked replies, with no model call, neither re-using a recorded
+    input other than the banked one, nor a recorded K, seed, or preregistration other
+    than prereg 0003's), so no E2 class or E3 count can be typed in."""
     root = ctx.clone
     contradicted = set()
     e1_rows = _e1_runs(root)
@@ -3842,8 +3988,10 @@ def g8(ctx: Context) -> str:
     require(not repeated, f"E2 classifies {repeated} claim(s) more than once")
     require(set(keys) == contradicted, "E2 does not classify exactly the E1 contradicted claims")
     require(all(m.get("class") in MECHANISM_CLASSES for m in rows), "E2 has unknown classes")
+    check_e2_inputs(root, mech_rel, mech)
     judges = load_json(root, E3_JUDGES)
     require_provenance(E3_JUDGES, judges)
+    check_e3_replies(root, judges)
     configs = judges.get("judges")
     require(
         isinstance(configs, list) and all(isinstance(j, dict) for j in configs),
@@ -3872,6 +4020,7 @@ def g8(ctx: Context) -> str:
             total += sum(int(counts[k]) for k in ("tp", "fp", "fn")) + int(counts.get("tn") or 0)
         require(total > 0, f"judge {name} judged no claims (every count is 0)")
     sampled, judged, excluded = check_e3_sample(root, judges, e1_rows, [str(i) for i in ids])
+    check_e3_tallies(judges)
     report = root / "docs" / "REPORT.md"
     require(report.is_file(), "docs/REPORT.md missing")
     text = report.read_text(encoding="utf-8")
@@ -3899,10 +4048,14 @@ def g8(ctx: Context) -> str:
         not unnamed,
         f"REPORT.md's E3 results do not name judge configuration(s) {', '.join(unnamed)}",
     )
+    e2_command = check_derivation(ctx, mech_rel)
+    e3_command = check_derivation(ctx, E3_JUDGES)
     mix = Counter(str(m.get("class")) for m in rows)
     return (
         f"E2 classified {len(rows)} claims {dict(mix)}; E3 {len(configs)} judges, sample of "
-        f"{sampled} runs, {judged} judged by every judge, {excluded} excluded; reported"
+        f"{sampled} runs, {judged} judged by every judge, {excluded} excluded; reported; "
+        f"{mech_rel} re-derived by {e2_command} from {E1_RUNS} and {E1_RUN_DIRS}; "
+        f"{E3_JUDGES} re-derived by {e3_command} from the banked replies {E3_REPLIES}"
     )
 
 
@@ -4388,13 +4541,16 @@ def check_demo_transcript(ctx: Context) -> tuple[str, float]:
 def g9(ctx: Context) -> str:
     """Mitigation: E4 ran as preregistered on held-out tasks with rows from the evaluated
     instrument (:func:`check_e4`) that banking re-derives from the banked runs
-    (:func:`check_rederived`); receipts-hook is packaged with install instructions,
-    measured latency, and a scripted 30-second demo transcript."""
+    (:func:`check_rederived`), and its results are what ``tools/analyze_e4.py`` writes
+    from them (:func:`check_derivation`), so no rate, test result, or decision can be
+    typed in; receipts-hook is packaged with install instructions, measured latency, and
+    a scripted 30-second demo transcript."""
     root = ctx.clone
     e4 = load_json(root, E4_RESULTS)
     require_provenance(E4_RESULTS, e4)
     n_tasks, n_runs = check_e4(root, e4)
     check_rederived(ctx, "e4", E4_RUNS)
+    command = check_derivation(ctx, E4_RESULTS)
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     scripts = pyproject.get("project", {}).get("scripts", {})
     require("receipts-hook" in scripts, "pyproject has no receipts-hook entry point")
@@ -4415,22 +4571,30 @@ def g9(ctx: Context) -> str:
     script, seconds = check_demo_transcript(ctx)
     return (
         f"E4 on {n_tasks} held-out tasks ({n_runs} runs) as preregistered, rows from the "
-        f"evaluated instrument, re-derived from the {n_runs} banked runs; hook packaged; "
-        f"median latency {median:.2f}s; demo transcript reproduces ({script}, "
-        f"{seconds:.1f}s offline)"
+        f"evaluated instrument, re-derived from the {n_runs} banked runs; {E4_RESULTS} "
+        f"re-derived by {command}; hook packaged; median latency {median:.2f}s; "
+        f"demo transcript reproduces ({script}, {seconds:.1f}s offline)"
     )
 
 
 def g10(ctx: Context) -> str:
-    """Claim integrity: make claimcheck and make freshness pass on README.md and REPORT.md."""
+    """Claim integrity: make claimcheck and make freshness pass on README.md and REPORT.md.
+
+    Freshness rebuilds the numbers registry and re-derives every derived artifact
+    (``receipts.report.derived``: the smoke summary and the E1 to E4 study artifacts,
+    D56 and D65), so a bound number is current only if its artifact is what its committed
+    script writes from the banked inputs; the limit allows one fresh derivation of each."""
     ctx.make("setup", 900)
     claim = ctx.make("claimcheck", 600)
-    fresh = ctx.make("freshness", 1200)
+    fresh = ctx.make("freshness", REDERIVE_ALL_TIMEOUT_S)
     for result, label in ((claim, "claimcheck"), (fresh, "freshness")):
         covered = all(f"{doc}:" in result.stdout for doc in ("README.md", "docs/REPORT.md"))
         require(result.ok, f"make {label} failed: {result.last_line()[:80]}")
         require(covered, f"make {label} did not check both README.md and docs/REPORT.md")
-    return "make claimcheck and make freshness pass on README.md and docs/REPORT.md"
+    return (
+        "make claimcheck and make freshness pass on README.md and docs/REPORT.md; each "
+        "derived artifact present agrees with a fresh derivation from the banked inputs"
+    )
 
 
 def g11(ctx: Context) -> str:
@@ -4647,7 +4811,10 @@ def quickstart_code(readme: str, screen: int = 60) -> str | None:
 
 
 def g13(ctx: Context) -> str:
-    """Documentation: README follows section 11, REPORT.md complete, citecheck passes."""
+    """Documentation: README follows section 11, REPORT.md complete, citecheck passes, and
+    ``make reproduce`` rebuilds every figure and number from the banked artifacts, which
+    includes deriving every study artifact again (as ``make freshness`` does for G10, so
+    with the same limit)."""
     root = ctx.clone
     readme = (root / "README.md").read_text(encoding="utf-8")
     brief = (root / "docs" / "BUILD_BRIEF.md").read_text(encoding="utf-8")
@@ -4736,7 +4903,7 @@ def g13(ctx: Context) -> str:
         )
         require(HYPE.search(text) is None, f"{name} uses a hype word")
     ctx.make("setup", 900)
-    rebuilt = ctx.make("reproduce", 600)
+    rebuilt = ctx.make("reproduce", REDERIVE_ALL_TIMEOUT_S)
     require(
         rebuilt.ok and rebuilt.last_line() == "REPRODUCE: PASS",
         f"make reproduce (figures and numbers rebuilt from artifacts): {rebuilt.last_line()[:60]}",

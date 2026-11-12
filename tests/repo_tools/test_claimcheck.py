@@ -259,7 +259,15 @@ def test_compare_registries() -> None:
     assert freshness.compare_registries(a, a) == []
 
 
-def test_freshness_with_stub_report(git_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_freshness_with_stub_report(
+    git_repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The registry's source here is a SYNTHETIC stand-in for artifacts/e1/results.json,
+    # not an analysis output, so the re-derivation of the derived artifacts (DECISIONS
+    # D65) is given its outcome; tests/report/test_derived.py runs freshness with the real
+    # derivations.
+    found: list[str] = []
+    monkeypatch.setattr(freshness, "check_derived", lambda root: list(found))
     (git_repo / "README.md").write_text("<!--n:e1.fsr-->0.23<!--/n-->\n")
     assert freshness.main(["--root", str(git_repo), "README.md"]) == 1
     assert "tools/report.py is missing" in capsys.readouterr().out
@@ -272,6 +280,11 @@ def test_freshness_with_stub_report(git_repo: Path, capsys: pytest.CaptureFixtur
         f"pathlib.Path(sys.argv[sys.argv.index('--out') + 1]).write_text({registry!r})\n"
     )
     assert freshness.main(["--root", str(git_repo), "README.md"]) == 0
+    assert "derived artifacts: each agrees with a fresh derivation" in capsys.readouterr().out
+    found.append("artifacts/e1/results.json: differs from a fresh derivation (SYNTHETIC)")
+    assert freshness.main(["--root", str(git_repo), "README.md"]) == 1
+    assert f"problem: {found[0]}" in capsys.readouterr().out
+    found.clear()
     (git_repo / "README.md").write_text("<!--n:e1.fsr-->0.99<!--/n-->\n")
     assert freshness.main(["--root", str(git_repo), "README.md", "docs/REPORT.md"]) == 1
     out = capsys.readouterr().out

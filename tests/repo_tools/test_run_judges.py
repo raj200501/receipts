@@ -27,6 +27,7 @@ from receipts.client.models import LOCAL_MODELS
 from receipts.client.wrapper import ClientRefusedError, ModelRequest, ModelResponse
 from receipts.evaluation import e3
 from receipts.evaluation.judges import JudgeConfig
+from receipts.report.derived import comparable
 from receipts.study import results_e4
 from tests.evaluation.test_e3 import (
     RUNS,
@@ -181,7 +182,14 @@ def test_tool_writes_judges_json_and_the_raw_replies(
     assert (tmp_path / "runs" / "e3" / "pid").is_file()
     replies = tmp_path / REPLIES
     assert data["replies"] == {"path": REPLIES, "sha256": sha256(replies), "records": 16}
-    records = jsonl(replies)
+    # The first record banks what the artifact took from the run besides the replies
+    # (DECISIONS D65): the judges' model servers and the failure log (none here).
+    header, *records = jsonl(replies)
+    assert header == {
+        "schema": e3.REPLIES_SCHEMA,
+        "model_servers": prov["model_servers"],
+        "failure_log": None,
+    }
     assert len(records) == 16 and {r["judge_id"] for r in records} == {
         "qwen7b-transcript",
         "granite8b-transcript",
@@ -232,6 +240,14 @@ def test_tool_serves_banked_calls_from_the_cache_without_a_server(
     assert data["runs"]["complete"] is False  # one judge of two
     usage = (tmp_path / "artifacts" / "usage" / "ledger.jsonl").read_text(encoding="utf-8")
     assert len(usage.splitlines()) == len(items)
+    # A re-score gets the real server's provenance and the cache hits from the replies,
+    # starts no server, and logs no model call.
+    again = tmp_path / "again.json"
+    banked = ["--rescore", "--replies", "one-judge.replies.jsonl", "--out", str(again)]
+    assert run_judges.main([*args, *banked]) == 0
+    assert comparable(read_json(again)) == comparable(data)
+    after = (tmp_path / "artifacts" / "usage" / "ledger.jsonl").read_text(encoding="utf-8")
+    assert after == usage
 
 
 def test_tool_reads_the_held_out_evaluation_with_the_floor_of_ten(
@@ -358,20 +374,17 @@ def test_a_server_that_cannot_start_or_a_refusal_counts_no_attempt(
     assert not (tmp_path / FAILURE_LOG).exists() and not (tmp_path / OUT).exists()
 
 
-def test_a_failed_call_is_retried_and_its_run_excluded_after_three_attempts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Item 23: three logged failures exclude the run for both judges; nothing aborts it all."""
-    rows = setup(tmp_path)
-    sampled = e3.draw_sample(rows, 8, SEED).run_ids
-    broken = sampled[2]
-    asked: list[tuple[str, str]] = []
+Serve = Callable[..., Any]
+
+
+def flaky(broken: str, asked: list[tuple[str, str]]) -> Serve:
+    """A SYNTHETIC stand-in for ``run_judges.serve`` whose granite judge always fails on
+    run ``broken``; every request's ``(judge, run)`` is appended to ``asked``."""
 
     @contextlib.contextmanager
     def flaky_serve(
         config: JudgeConfig, args: Any, pending: int
     ) -> Iterator[tuple[e3.Completion, dict[str, Any]]]:
-        """SYNTHETIC: the granite judge's backend always fails on one run."""
         judge = fake_judge(flags_tests)
 
         def complete(request: ModelRequest) -> ModelResponse:
@@ -382,7 +395,18 @@ def test_a_failed_call_is_retried_and_its_run_excluded_after_three_attempts(
 
         yield complete, {"model": config.model, "synthetic_judge": True}
 
-    monkeypatch.setattr(run_judges, "serve", flaky_serve)
+    return flaky_serve
+
+
+def test_a_failed_call_is_retried_and_its_run_excluded_after_three_attempts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Item 23: three logged failures exclude the run for both judges; nothing aborts it all."""
+    rows = setup(tmp_path)
+    sampled = e3.draw_sample(rows, 8, SEED).run_ids
+    broken = sampled[2]
+    asked: list[tuple[str, str]] = []
+    monkeypatch.setattr(run_judges, "serve", flaky(broken, asked))
     root = ["--root", str(tmp_path)]
     for attempt in (1, 2, 3):
         assert run_judges.main(root) == 1
@@ -408,8 +432,12 @@ def test_a_failed_call_is_retried_and_its_run_excluded_after_three_attempts(
     statuses = {c["status"] for c in data["calls"] if c["run_id"] == broken}
     assert statuses == {e3.EXCLUDED}
     assert all(item["run_id"] != broken for item in data["items"])
-    assert all(r["run_id"] != broken for r in jsonl(tmp_path / REPLIES))
-    assert FAILURE_LOG in data["provenance"]["inputs"]
+    header, *records = jsonl(tmp_path / REPLIES)
+    assert all(r["run_id"] != broken for r in records)
+    # The replies bank the failure log the exclusion came from, byte for byte.
+    log = (tmp_path / FAILURE_LOG).read_text(encoding="utf-8")
+    assert header["failure_log"] == {"path": FAILURE_LOG, "text": log}
+    assert data["provenance"]["inputs"][FAILURE_LOG] == sha256(tmp_path / FAILURE_LOG)
     assert run_judges.main([*root, "--dry-run"]) == 0
     assert "1 run(s) excluded under section 7" in capsys.readouterr().out
     # Excluded for both judges: a run of the qwen judge alone skips it too.
@@ -418,6 +446,151 @@ def test_a_failed_call_is_retried_and_its_run_excluded_after_three_attempts(
     assert run_judges.main([*root, "--judges", "qwen7b-transcript", "--out", str(alone)]) == 0
     assert asked and all(run_id != broken for _, run_id in asked)
     assert read_json(alone)["runs"]["excluded"] == [broken]
+
+
+# --------------------------------------------------------------------------- re-score (D65)
+
+
+def rescore(root: Path, out: Path, *extra: str) -> int:
+    """``--rescore`` of the artifact under ``root`` into ``out``."""
+    return run_judges.main(["--root", str(root), "--rescore", "--out", str(out), *extra])
+
+
+def test_a_rescore_reproduces_the_artifact_from_the_banked_replies_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every field but when, where, and how it was made comes back without a model call,
+    the run's state under runs/ (git ignores it, so a fresh clone has none) included."""
+    setup(tmp_path)
+    monkeypatch.setattr(run_judges, "serve", fake_serve)
+    assert run_judges.main(["--root", str(tmp_path)]) == 0
+    committed = read_json(tmp_path / OUT)
+    banked = (tmp_path / REPLIES).read_bytes()
+    shutil.rmtree(tmp_path / "runs")  # the pid file and the response cache
+    monkeypatch.setattr(run_judges, "serve", refuse)  # no server, no model
+    again = tmp_path / "rescored.json"
+    assert rescore(tmp_path, again) == 0
+    fresh = read_json(again)
+    assert comparable(fresh) == comparable(committed)
+    assert fresh["provenance"]["command"].endswith(f"--rescore --out {again}")
+    # The usage, the parse statuses, and the cache hits come from the banked replies.
+    assert [j["usage"] for j in fresh["judges"]] == [j["usage"] for j in committed["judges"]]
+    assert fresh["replies"] == committed["replies"]
+    # A re-score writes only its output: no replies file, pid file, cache, or failure log.
+    assert (tmp_path / REPLIES).read_bytes() == banked
+    assert not (tmp_path / "runs").exists() and not (tmp_path / "artifacts" / "usage").exists()
+    assert "E3: re-scored artifacts/e3/replies.jsonl with no model call" in capsys.readouterr().out
+    # The banked replies, named or not, may re-score the default artifact itself.
+    assert rescore(tmp_path, tmp_path / OUT, "--replies", REPLIES) == 0
+    assert comparable(read_json(tmp_path / OUT)) == comparable(committed)
+
+
+def test_a_rescore_takes_the_exclusions_from_the_banked_failure_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows = setup(tmp_path)
+    broken = e3.draw_sample(rows, 8, SEED).run_ids[2]
+    asked: list[tuple[str, str]] = []
+    monkeypatch.setattr(run_judges, "serve", flaky(broken, asked))
+    root = ["--root", str(tmp_path)]
+    for _ in range(e3.MAX_ATTEMPTS):
+        assert run_judges.main(root) == 1
+    assert run_judges.main(root) == 0
+    committed = read_json(tmp_path / OUT)
+    assert committed["runs"]["excluded"] == [broken]
+    shutil.rmtree(tmp_path / "runs")  # the live failure log is gone, as in a fresh clone
+    monkeypatch.setattr(run_judges, "serve", refuse)
+    again = tmp_path / "rescored.json"
+    assert rescore(tmp_path, again) == 0
+    fresh = read_json(again)
+    assert comparable(fresh) == comparable(committed)
+    assert fresh["exclusions"] == committed["exclusions"]
+    assert [e["attempt"] for e in fresh["exclusions"][0]["calls"][0]["errors"]] == [1, 2, 3]
+
+
+def test_a_rescore_of_a_partial_run_reads_its_own_replies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    setup(tmp_path)
+    monkeypatch.setattr(run_judges, "serve", fake_serve)
+    part = ["--judges", "qwen7b-transcript", "--limit", "3"]
+    out = ["--out", str(tmp_path / "part.json")]
+    assert run_judges.main(["--root", str(tmp_path), *part, *out]) == 0
+    committed = read_json(tmp_path / "part.json")
+    assert committed["replies"]["path"] == "part.replies.jsonl"
+    monkeypatch.setattr(run_judges, "serve", refuse)
+    again = tmp_path / "again.json"
+    assert rescore(tmp_path, again, *part, "--replies", "part.replies.jsonl") == 0
+    assert comparable(read_json(again)) == comparable(committed)
+    # The full replies answer other calls than this run's: refused, nothing written.
+    again.unlink()
+    assert rescore(tmp_path, again, *part, "--replies", "missing.jsonl") == 1
+    assert "missing.jsonl is missing: a re-score serves every judge call" in capsys.readouterr().err
+    assert rescore(tmp_path, again, "--limit", "3", "--replies", "part.replies.jsonl") == 1
+    err = capsys.readouterr().err
+    assert "records the model servers of qwen7b-transcript, but this re-score runs" in err
+    assert not again.exists()
+
+
+def test_a_rescore_refuses_replies_that_do_not_serve_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    setup(tmp_path)
+    monkeypatch.setattr(run_judges, "serve", fake_serve)
+    assert run_judges.main(["--root", str(tmp_path)]) == 0
+    replies = tmp_path / REPLIES
+    lines = replies.read_text(encoding="utf-8").splitlines(keepends=True)
+    monkeypatch.setattr(run_judges, "serve", refuse)
+    again = tmp_path / "rescored.json"
+    for text, said in (
+        # A reply removed: its request has none, and no model is asked instead.
+        (
+            "".join(lines[:1] + lines[2:]),
+            "has no banked reply of judge qwen7b-transcript to request",
+        ),
+        # A reply that no call of this run asks for.
+        ("".join([*lines, lines[1]]), "1 banked reply record(s) that answer no call"),
+        # The replies without their first record (the servers and the failure log).
+        ("".join(lines[1:]), "does not begin with its receipts.e3.replies/2 record"),
+    ):
+        replies.write_text(text, encoding="utf-8")
+        assert rescore(tmp_path, again) == 1
+        err = capsys.readouterr().err
+        assert said in err, err
+        assert not again.exists()
+    replies.unlink()
+    assert rescore(tmp_path, again) == 1
+    assert "artifacts/e3/replies.jsonl is missing" in capsys.readouterr().err
+
+
+def test_rescore_usage_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    setup(tmp_path)
+    monkeypatch.setattr(run_judges, "serve", refuse)
+    root = ["--root", str(tmp_path)]
+    assert run_judges.main([*root, "--rescore", "--dry-run"]) == 2
+    assert "pass one" in capsys.readouterr().err
+    assert run_judges.main([*root, "--replies", "x.jsonl", "--out", str(tmp_path / "x.json")]) == 2
+    assert "add --rescore" in capsys.readouterr().err
+    other = tmp_path / "other.jsonl"
+    assert rescore(tmp_path, other, "--replies", "other.jsonl") == 2
+    assert "is the replies file the re-score reads" in capsys.readouterr().err
+    # The output rules of a run hold for a re-score too.
+    assert rescore(tmp_path, tmp_path / REPLIES) == 2
+    assert "is the replies file of" in capsys.readouterr().err
+    assert run_judges.main([*root, "--rescore", "--limit", "2"]) == 2
+    assert "a partial run" in capsys.readouterr().err
+    # A re-score of other replies never writes the default artifact, which is scored from
+    # the banked replies (review BV2 of the B5 fix); it is refused before anything is read.
+    (tmp_path / "other.replies.jsonl").write_text("SYNTHETIC: never read\n", encoding="utf-8")
+    for out in (tmp_path / OUT, Path(OUT)):  # absolute, and relative to the working directory
+        monkeypatch.chdir(tmp_path)
+        assert rescore(tmp_path, out, "--replies", "other.replies.jsonl") == 2
+        err = capsys.readouterr().err
+        assert f"a re-score of other.replies.jsonl never writes {OUT}" in err, err
+        assert f"scored from the banked replies {REPLIES}" in err
+    assert not (tmp_path / OUT).exists()
 
 
 # --------------------------------------------------------------------------- output rules
@@ -459,8 +632,12 @@ def test_tool_never_writes_a_partial_artifact_to_the_default_path(
     data = read_json(elsewhere)
     assert [j["judge_id"] for j in data["judges"]] == ["qwen7b-transcript"]
     assert data["runs"]["complete"] is False and data["runs"]["limit"] == 2
-    assert data["replies"]["path"] == "partial/judges.replies.jsonl"
-    assert len(jsonl(tmp_path / "partial" / "judges.replies.jsonl")) == 2
+    assert data["replies"] == {
+        "path": "partial/judges.replies.jsonl",
+        "sha256": sha256(tmp_path / "partial" / "judges.replies.jsonl"),
+        "records": 2,
+    }
+    assert len(jsonl(tmp_path / "partial" / "judges.replies.jsonl")) == 1 + 2  # first record
     assert default.read_text(encoding="utf-8") == placeholder
     assert not (tmp_path / REPLIES).exists()
     # Every judge, in any order and without --limit, is a full run: it may write the default.
@@ -662,6 +839,24 @@ def test_a_confirmatory_artifact_needs_every_condition_of_section_8(
     err = capsys.readouterr().err
     assert "pinned model file SHA-256" in err and "synthetic judge" in err
     assert not (git_repo / OUT).exists()
+
+
+def test_a_confirmatory_artifact_is_reproduced_by_a_rescore(
+    git_repo: Path, commit: Commit, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The pinned model files and every condition of section 8 come back from the banked
+    replies, so a confirmatory artifact re-scores to itself in its committed checkout."""
+    confirmatory_checkout(git_repo, commit)
+    monkeypatch.setattr(run_judges, "serve", pinned_serve)
+    root = ["--root", str(git_repo)]
+    assert run_judges.main([*root, "--confirmatory"]) == 0
+    committed = read_json(git_repo / OUT)
+    assert committed["confirmatory"] is True
+    commit(git_repo, "SYNTHETIC E3 artifact and replies")
+    monkeypatch.setattr(run_judges, "serve", refuse)
+    again = tmp_path / "rescored.json"
+    assert rescore(git_repo, again, "--confirmatory") == 0
+    assert comparable(read_json(again)) == comparable(committed)
 
 
 def test_an_uncommitted_lock_entry_is_not_a_freeze(

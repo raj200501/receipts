@@ -32,7 +32,7 @@ from receipts.bench.hashing import tree_sha256
 from receipts.ledger.events import LedgerWriter
 from receipts.study import rescore, results
 from receipts.study.aggregate import e1_rows, write_jsonl
-from tests.repo_tools.test_ship_check_g7 import REDERIVED, given, hidden_checks
+from tests.repo_tools.test_ship_check_g7 import REDERIVED, derived_ok, given, hidden_checks
 from tests.study.test_results import (
     FREEZE_SHA,
     INSTRUMENT,
@@ -356,11 +356,16 @@ def test_e1_confirmatory_artifact_passes_the_g7_gate_and_prereg_verify(
     ctx = ship_check.Context(
         orig=git_repo, clone=git_repo, logs=git_repo / "logs", fast=True, sha="0" * 40
     )
-    # The scratch repository holds no project for make setup and tools/bank_study.py e1
-    # --check to run in, so their outcome is given as the G7 tests give it; those tests
-    # exercise the re-derivation step itself (D57).
+    # The scratch repository holds no project for make setup, tools/bank_study.py e1
+    # --check, and the re-derivation of the results to run in, so their outcomes are
+    # given as the G7 tests give them; those tests exercise the steps themselves (D57,
+    # D65). The results here came from bootstrap stand-ins (stub_heavy_parts) and record
+    # --root, so a fresh derivation would differ: tests/report/test_derived.py runs the
+    # real one on results that tools/analyze.py wrote from the repository root.
     ctx.results["make-setup"] = given("make-setup")
     ctx.results["bank-check-e1"] = given("bank-check-e1", stdout=REDERIVED)
+    rel = analyze.E1_OUT
+    ctx.results[f"derived-{rel}"] = derived_ok(rel, "python tools/analyze.py e1")
     assert "4 configs, 2 families" in ship_check.g7(ctx)
     verified = prereg.verify(git_repo)
     assert verified.ok, verified.problems

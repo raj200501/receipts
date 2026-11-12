@@ -3,7 +3,8 @@ review-1 and review-2 of the harness review round, the pre-freeze items: the
 preregistration's plan lines and identical cells, both held-out task lists, and the
 evaluated instrument of DECISIONS D42, and review B2 and N6 of the e4230cc review: rows
 that cover every banked run, outcomes re-derived from the banked runs, and each run's
-code commit, DECISIONS D57).
+code commit, DECISIONS D57; and review B5 of the 02bc774 review: results that are what
+tools/analyze_e4.py writes, DECISIONS D65).
 
 Every preregistration, plan, instrument file, held-out evaluation, run row, ledger,
 result, latency sample, hook module, and demo transcript here is SYNTHETIC, made up only
@@ -12,8 +13,10 @@ to exercise ``ship_check.g9`` in throwaway git repositories. E4 rows are marked
 stand-in names, the instrument files are stand-ins whose only role is to have git trees,
 and the hidden-check results are made up; nothing here is a model result or a real-world
 result. The demo script prints fixed text. The SYNTHETIC projects hold no study code for
-``tools/bank_study.py e4 --check`` to run, so g9 is given that step's outcome
-(:func:`project`), except in the test that runs a stand-in.
+``tools/bank_study.py e4 --check`` or the re-derivation of the results
+(``python -m receipts.report.derived``) to run, so g9 is given those steps' outcomes
+(:func:`project`), except in the tests that run a stand-in or the real re-derivation (on
+the SYNTHETIC study of tests/report/studies.py, whose results tools/analyze_e4.py wrote).
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ from receipts.study import spec as study_spec
 from receipts.study.aggregate import e4_rows
 from receipts.study.rescore import INSTRUMENT_RECORD_PATHS, Rescored
 from receipts.study.results_e4 import outcome_rows
+from tests.repo_tools.test_ship_check_g7 import derived_fails, derived_ok, run_for_real
 
 Commit = Callable[[Path, str], str]
 GateError = ship_check.GateError
@@ -540,6 +544,7 @@ def project(
     ctx = ship_check.Context(orig=root, clone=root, logs=logs, fast=False, sha=sha)
     ctx.results["make-setup"] = given("make-setup")
     ctx.results["bank-check-e4"] = given("bank-check-e4", stdout=REDERIVED)
+    ctx.results[f"derived-{RESULTS}"] = derived_ok(RESULTS, "python tools/analyze_e4.py")
     return ctx
 
 
@@ -569,6 +574,7 @@ def test_a_complete_mitigation_package_passes(git_repo: Path, commit: Commit) ->
     assert "E4 on 2 held-out tasks" in evidence and "demo transcript reproduces" in evidence
     assert "evaluated instrument" in evidence
     assert "re-derived from the 32 banked runs" in evidence
+    assert f"{RESULTS} re-derived by python tools/analyze_e4.py" in evidence
 
 
 def test_the_e4_fixture_passes_the_e4_checks(git_repo: Path, commit: Commit) -> None:
@@ -1347,6 +1353,57 @@ def test_e4_rows_that_banking_does_not_write_fail(git_repo: Path, commit: Commit
         GateError, match=r"artifacts/e4/runs\.jsonl is not what banking writes from the banked"
     ):
         ship_check.g9(ctx)
+
+
+@pytest.mark.parametrize(
+    "where",
+    [
+        pytest.param("outcomes.Z1.holm.reject.0", id="a-hand-set-test-decision"),
+        pytest.param("outcomes.Z1.contrasts.0.odds_ratio", id="a-hand-set-odds-ratio"),
+        pytest.param("outcomes.Z1.contrasts.0.p_value", id="a-hand-set-p-value"),
+    ],
+)
+def test_e4_results_that_are_not_a_fresh_derivation_fail(
+    git_repo: Path, commit: Commit, where: str
+) -> None:
+    # The Z1 rates recompute from the rows, but a test result needs the mixed models, so
+    # g9 has python -m receipts.report.derived derive the results again in the clone
+    # (DECISIONS D65); the step fails before the hook is checked.
+    ctx = project(git_repo, commit)
+    ctx.results[f"derived-{RESULTS}"] = derived_fails(RESULTS, where, "tools/analyze_e4.py")
+    with pytest.raises(GateError, match=rf"{RESULTS} is not a fresh derivation .*\({where}\)"):
+        ship_check.g9(ctx)
+
+
+def test_the_gate_re_derives_the_e4_results_and_a_hand_set_test_result_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gate's step itself, on the SYNTHETIC study whose results tools/analyze_e4.py
+    wrote (tests/report/studies.py): they pass, and a typed Holm decision and odds ratio
+    fail with the paths that differ."""
+    from tests.report import studies
+
+    root = studies.e4_study(tmp_path / "e4")
+
+    def gate_context() -> ship_check.Context:
+        ctx = ship_check.Context(orig=root, clone=root, logs=tmp_path, fast=False, sha="0")
+        ctx.results["make-setup"] = given("make-setup")
+        run_for_real(ctx, monkeypatch)
+        return ctx
+
+    first = gate_context()
+    ship_check.check_derivation(first, RESULTS)
+    assert "re-derived by python tools/analyze_e4.py" in first.results[f"derived-{RESULTS}"].stdout
+
+    def hand_set(data: dict[str, Any]) -> None:
+        z1 = data["outcomes"]["Z1"]
+        z1["holm"]["reject"][0] = not z1["holm"]["reject"][0]
+        z1["contrasts"][0]["odds_ratio"] *= 2
+
+    studies.edit(root, RESULTS, hand_set)
+    match = r"outcomes\.Z1\.contrasts\.0\.odds_ratio, outcomes\.Z1\.holm\.reject\.0"
+    with pytest.raises(GateError, match=match):
+        ship_check.check_derivation(gate_context(), RESULTS)
 
 
 #: A SYNTHETIC stand-in for tools/bank_study.py that checks the arguments it is given.

@@ -8,6 +8,7 @@ test_run_judges.py`` tests the tool and imports the SYNTHETIC builders from here
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import random
@@ -1196,6 +1197,193 @@ def test_reply_records_hold_every_served_reply(tmp_path: Path) -> None:
     assert (first["input_tokens"], first["output_tokens"]) == (100, 20)
     assert first["excluded"] is True  # the first judge answered for the excluded run
     assert sum(1 for r in records if r["excluded"]) == 1
+
+
+# The re-score (DECISIONS D65) -------------------------------------------------------------
+
+#: A SYNTHETIC failure log line, as tools/run_judges.py appends one.
+FAILURE_LINE = json.dumps(
+    {
+        "attempt": 1,
+        "cache_key": "a" * 64,
+        "error": "BackendError: SYNTHETIC",
+        "judge_id": "granite8b-transcript",
+        "run_id": "SYNTHETIC",
+        "time": "2026-11-12T00:00:00+00:00",
+    },
+    sort_keys=True,
+)
+
+
+def banked_bytes(
+    runs: Sequence[e3.JudgeRun],
+    records: Sequence[Mapping[str, Any]] | None = None,
+    failure: tuple[str, str] | None = None,
+) -> bytes:
+    """A replies file as tools/run_judges.py writes it: the first record, then the replies
+    of ``runs`` (or ``records``), one strict JSON object per line (SYNTHETIC servers)."""
+    servers = {
+        run.config.judge_id: {"model": run.config.model, "synthetic_judge": True} for run in runs
+    }
+    lines = [e3.replies_header(servers, failure), *(records or e3.reply_records(runs))]
+    return "".join(json.dumps(line, sort_keys=True) + "\n" for line in lines).encode("utf-8")
+
+
+def judged_twice(tmp_path: Path) -> tuple[list[e3.JudgeItem], list[e3.JudgeRun], set[str]]:
+    """SYNTHETIC items of the sample and both fake judges' runs, one run excluded."""
+    rows = synthetic_e1(tmp_path)
+    context = good_context(rows)
+    assert context.sample is not None
+    items = e3.load_items(rows, tmp_path / RUNS, tmp_path, context.sample.run_ids)
+    skip = {items[1].run_id}
+    runs = [e3.run_judge(c, items, fake_judge(flags_tests), skip=skip) for c in e3.JUDGES]
+    return items, runs, skip
+
+
+def test_the_first_record_banks_the_servers_and_the_failure_log() -> None:
+    servers = {"qwen7b-transcript": {"model": "SYNTHETIC", "started": False}}
+    header = e3.replies_header(servers, ("runs/e3/failures.jsonl", FAILURE_LINE + "\n"))
+    assert header == {
+        "schema": e3.REPLIES_SCHEMA,
+        "model_servers": servers,
+        "failure_log": {"path": "runs/e3/failures.jsonl", "text": FAILURE_LINE + "\n"},
+    }
+    assert e3.replies_header({}, None)["failure_log"] is None
+
+
+def test_banked_replies_serve_every_call_again_without_a_model(tmp_path: Path) -> None:
+    """A re-score gets back every call: the text, tokens, wall time, and cache hit."""
+    items, runs, skip = judged_twice(tmp_path)
+    raw = banked_bytes(runs, failure=("runs/e3/failures.jsonl", FAILURE_LINE + "\n"))
+    banked = e3.BankedReplies(raw, "SYNTHETIC replies")
+    assert banked.sha256 == hashlib.sha256(raw).hexdigest()
+    assert banked.failure_log == ("runs/e3/failures.jsonl", FAILURE_LINE + "\n")
+    assert set(banked.servers) == {c.judge_id for c in e3.JUDGES}
+    assert len(banked.records) == sum(1 for run in runs for call in run.calls if call.served)
+    again = [e3.run_judge(c, items, banked.completion(c.judge_id), skip=skip) for c in e3.JUDGES]
+    banked.check_served(again)
+    assert again == runs
+    # A cache hit is banked as it was served.
+    hit = replace(runs[0], calls=(replace(runs[0].calls[0], cache_hit=True), *runs[0].calls[1:]))
+    banked = e3.BankedReplies(banked_bytes([hit, runs[1]]), "SYNTHETIC replies")
+    served = e3.run_judge(e3.JUDGES[0], items, banked.completion(e3.JUDGES[0].judge_id), skip=skip)
+    assert served.calls[0].cache_hit is True and served.calls[1].cache_hit is False
+
+
+def test_two_calls_with_one_request_get_their_own_records(tmp_path: Path) -> None:
+    """Runs with the same transcript and claims make the same request; each keeps its reply."""
+    items, _, _ = judged_twice(tmp_path)
+    twin = replace(items[0], run_id=items[0].run_id + "-twin")  # the same transcript and claims
+    pair = [items[0], twin]
+    first = e3.run_judge(e3.JUDGES[0], pair, fake_judge(flags_tests))
+    assert first.calls[0].cache_key == first.calls[1].cache_key
+    records = e3.reply_records([first])
+    records[1] = {**records[1], "cache_hit": True}  # the second call was served from the cache
+    banked = e3.BankedReplies(banked_bytes([first], records), "SYNTHETIC replies")
+    again = e3.run_judge(e3.JUDGES[0], pair, banked.completion(e3.JUDGES[0].judge_id))
+    banked.check_served([again])
+    assert [c.cache_hit for c in again.calls] == [False, True]
+
+
+def test_a_rescore_stops_at_a_missing_an_unused_or_a_misplaced_reply(tmp_path: Path) -> None:
+    items, runs, skip = judged_twice(tmp_path)
+    records = e3.reply_records(runs)
+    judge = e3.JUDGES[0].judge_id
+    # A reply removed: the request it answered has no banked reply.
+    banked = e3.BankedReplies(banked_bytes(runs, records[1:]), "SYNTHETIC replies")
+    with pytest.raises(e3.MissingReplyError, match=rf"no banked reply of judge {judge} to request"):
+        e3.run_judge(e3.JUDGES[0], items, banked.completion(judge), skip=skip)
+    # A reply that no call uses: the file is not the replies of this run.
+    extra = {**records[0], "cache_key": "b" * 64}
+    banked = e3.BankedReplies(banked_bytes(runs, [*records, extra]), "SYNTHETIC replies")
+    again = [e3.run_judge(c, items, banked.completion(c.judge_id), skip=skip) for c in e3.JUDGES]
+    with pytest.raises(ValueError, match=r"1 banked reply record\(s\) that answer no call"):
+        banked.check_served(again)
+    # A reply recorded for another run than the call it answers.
+    moved = [dict(r) for r in records]
+    moved[0]["run_id"] = "SYNTHETIC-elsewhere"
+    banked = e3.BankedReplies(banked_bytes(runs, moved), "SYNTHETIC replies")
+    again = [e3.run_judge(c, items, banked.completion(c.judge_id), skip=skip) for c in e3.JUDGES]
+    with pytest.raises(ValueError, match="records run SYNTHETIC-elsewhere, not run"):
+        banked.check_served(again)
+    # Fewer replies served than the run's calls (a run judged elsewhere).
+    banked = e3.BankedReplies(banked_bytes(runs), "SYNTHETIC replies")
+    with pytest.raises(ValueError, match="were served for"):
+        banked.check_served(runs)
+
+
+@pytest.mark.parametrize(
+    ("edit", "match"),
+    [
+        pytest.param(lambda lines: lines[1:], "does not begin with its", id="no-first-record"),
+        pytest.param(lambda lines: [], "does not begin with its", id="empty"),
+        pytest.param(
+            lambda lines: [{**lines[0], "model_servers": [1]}, *lines[1:]],
+            "model_servers is not an object of objects",
+            id="servers-not-an-object",
+        ),
+        pytest.param(
+            lambda lines: [{k: v for k, v in lines[0].items() if k != "failure_log"}, *lines[1:]],
+            "has no failure_log",
+            id="no-failure-log",
+        ),
+        pytest.param(
+            lambda lines: [{**lines[0], "failure_log": {"path": 1}}, *lines[1:]],
+            "neither null nor a path and a text",
+            id="failure-log-malformed",
+        ),
+        pytest.param(
+            lambda lines: [lines[0], {**lines[1], "input_tokens": True}, *lines[2:]],
+            r"reply 1 is not a reply record: input_tokens",
+            id="tokens-a-boolean",
+        ),
+        pytest.param(
+            lambda lines: [lines[0], {**lines[1], "wall_s": "0.5"}, *lines[2:]],
+            r"reply 1 is not a reply record: wall_s",
+            id="wall-time-as-text",
+        ),
+        pytest.param(
+            lambda lines: [lines[0], {**lines[1], "cache_key": "SYN"}, *lines[2:]],
+            r"reply 1 is not a reply record: cache_key",
+            id="no-cache-key",
+        ),
+        pytest.param(
+            lambda lines: [lines[0], lines[0], *lines[1:]],
+            r"reply 1 is not a reply record: .*schema",
+            id="a-second-first-record",
+        ),
+    ],
+)
+def test_banked_replies_refuse_a_file_they_cannot_serve(
+    tmp_path: Path, edit: Callable[[list[dict[str, Any]]], list[dict[str, Any]]], match: str
+) -> None:
+    _, runs, _ = judged_twice(tmp_path)
+    lines = [json.loads(line) for line in banked_bytes(runs).decode("utf-8").splitlines()]
+    raw = "".join(json.dumps(line) + "\n" for line in edit(lines)).encode("utf-8")
+    with pytest.raises(ValueError, match=match):
+        e3.BankedReplies(raw, "SYNTHETIC replies")
+
+
+def test_banked_replies_must_be_utf8_strict_json_and_present(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="is not UTF-8 text"):
+        e3.BankedReplies(b"\xff\n", "SYNTHETIC replies")
+    with pytest.raises(ValueError, match="line 2 is not strict JSON"):
+        e3.BankedReplies(b'{"schema": "x"}\n{"wall_s": NaN}\n', "SYNTHETIC replies")
+    with pytest.raises(ValueError, match="is missing: a re-score serves every judge call"):
+        e3.BankedReplies.read(tmp_path / "absent.jsonl", "absent.jsonl")
+
+
+def test_jsonl_objects_reads_strict_objects_line_by_line() -> None:
+    text = f"{FAILURE_LINE}\n\n  \n{FAILURE_LINE}\n"
+    assert e3.jsonl_objects(text, "log") == [json.loads(FAILURE_LINE)] * 2
+    # A JSON string may hold U+2028 (LINE SEPARATOR) raw: still one line.
+    assert e3.jsonl_objects('{"a": "x\u2028y"}\n', "log") == [{"a": "x\u2028y"}]
+    with pytest.raises(ValueError, match="log line 2 is not a JSON object"):
+        e3.jsonl_objects(f"{FAILURE_LINE}\n[1]\n", "log")
+    with pytest.raises(ValueError, match=r"log line 1 is not strict JSON .*Infinity"):
+        e3.jsonl_objects('{"a": Infinity}\n', "log")
+    with pytest.raises(ValueError, match="log line 1 is not strict JSON"):
+        e3.jsonl_objects("{\n", "log")
 
 
 def test_model_client_cache_means_a_banked_call_is_never_rerun(tmp_path: Path) -> None:

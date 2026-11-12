@@ -4,6 +4,7 @@
     python tools/run_judges.py                        # both judges over the preregistered sample
     python tools/run_judges.py --confirmatory         # refused unless section 8 holds
     python tools/run_judges.py --limit 5 --judges qwen7b-transcript --out runs/e3/part.json
+    python tools/run_judges.py --rescore --out X.json # the banked replies scored again; no model
 
 The sample (section 3): K and the seed come from the preregistration's machine-readable
 lines (``--prereg``, default ``prereg/0003-e3-judges.md``: ``sample_runs:`` and
@@ -34,13 +35,31 @@ reported as a deviation. A client refusal (offline, billing guard) or a server t
 cannot start stops the run without counting an attempt.
 
 Outputs: ``artifacts/e3/judges.json`` and the raw replies ``artifacts/e3/replies.jsonl``
-(for ``--out X.json``, the replies go to ``X.replies.jsonl``). A partial run
-(``--limit``, ``--judges`` naming fewer than both judges, or a sample other than the
-preregistered one) never writes the default path and needs ``--out`` with another path;
-an exploratory run never replaces a confirmatory artifact; a judge named twice is
-refused; all of this before any model call (:func:`output_problem`). Exit status: 0 done;
-1 invalid input, a refused confirmatory artifact, or a failed call; 2 a usage problem
-(unknown or repeated judges, an output this run may not write, no sample size, a bad K).
+(for ``--out X.json``, the replies go to ``X.replies.jsonl``). The replies file begins
+with a record of each judge's model server provenance and of the failure log the run
+read (:func:`receipts.evaluation.e3.replies_header`), then holds one record per served
+call. A partial run (``--limit``, ``--judges`` naming fewer than both judges, or a sample
+other than the preregistered one) never writes the default path and needs ``--out`` with
+another path; an exploratory run never replaces a confirmatory artifact; a judge named
+twice is refused; all of this before any model call (:func:`output_problem`).
+
+Re-score (``--rescore``, DECISIONS D65): the artifact is computed again from the banked
+replies (``--replies``, a path under ``--root``, default ``artifacts/e3/replies.jsonl``)
+with every other argument as given, and no model is called and no server started:
+each judge request is served by its banked reply, found by the request's cache key
+(:class:`receipts.evaluation.e3.BankedReplies`), the server provenance and the failure
+log come from the replies file's first record, and the code that runs parses the labels
+and scores them again. A request without a banked reply, a banked reply that no call
+uses, or a reply recorded for another run stops it. A re-score writes only ``--out``
+(under the same rules as a run), never the replies file, the response cache, the pid
+file, or the failure log, so ``make freshness`` and gate G8 can re-derive
+``artifacts/e3/judges.json`` in a fresh clone; and a re-score of replies other than the
+banked ``artifacts/e3/replies.jsonl`` never writes ``artifacts/e3/judges.json``, which is
+scored from them (review BV2 of the B5 fix). Exit status: 0 done; 1 invalid input, a
+refused confirmatory artifact, a failed call, or replies that do not serve the re-score;
+2 a usage problem (unknown or repeated judges, an output this run may not write, no
+sample size, a bad K, ``--rescore`` with ``--dry-run``, ``--replies`` without
+``--rescore``).
 """
 
 from __future__ import annotations
@@ -54,7 +73,7 @@ import os
 import platform
 import subprocess
 import sys
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -339,9 +358,21 @@ def load_rows(path: Path) -> list[dict[str, Any]]:
     return results_e4.load_jsonl_objects(path)
 
 
+def read_failure_log(path: Path) -> str | None:
+    """The text of the failure log ``runs/e3/failures.jsonl``, exactly as stored (None
+    when there is none); the replies file banks it (:func:`e3.replies_header`).
+
+    Raises:
+        OSError: The log cannot be read.
+        ValueError: It is not UTF-8 text.
+    """
+    return path.read_bytes().decode("utf-8") if path.is_file() else None
+
+
 def read_failures(path: Path) -> list[dict[str, Any]]:
     """The entries of the failure log ``runs/e3/failures.jsonl`` (empty when absent)."""
-    return results_e4.load_jsonl_objects(path) if path.is_file() else []
+    text = read_failure_log(path)
+    return [] if text is None else e3.jsonl_objects(text, f"{STATE}/{FAILURES}")
 
 
 def append_failure(path: Path, error: e3.JudgeCallError) -> int:
@@ -418,6 +449,71 @@ def serve(
         yield client.complete, provenance
 
 
+def judge_live(
+    configs: Sequence[JudgeConfig],
+    items: Sequence[e3.JudgeItem],
+    args: argparse.Namespace,
+    skip: Collection[str],
+) -> tuple[list[e3.JudgeRun], dict[str, dict[str, Any]]]:
+    """Every judge's calls made through its model server (:func:`serve`), one judge at a
+    time, and each judge's server provenance; the runs in ``skip`` are excluded.
+
+    Raises:
+        e3.JudgeCallError: A call failed (the retry rule of section 7).
+        RuntimeError: A server could not start or the client refused a call.
+        OSError: A model file or the response cache could not be read.
+    """
+    runs: list[e3.JudgeRun] = []
+    servers: dict[str, dict[str, Any]] = {}
+    for config in configs:
+        requests = [
+            e3.judge_request(config, item)
+            for item in items
+            if item.claims and item.run_id not in skip
+        ]
+        pending = sum(1 for r in requests if not cache_path(args.cache, r).is_file())
+        with serve(config, args, pending) as (complete, provenance):
+            synthetic = provenance.get("synthetic_judge") is True
+            runs.append(e3.run_judge(config, items, complete, synthetic=synthetic, skip=skip))
+        servers[config.judge_id] = dict(provenance)
+    return runs, servers
+
+
+def rescore_runs(
+    configs: Sequence[JudgeConfig],
+    items: Sequence[e3.JudgeItem],
+    banked: e3.BankedReplies,
+    skip: Collection[str],
+) -> tuple[list[e3.JudgeRun], dict[str, dict[str, Any]]]:
+    """Every judge's calls served again from ``banked``, and each judge's banked server.
+
+    The calls are the ones a run makes (:func:`receipts.evaluation.e3.run_judge`, the
+    runs in ``skip`` excluded), served by :meth:`e3.BankedReplies.completion` instead of
+    a model; a judge counts as synthetic when its banked server says so, as when it ran.
+
+    Raises:
+        ValueError: The banked servers are not those of ``configs``, a request has no
+            banked reply (:class:`e3.MissingReplyError`), or a banked reply answers no
+            call (:meth:`e3.BankedReplies.check_served`).
+    """
+    named, wanted = sorted(banked.servers), sorted(c.judge_id for c in configs)
+    if named != wanted:
+        raise ValueError(
+            f"{banked.where} records the model servers of {', '.join(named) or 'no judge'}, "
+            f"but this re-score runs {', '.join(wanted)}"
+        )
+    runs: list[e3.JudgeRun] = []
+    servers: dict[str, dict[str, Any]] = {}
+    for config in configs:
+        server = dict(banked.servers[config.judge_id])
+        synthetic = server.get("synthetic_judge") is True
+        complete = banked.completion(config.judge_id)
+        runs.append(e3.run_judge(config, items, complete, synthetic=synthetic, skip=skip))
+        servers[config.judge_id] = server
+    banked.check_served(runs)
+    return runs, servers
+
+
 def _print_sample(
     sample: e3.Sample | None, frame: int, lines: tuple[int | None, int | None], prereg: bool
 ) -> None:
@@ -458,7 +554,8 @@ def _print_plan(plan: dict[str, Any]) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Judge the sampled E1 runs (or count the calls with ``--dry-run``)."""
+    """Judge the sampled E1 runs, count the calls with ``--dry-run``, or score the banked
+    replies again with ``--rescore``."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=ROOT, help="repository root to read")
     parser.add_argument("--judges", default=",".join(j.judge_id for j in e3.JUDGES))
@@ -476,10 +573,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--sample-runs", type=int, default=None, help="K for an exploratory run")
     parser.add_argument("--sample-seed", type=int, default=None, help="seed for an exploratory run")
     parser.add_argument("--confirmatory", action="store_true")
+    parser.add_argument(
+        "--rescore", action="store_true", help="score the banked replies again; call no model"
+    )
+    parser.add_argument(
+        "--replies", default=None, help=f"with --rescore: the banked replies (default {REPLIES})"
+    )
     arguments = list(sys.argv[1:] if argv is None else argv)
     args = parser.parse_args(arguments)
     root: Path = args.root
     args.cache = args.cache if args.cache is not None else root / "runs" / "cache"
+    if args.rescore and args.dry_run:
+        print(
+            "E3: --rescore writes a re-scored artifact and --dry-run writes nothing; pass one",
+            file=sys.stderr,
+        )
+        return 2
+    if args.replies is not None and not args.rescore:
+        print(
+            "E3: --replies names the banked replies a re-score serves; add --rescore",
+            file=sys.stderr,
+        )
+        return 2
+    source = root / (args.replies if args.replies is not None else REPLIES)
     known = {j.judge_id: j for j in e3.JUDGES}
     wanted = [name.strip() for name in str(args.judges).split(",") if name.strip()]
     unknown = [name for name in wanted if name not in known]
@@ -519,10 +635,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             preregistered_sample=preregistered,
             confirmatory=args.confirmatory,
         )
+        if problem is None and args.rescore and out.resolve() == source.resolve():
+            problem = f"--out {_rel(out, root)} is the replies file the re-score reads"
+        if (
+            problem is None
+            and args.rescore
+            and out.resolve() == (root / OUT).resolve()
+            and source.resolve() != (root / REPLIES).resolve()
+        ):
+            problem = (
+                f"a re-score of {_rel(source, root)} never writes {OUT}, which is scored from "
+                f"the banked replies {REPLIES}; pass --out with another path"
+            )
         if problem is not None:
             print(f"E3: {problem}", file=sys.stderr)
             return 2
+    banked: e3.BankedReplies | None = None
     try:
+        if args.rescore:
+            banked = e3.BankedReplies.read(source, _rel(source, root))
         rows = load_rows(root / E1_ROWS)
         e3.check_rows(rows)
     except (OSError, ValueError) as exc:
@@ -543,7 +674,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     failure_log = root / STATE / FAILURES
     try:
         items = e3.load_items(rows, root / E1_RUNS, root, run_ids)
-        exclusions = e3.unservable_calls(e3.JUDGES, items, read_failures(failure_log))
+        # The failure log the exclusions come from: the live one, or the copy the banked
+        # replies hold (git ignores runs/, so a fresh clone has no log).
+        failure: tuple[str, str] | None
+        if banked is not None:
+            failure = banked.failure_log
+        else:
+            log_text = read_failure_log(failure_log)
+            failure = None if log_text is None else (f"{STATE}/{FAILURES}", log_text)
+        entries = [] if failure is None else e3.jsonl_objects(failure[1], failure[0])
+        exclusions = e3.unservable_calls(e3.JUDGES, items, entries)
     except (OSError, ValueError) as exc:
         print(f"E3: {exc}", file=sys.stderr)
         return 1
@@ -593,58 +733,59 @@ def main(argv: Sequence[str] | None = None) -> int:
         if refused:
             print("E3: refusing a confirmatory E3 artifact: " + "; ".join(refused), file=sys.stderr)
             return 1
-    state = root / STATE
-    state.mkdir(parents=True, exist_ok=True)
-    (state / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
-    runs: list[e3.JudgeRun] = []
-    servers: dict[str, dict[str, Any]] = {}
-    try:
-        for config in configs:
-            requests = [
-                e3.judge_request(config, item)
-                for item in items
-                if item.claims and item.run_id not in skip
-            ]
-            pending = sum(1 for r in requests if not cache_path(args.cache, r).is_file())
-            with serve(config, args, pending) as (complete, provenance):
-                synthetic = provenance.get("synthetic_judge") is True
-                runs.append(e3.run_judge(config, items, complete, synthetic=synthetic, skip=skip))
-            servers[config.judge_id] = dict(provenance)
-    except e3.JudgeCallError as exc:
-        attempt = append_failure(failure_log, exc)
-        after = (
-            f"; the call has failed {attempt} times, so the next run excludes run {exc.run_id} "
-            "for both judges"
-            if attempt >= e3.MAX_ATTEMPTS
-            else "; a rerun tries it again"
-        )
-        print(
-            f"E3: {exc} (attempt {attempt} of {e3.MAX_ATTEMPTS}, logged in "
-            f"{STATE}/{FAILURES}); cached calls are kept{after}",
-            file=sys.stderr,
-        )
-        return 1
-    except (RuntimeError, OSError) as exc:  # server start, model file, or a client refusal
-        print(
-            f"E3: a judge call failed ({exc}); no attempt is counted, and cached calls are kept "
-            "for a rerun",
-            file=sys.stderr,
-        )
-        return 1
+    if banked is not None:  # a re-score: no server, no cache, no pid file, no failure log
+        try:
+            runs, servers = rescore_runs(configs, items, banked, skip)
+        except ValueError as exc:  # e3.MissingReplyError included
+            print(f"E3: {exc}; a re-score never calls a model", file=sys.stderr)
+            return 1
+    else:
+        state = root / STATE
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
+        try:
+            runs, servers = judge_live(configs, items, args, skip)
+        except e3.JudgeCallError as exc:
+            attempt = append_failure(failure_log, exc)
+            after = (
+                f"; the call has failed {attempt} times, so the next run excludes run "
+                f"{exc.run_id} for both judges"
+                if attempt >= e3.MAX_ATTEMPTS
+                else "; a rerun tries it again"
+            )
+            print(
+                f"E3: {exc} (attempt {attempt} of {e3.MAX_ATTEMPTS}, logged in "
+                f"{STATE}/{FAILURES}); cached calls are kept{after}",
+                file=sys.stderr,
+            )
+            return 1
+        except (RuntimeError, OSError) as exc:  # server start, model file, or a client refusal
+            print(
+                f"E3: a judge call failed ({exc}); no attempt is counted, and cached calls are "
+                "kept for a rerun",
+                file=sys.stderr,
+            )
+            return 1
     inputs = {E1_ROWS: context.rows_sha256 or ""}
     for item in items:
         inputs.update(item.sources)
-    for rel in (SEEDED_EVAL, E1_RESULTS, E2_MECHANISM, args.prereg, LOCK, f"{STATE}/{FAILURES}"):
+    for rel in (SEEDED_EVAL, E1_RESULTS, E2_MECHANISM, args.prereg, LOCK):
         if (root / rel).is_file():
             inputs[rel] = results_e4.sha256_file(root / rel)
-    records = e3.reply_records(runs, excluded=skip)
-    text_out = replies_text(records)
+    if failure is not None:  # the bytes of the log the exclusions were read from
+        inputs[failure[0]] = hashlib.sha256(failure[1].encode("utf-8")).hexdigest()
+    text_out = ""
     replies_file = replies_path(root, out)
-    replies = {
-        "path": _rel(replies_file, root),
-        "sha256": hashlib.sha256(text_out.encode("utf-8")).hexdigest(),
-        "records": len(records),
-    }
+    if banked is not None:  # the replies served are the banked file, unchanged
+        replies = {"path": banked.where, "sha256": banked.sha256, "records": len(banked.records)}
+    else:
+        records = e3.reply_records(runs, excluded=skip)
+        text_out = replies_text([e3.replies_header(servers, failure), *records])
+        replies = {
+            "path": _rel(replies_file, root),
+            "sha256": hashlib.sha256(text_out.encode("utf-8")).hexdigest(),
+            "records": len(records),
+        }
     provenance = {
         "git_sha": git_sha(root),
         "command": " ".join(["python", "tools/run_judges.py", *arguments]),
@@ -674,13 +815,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValueError as exc:
         print(f"E3: {exc}", file=sys.stderr)
         return 1
-    replies_file.parent.mkdir(parents=True, exist_ok=True)
-    replies_file.write_text(text_out, encoding="utf-8")
+    if banked is None:
+        replies_file.parent.mkdir(parents=True, exist_ok=True)
+        replies_file.write_text(text_out, encoding="utf-8")
     results_e4.write_strict_json(out, artifact)
     label = " SYNTHETIC" if artifact["synthetic"] else ""
     counts = artifact["runs"]
+    done = (
+        f"re-scored {banked.where} with no model call and wrote {out}"
+        if banked is not None
+        else f"wrote {out} and {replies_file}"
+    )
     print(
-        f"E3: wrote {out} and {replies_file} ({artifact['analysis']}{label}): {len(runs)} "
+        f"E3: {done} ({artifact['analysis']}{label}): {len(runs)} "
         f"judge(s) over {counts['judged']} of {counts['sampled']} sampled E1 runs "
         f"({len(counts['excluded'])} excluded)"
     )
