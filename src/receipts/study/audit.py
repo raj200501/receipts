@@ -337,22 +337,21 @@ def path_findings(path: str, workspace: str) -> list[tuple[str, str]]:
     return []
 
 
-def content_findings(text: str, workspace: str, written: str) -> list[tuple[str, str]]:
-    """``(kind, detail)`` for paths outside ``workspace`` named in ``text``, which the
-    agent wrote into the file ``written`` (relative to the workspace root).
-
-    Reported (kind ``content``): an absolute path under a top-level host directory
-    (:data:`TOP_LEVEL` or the workspace's own first directory) that is not inside the
-    workspace or a character device; ``~/`` or ``$HOME``; and a line whose ``..``
-    components climb above the written file's own directory. An interpreter-only
-    shebang on the first line is skipped.
-    """
+def _scan_content(text: str, workspace: str, written: str) -> list[tuple[str, str, str]]:
+    """:func:`content_findings`, each finding with the line it was found on."""
     tops = TOP_LEVEL | {part for part in workspace.split("/")[1:2] if part}
+    lines = text.splitlines() or [""]
     skip = 0
     shebang = _SHEBANG.match(text)
     if shebang is not None and text[shebang.end() : shebang.end() + 1] in ("", "\n"):
         skip = shebang.end()
-    found: dict[tuple[str, str], None] = {}
+    found: dict[tuple[str, str], str] = {}
+
+    def add(what: str, start: int) -> None:
+        number = text.count("\n", 0, start) + 1
+        line = lines[min(number, len(lines)) - 1]
+        found.setdefault(("content", f"{what} named on line {number} of {written}"), line)
+
     for path, start, _ in _absolute_paths(text):
         if start < skip:
             continue
@@ -361,18 +360,31 @@ def content_findings(text: str, workspace: str, written: str) -> list[tuple[str,
         if not parts or normalized.startswith("//") or parts[0] not in tops:
             continue
         if not _inside(normalized, workspace) and not _harmless(normalized):
-            found[("content", f"{path} named in {written}")] = None
+            add(path, start)
     for match in re.finditer(r"(?:^|(?<=[\s'\"`(=:]))~/", text):
-        found[("content", f"{_token(text, match.start(), match.end())} named in {written}")] = None
+        add(_token(text, match.start(), match.end()), match.start())
     for match in _HOME_VAR.finditer(text):
-        found[("content", f"{match.group(0)} named in {written}")] = None
+        add(match.group(0), match.start())
     depth = len([part for part in posixpath.dirname(written).split("/") if part])
-    for number, line in enumerate(text.splitlines(), start=1):
+    for number, line in enumerate(lines, start=1):
         climbs = len(_DOTDOT.findall(line))
         if climbs > depth:
             detail = f"line {number} of {written} climbs {climbs} levels with .. from depth {depth}"
-            found[("content", detail)] = None
-    return list(found)
+            found.setdefault(("content", detail), line)
+    return [(kind, detail, line) for (kind, detail), line in found.items()]
+
+
+def content_findings(text: str, workspace: str, written: str) -> list[tuple[str, str]]:
+    """``(kind, detail)`` for paths outside ``workspace`` named in ``text``, which the
+    agent wrote into the file ``written`` (relative to the workspace root).
+
+    Reported (kind ``content``), each with its line number: an absolute path under a
+    top-level host directory (:data:`TOP_LEVEL` or the workspace's own first directory)
+    that is not inside the workspace or a character device; ``~/`` or ``$HOME``; and a
+    line whose ``..`` components climb above the written file's own directory. An
+    interpreter-only shebang on the first line is skipped.
+    """
+    return [(kind, detail) for kind, detail, _ in _scan_content(text, workspace, written)]
 
 
 def _relative(path: str, workspace: str) -> str:
@@ -439,8 +451,8 @@ def _tool_call_findings(
             out.append(Finding(event.seq, tool, kind, detail + _refusal(results, event.seq), value))
     for key in CONTENT_KEYS.get(tool, ()):
         for text in _strings_under(args, key):
-            for kind, detail in content_findings(text, workspace, written or "the file"):
-                out.append(Finding(event.seq, tool, kind, detail, _excerpt(text, 0, 0)))
+            for kind, detail, line in _scan_content(text, workspace, written or "the file"):
+                out.append(Finding(event.seq, tool, kind, detail, _excerpt(line.strip(), 0, 0)))
     return out
 
 

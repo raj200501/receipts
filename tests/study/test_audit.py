@@ -261,8 +261,8 @@ def test_events_the_recorder_would_refuse_are_still_audited(run: Run) -> None:
 def test_rare_shapes_of_paths_and_text() -> None:
     assert path_findings("src/a\0b.py", WS)[0][1].endswith("holds a NUL byte")
     assert shell_findings("pushd +1", WS) == [("cd", "pushd +1 turns to a directory on the stack")]
-    found = content_findings('log = os.path.join("$HOME", "x")\n', WS, "src/app.py")
-    assert found == [("content", "$HOME named in src/app.py")]
+    found = content_findings('import os\nlog = os.path.join("$HOME", "x")\n', WS, "src/app.py")
+    assert found == [("content", "$HOME named on line 2 of src/app.py")]
 
 
 # Text the agent wrote into files ---------------------------------------------------------
@@ -288,6 +288,14 @@ def test_rare_shapes_of_paths_and_text() -> None:
 )
 def test_written_text_that_names_a_path_outside(written: str, text: str, found: bool) -> None:
     assert bool(content_findings(text, WS, written)) is found
+
+
+def test_a_finding_in_written_text_shows_its_line(run: Run) -> None:
+    text = "import os\n\n\ndef load():\n    return open('/etc/hostname').read()\n"
+    seq = run.act("write", path="src/load.py", content=text)
+    (finding,) = run.audit().findings
+    assert finding.seq == seq and finding.detail == "/etc/hostname named on line 5 of src/load.py"
+    assert finding.excerpt == "return open('/etc/hostname').read()"
 
 
 def test_written_content_is_audited_for_every_write_tool(run: Run) -> None:
