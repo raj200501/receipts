@@ -27,7 +27,7 @@ from receipts.client.models import QWEN_CODER_7B
 from receipts.client.server import LocalServer
 from receipts.evaluation import e0
 from receipts.study import aggregate, rescore
-from receipts.study.plan import ServerRequirement, amend_plan, load_plan, write_plan
+from receipts.study.plan import Plan, ServerRequirement, amend_plan, load_plan, write_plan
 
 ROOT = Path(__file__).resolve().parents[2]
 TASK = "py-api-docs"
@@ -36,6 +36,13 @@ REAL_RUN = ROOT / "artifacts" / "studies" / "smoke" / "runs" / RUN_ID
 SMOKE_PLAN = "artifacts/studies/smoke/plan.json"
 STUDIES = ("smoke", "pilot", "e1", "e4")
 Commit = Callable[[Path, str], str]
+
+
+def unamended(plan: Plan) -> Plan:
+    """``plan`` without its amendments and the runs they added: the plan as it was."""
+    added = {amendment.run_id for amendment in plan.amendments}
+    runs = [run for run in plan.runs if run.run_id not in added]
+    return dataclasses.replace(plan, runs=runs, amendments=())
 
 
 @pytest.fixture
@@ -52,8 +59,10 @@ def checkout(git_repo: Path, commit: Commit, monkeypatch: pytest.MonkeyPatch) ->
     assert tree_sha256(task) == record["provenance"]["task_tree_sha256"]
     for study in STUDIES:
         shutil.copytree(REAL_RUN, git_repo / "artifacts" / "studies" / study / "runs" / RUN_ID)
-    # A read-only copy of the REAL smoke plan, which plans the REAL run copied above.
-    shutil.copy2(ROOT / SMOKE_PLAN, git_repo / SMOKE_PLAN)
+    # The REAL smoke plan as it was before any amendment (read only), which plans the
+    # REAL run copied above; the tests amend their own copy, whether or not the real
+    # plan has been amended since.
+    write_plan(git_repo / SMOKE_PLAN, unamended(load_plan(ROOT / SMOKE_PLAN)))
     (git_repo / "README.md").write_text("SYNTHETIC scratch checkout for bank_study tests\n")
     commit(git_repo, "SYNTHETIC scratch checkout")
     monkeypatch.setattr(bank_study, "ROOT", git_repo)
