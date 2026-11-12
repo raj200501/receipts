@@ -928,3 +928,16 @@ other than the banked ones. (5) `make reproduce` (G13) gets the same time limit 
 freshness` (G10), since both re-derive every study artifact. Still open: the banked
 replies file is raw model output that nothing re-derives, so it should become immutable
 after its first commit, as banked runs are (D62).
+
+**D71. A smoke task whose request outgrows the model server's context window gets one new
+run with a larger window (G6).** Recorded 2026-11-12, before the change. The smoke runner
+excluded smoke-py-units-refactor-ma-qwen7b after three failed attempts: after its first
+turn the request no longer fits the server's 16384-token window per slot (the server
+refuses it), and the first attempt timed out on the same request. These are failures of
+the infrastructure setting, not of the agent, and the smoke study is exploratory, not
+preregistered. The excluded run stays excluded under its own id, and its failures stay
+logged. The task gets one new planned run under a new run id in the smoke study, made by
+the same agent and model with the server's window per slot raised for that run only, on
+a server with one slot. The plan change is made by a committed tool, the run records the
+window in its provenance, and the README and REPORT report it as a deviation of the smoke
+study. The runner's rule for E1 and E4 (never attempt an excluded run again) is unchanged.
