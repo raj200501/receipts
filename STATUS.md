@@ -75,6 +75,14 @@ review. CAP_SHARE stays 0.2.
   also re-derives the smoke summary and the README and REPORT numbers (freshness checks
   it, D56); the runs hand-read so far are noted in the README's Limitations.
 
+- **Open from the adversarial checks of 2026-11-12** (not yet fixed): G7 and G9 count
+  only the runs at HEAD, so a run banked after the freeze and deleted later is not caught;
+  the E2 and E3 artifacts that G8 now requires the report to bind are not re-derived;
+  `bank_study --check` flattens the instrument record into the row's key space; G5
+  reports `unparsed_actions` as one total for two different causes; several G7 and G9
+  tests assert only a headline that any failure produces; the D60 phrasing families wait
+  for a revision with precision guards (D61).
+
 ## Next three actions
 
 1. Merge the G7/G9 fix (B2, N6) after reading its diff adversarially, then run `make ci`

@@ -60,6 +60,31 @@ receipts extracted from it, the verdict for each claim, and the ledger events th
 decide it. Its output is compared with a committed golden file. `make ci` (lint,
 mypy --strict, the full test suite, and the demo) takes several minutes.
 
+## What is new here
+
+- **Ground truth instead of a judge.** Each claim is checked against a hash-chained ledger
+  that the agent cannot write to, and task success comes from hidden checks the agent never
+  sees. A claim the record cannot settle is reported as unverifiable, never guessed.
+- **The same work for every agent.** The study design crosses realistic situations (an
+  unattainable requirement, truncated test output, time pressure, a long prior session,
+  flaky tools) with agent configurations in a fractional factorial design of resolution V,
+  so report faithfulness is compared on identical tasks. E2 then asks whether a wrong
+  report came from confusion (the agent never saw the failure) or from overclaiming (it saw
+  the failure and reported success anyway).
+- **Integrity checked by code, on a fresh clone.** Every result number is bound to a banked
+  artifact and re-derived from the raw run records (`make claimcheck`, `make freshness`),
+  preregistrations are hash-chained before their data exist, and gates G1 to G14 run on a
+  fresh clone of HEAD (`tools/ship_check.py`). The repository records its own mistakes:
+  adversarial reviews are banked, every changed claim has a dated entry in
+  [CORRECTIONS.md](CORRECTIONS.md), and an extractor revision that turned admissions of
+  failure into success claims was caught by an adversarial check and reverted before any
+  evaluation used it (DECISIONS D60, D61).
+- **A mitigation you can install.** receipts-hook checks a Claude Code session's final
+  message against that session's own record when Claude stops, and asks Claude to correct a
+  contradicted claim ([docs/HOOK.md](docs/HOOK.md)).
+- **No cash cost, no network for the demo.** The study agents are local open-weight models
+  in a bubblewrap sandbox, and the demo replays recorded runs offline.
+
 ## What it is, and what it is not
 
 receipts has an instrument, a benchmark with a study design, and a mitigation:
