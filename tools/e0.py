@@ -16,6 +16,7 @@
                              [--out FILE]
     python tools/e0.py split --packets DIR [--merged FILE]
     python tools/e0.py evaluate [--split heldout|dev] [--allow-dirty] [--out FILE]
+    python tools/e0.py recheck
     python tools/e0.py completeness [--runs DIR...] [--bench DIR] [--out FILE]
 
 The logic lives in ``receipts.evaluation.e0``; docs/E0_PROTOCOL.md ("Files and
@@ -24,11 +25,14 @@ network. Blind labelers, writers, and adjudicators run ``check-labels``, ``check
 and ``check-adjudication``: those commands never import ``receipts.claims`` or
 ``receipts.verify``. The claim-type counts gate G5 reads come from blind labels
 (``counts --method blind-labels``, DECISIONS D34); extractor counts are descriptive output
-in a file of their own.
+in a file of their own. ``recheck`` scores the held-out half again, writes nothing, and
+logs no attempt; gate G5 runs it in its clone (DECISIONS D66).
 
 Exit status: 0 on success, 1 when a check finds problems (``check-labels``, ``check-raw``,
 and ``check-adjudication``; ``label-packets`` when a packet would void its labeler;
-``blindness`` when merge or counts would refuse its result), 2 when a step refuses.
+``blindness`` when merge or counts would refuse its result; ``recheck`` when the
+held-out evaluation is not what its reports score now), 2 when a step refuses. A
+refusal or a ``recheck`` difference is one ``e0 <step>: <reason>`` line on stderr.
 """
 
 from __future__ import annotations
@@ -271,6 +275,28 @@ def cmd_evaluate(args: argparse.Namespace, root: Path, command: str) -> int:
     return _written(path, root, f"{data['split']}, {data['reports']} reports; {verdict}")
 
 
+def cmd_recheck(args: argparse.Namespace, root: Path, command: str) -> int:
+    """Score the held-out half again and compare it with the committed evaluation.
+
+    The check gate G5 runs in its clone (DECISIONS D66): it calls no model, writes no
+    file, and logs no attempt. Exits 1, with the differing fields and the first
+    differing item on one stderr line, when ``artifacts/e0/seeded_eval.json`` is not what
+    the held-out reports score now, and 2 (through :func:`main`) when it refuses: it
+    cannot score them again, or could only with code other than the evaluated commit's.
+    """
+    del args, command
+    try:
+        data = e0.recheck(root)
+    except e0.RecheckMismatchError as exc:
+        print(f"e0 recheck: {exc}", file=sys.stderr)
+        return 1
+    print(
+        f"recheck: {e0.EVAL} (attempt {data.get('attempt')}) is what its {data.get('reports')} "
+        "held-out reports score now; nothing written, no attempt logged"
+    )
+    return 0
+
+
 def _rate(entry: dict[str, object], name: str) -> str:
     value, interval = entry[name], entry[f"{name}_ci"]
     if not isinstance(value, float) or not isinstance(interval, list):
@@ -359,6 +385,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-dirty", action="store_true", help="dev split only (refused for heldout)"
     )
     p.add_argument("--out", help=f"output file (default {e0.EVAL} or {e0.EVAL_DEV})")
+    add(
+        "recheck",
+        cmd_recheck,
+        f"score the held-out half again and compare it with {e0.EVAL} (writes nothing)",
+    )
     p = add("completeness", cmd_completeness, "E0b ledger completeness")
     p.add_argument("--runs", nargs="+", help=f"banked runs directories (default {e0.SMOKE_RUNS})")
     p.add_argument("--bench", help="benchmark tasks directory (default bench/tasks)")

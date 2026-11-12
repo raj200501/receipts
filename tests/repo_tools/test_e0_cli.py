@@ -11,11 +11,13 @@ tree (tools/ship_check.py) on what this tool writes.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import itertools
 import json
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +29,7 @@ from receipts.evaluation import e0
 from receipts.evaluation.seeded import VERDICTS
 from tests.evaluation.test_e0 import (
     LABEL_TOP5,
+    REQUIREMENTS,
     SMOKE_AGENT,
     label_output,
     make_world,
@@ -518,11 +521,18 @@ def test_artifacts_carry_the_fields_of_the_plan_g5_row(
     for named in (
         "`artifacts/e0/claim_type_counts.json` (`counts`, `source_runs`)",
         "`artifacts/e0/seeded_eval.json` (`split: heldout`, `heldout_manifest`, `items[]` with "
-        "`report_id`, `claim_type`, `gold_verdict`, `pred_verdict`)",
+        "`report_id`, `claim_type`, `gold_verdict`, `pred_verdict`; `verifier_mode`, "
+        "`reports`, `report_requirements`, `per_type`, `top5`, `passes`, `all_top5_pass`, "
+        "`instrument` (`commit`, `paths`, `trees`, `dirty`, `uncommitted`), `attempt`, "
+        "`attempts_log`)",
+        "`artifacts/e0/heldout_attempts.jsonl` (one line per held-out scoring: `attempt`, "
+        "`created`, `command`, `commit`, `trees`, `passes`, `all_top5_pass`, `per_type` with "
+        "`correct`, `predicted`, `gold`)",
         "`artifacts/e0/heldout_manifest.json` (`reports: {id: sha256}`)",
         "`artifacts/e0/seeded/heldout/<id>.json`",
         "`artifacts/e0/ledger_completeness.json` (`runs_dirs`; `runs[]` with "
         "`transcript_commands`, `ledger_commands`, `missing`, `unparsed_actions`)",
+        "the output of `tools/e0.py recheck` run in the clone after `make setup`",
     ):
         assert named in row
     paths = pipeline(git_repo, commit, capsys)
@@ -543,6 +553,27 @@ def test_artifacts_carry_the_fields_of_the_plan_g5_row(
         {"report_id", "claim_type", "gold_verdict", "pred_verdict"} <= set(i)
         for i in evaluation["items"]
     )
+    # What G5 re-derives with tools/e0.py recheck and compares with the attempt log (D66).
+    assert set(e0.RECHECKED_FIELDS) <= set(evaluation)
+    instrument = evaluation["instrument"]
+    assert {"commit", "paths", "trees", "dirty", "uncommitted"} <= set(instrument)
+    assert set(instrument["trees"]) == set(instrument["paths"])
+    assert evaluation["attempt"] == 1 and evaluation["attempts_log"] == e0.ATTEMPTS
+    (line,) = (git_repo / e0.ATTEMPTS).read_text("utf-8").splitlines()
+    logged = json.loads(line)
+    assert {
+        "attempt",
+        "created",
+        "command",
+        "commit",
+        "trees",
+        "passes",
+        "all_top5_pass",
+        "per_type",
+    } <= set(logged)
+    assert all(
+        set(ship_check.ATTEMPT_COUNTS) <= set(counts) for counts in logged["per_type"].values()
+    )
     for report_id, digest in manifest["reports"].items():
         assert e0.sha256_file(git_repo / e0.SEEDED / "heldout" / f"{report_id}.json") == digest
     fields = {"transcript_commands", "ledger_commands", "missing", "unparsed_actions"}
@@ -554,6 +585,193 @@ def test_artifacts_carry_the_fields_of_the_plan_g5_row(
         assert gate_counts(plain, name) == (entry["correct"], entry["predicted"], entry["gold"])
     _, predicted, _ = gate_counts(evaluation["items"], "file_modified")
     assert predicted == evaluation["per_type"]["file_modified"]["predicted"] + 1
+
+
+# ---------------------------------------------------------------- the re-scoring (D66)
+
+
+def evaluated(root: Path, commit: Commit, capsys: pytest.CaptureFixture[str]) -> str:
+    """The command-line pipeline, a frozen held-out half, and one committed held-out
+    attempt (``tools/e0.py evaluate``). Returns the commit that holds them."""
+    pipeline(root, commit, capsys)
+    commit(root, "freeze the held-out half")
+    assert run(root, "evaluate") == 0
+    capsys.readouterr()
+    return commit(root, "the first held-out attempt")
+
+
+def retype_first_prediction(root: Path) -> None:
+    """Hand-edit the first prediction of the committed evaluation (SYNTHETIC tampering)."""
+    data = json.loads((root / e0.EVAL).read_text("utf-8"))
+    item = next(i for i in data["items"] if i["pred_verdict"])
+    item["pred_verdict"] = "contradicted" if item["pred_verdict"] == "supported" else "supported"
+    e0.write_json(root / e0.EVAL, data)
+
+
+def test_recheck_through_the_command_line(
+    git_repo: Path, commit: Commit, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pipeline(git_repo, commit, capsys)
+    assert run(git_repo, "recheck") == 2
+    assert capsys.readouterr().err == f"e0 recheck: {e0.EVAL}: file not found\n"
+    commit(git_repo, "freeze the held-out half")
+    assert run(git_repo, "evaluate") == 0
+    commit(git_repo, "the first held-out attempt")
+    capsys.readouterr()
+    before = {rel: (git_repo / rel).read_bytes() for rel in (e0.EVAL, e0.ATTEMPTS)}
+    assert run(git_repo, "recheck") == 0
+    assert capsys.readouterr().out == (
+        f"recheck: {e0.EVAL} (attempt 1) is what its 2 held-out reports score now; "
+        "nothing written, no attempt logged\n"
+    )
+    assert {rel: (git_repo / rel).read_bytes() for rel in before} == before
+    # A difference exits 1 and names it on stderr, where gate G5 reads it.
+    retype_first_prediction(git_repo)
+    assert run(git_repo, "recheck") == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith(
+        f"e0 recheck: {e0.EVAL} differs from a new scoring of the held-out reports in items; "
+        "first differing item: items[0] (report rep-3, "
+    )
+    assert captured.err.count("\n") == 1
+    # A refusal exits 2.
+    (git_repo / "src/receipts/claims").mkdir(parents=True)
+    (git_repo / "src/receipts/claims/wip.py").write_text("x = 1\n", "utf-8")
+    assert run(git_repo, "recheck") == 2
+    assert "the instrument has uncommitted changes" in capsys.readouterr().err
+
+
+class CliContext(ship_check.Context):
+    """A gate Context on a SYNTHETIC repository: ``make`` succeeds, and a repository script
+    is this working tree's ``tools/e0.py``, run in process on the repository ``clone``."""
+
+    def make(self, target: str, timeout: float, *args: str, **kw: Any) -> ship_check.CmdResult:
+        return ship_check.CmdResult(f"make-{target}", 0, "", "", 0.0)
+
+    def python(self, name: str, script_args: Sequence[str], timeout: float) -> ship_check.CmdResult:
+        assert script_args[0] == "tools/e0.py"
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main(list(script_args[1:]), root=self.clone)
+        return ship_check.CmdResult(name, code, out.getvalue(), err.getvalue(), 0.0)
+
+
+def cli_context(root: Path, sha: str) -> CliContext:
+    """A fresh :class:`CliContext` (its results cache empty) on ``root`` at ``sha``."""
+    return CliContext(orig=root, clone=root, logs=root, fast=True, sha=sha)
+
+
+def retype_per_type(root: Path) -> None:
+    """Hand-edit a per-type count of the committed evaluation (SYNTHETIC tampering): one
+    fewer correct file_modified claim, its pass left as it was."""
+    data = json.loads((root / e0.EVAL).read_text("utf-8"))
+    data["per_type"]["file_modified"]["correct"] -= 1
+    e0.write_json(root / e0.EVAL, data)
+
+
+def edit_requirement(root: Path) -> None:
+    """Edit a requirement text of the task the held-out reports' ledgers name, after the
+    scoring (SYNTHETIC task files): the digests the evaluation recorded (D54) go stale."""
+    task = root / "bench" / "tasks" / "py-alpha" / "task.toml"
+    text = task.read_text("utf-8")
+    assert REQUIREMENTS["R2"] in text
+    task.write_text(text.replace(REQUIREMENTS["R2"], "The parser rejects bad rows fast."), "utf-8")
+
+
+@pytest.mark.parametrize(
+    ("tamper", "named"),
+    [
+        pytest.param(
+            retype_first_prediction,
+            r"in items; first differing item: items\[0\] \(report rep-3, \w+\): pred_verdict ",
+            id="typed-prediction",
+        ),
+        pytest.param(retype_per_type, r"in per_type \(file_modified\)$", id="typed-per-type"),
+        pytest.param(
+            edit_requirement, r"in report_requirements \(rep-3, rep-9\)", id="edited-requirement"
+        ),
+    ],
+)
+def test_g5_reruns_the_scoring_this_tool_records(
+    git_repo: Path,
+    commit: Commit,
+    capsys: pytest.CaptureFixture[str],
+    tamper: Callable[[Path], None],
+    named: str,
+) -> None:
+    """The G5 code of this working tree (ship_check.rescored_heldout) runs ``tools/e0.py
+    recheck`` on the evaluation this tool writes, with the real extractor and verifier: it
+    passes, and a prediction or a per-type count typed into the file, or a requirement
+    text edited after the scoring, fails with the tool's reason, so the producer and the
+    gate cannot drift (review B6, D66)."""
+    sha = evaluated(git_repo, commit, capsys)
+    ship_check.rescored_heldout(cli_context(git_repo, sha))
+    tamper(git_repo)
+    sha = commit(git_repo, "change the evaluation or its inputs after the held-out scoring")
+    with pytest.raises(
+        ship_check.GateError,
+        match=r"^the held-out scoring was not reproduced in the clone \(tools/e0\.py recheck, "
+        r"exit 1\): e0 recheck: artifacts/e0/seeded_eval\.json differs from a new scoring of "
+        r"the held-out reports " + named,
+    ):
+        ship_check.rescored_heldout(cli_context(git_repo, sha))
+
+
+def edit_source(root: Path, rel: str) -> None:
+    """Append a SYNTHETIC comment to the source file ``rel`` of the world ``root``, copied
+    from this repository first when the world lacks it."""
+    path = root / rel
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes((REPO / rel).read_bytes())
+    edited = path.read_text("utf-8") + "# SYNTHETIC edit after a held-out attempt\n"
+    path.write_text(edited, "utf-8")
+
+
+def test_g5_reads_the_attempt_log_this_tool_writes(
+    git_repo: Path, commit: Commit, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ship_check.heldout_attempt reads the log that ``tools/e0.py evaluate`` appends to
+    (receipts.evaluation.e0.log_attempt): a re-score on the same instrument is the next
+    attempt, also after an edit to code that sits beside the instrument in the logged
+    directories but that the scoring never loads (DECISIONS D36; review B6, FR1), and one
+    after the instrument changed fails (D66). The world commits this repository's
+    instrument files (gate G5's import closure), so each logged commit holds the
+    instrument; the scoring runs this working tree's package."""
+    for rel in ship_check.instrument_files(REPO):
+        (git_repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (git_repo / rel).write_bytes((REPO / rel).read_bytes())
+    evaluated(git_repo, commit, capsys)
+
+    def evaluation() -> dict[str, Any]:
+        return dict(json.loads((git_repo / e0.EVAL).read_text("utf-8")))
+
+    assert ship_check.heldout_attempt(git_repo, evaluation()) == 1
+    assert run(git_repo, "evaluate") == 0
+    commit(git_repo, "the held-out half scored again, same instrument")
+    assert ship_check.heldout_attempt(git_repo, evaluation()) == 2
+    # Old code: FAIL, since the logged trees of src/receipts/evaluation and
+    # src/receipts/bench changed.
+    for rel in ("src/receipts/evaluation/e3.py", "src/receipts/bench/validate.py"):
+        assert rel not in ship_check.instrument_files(git_repo)
+        edit_source(git_repo, rel)
+    commit(git_repo, "E3 and benchmark changes after the held-out scoring")
+    assert run(git_repo, "evaluate") == 0
+    commit(git_repo, "the held-out half scored again, same instrument")
+    assert ship_check.heldout_attempt(git_repo, evaluation()) == 3
+    edit_source(git_repo, "src/receipts/claims/patterns.py")
+    commit(git_repo, "revise the extractor")
+    assert run(git_repo, "evaluate") == 0
+    commit(git_repo, "the held-out half scored after the revision")
+    capsys.readouterr()
+    with pytest.raises(
+        ship_check.GateError,
+        match=r"^attempt 1 of artifacts/e0/heldout_attempts\.jsonl scored another instrument "
+        r"than attempt 4 \(changed: src/receipts/claims/patterns\.py\): the held-out half was "
+        r"scored again after the instrument changed",
+    ):
+        ship_check.heldout_attempt(git_repo, evaluation())
 
 
 # ---------------------------------------------------------------- blindness of the checks

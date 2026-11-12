@@ -30,7 +30,9 @@ order (docs/E0_PROTOCOL.md, "Files and commands"):
    held-out half only on committed code, with the top five from checked counts, and
    every attempt logged. Every report is verified in the preregistered verifier mode
    (:data:`VERIFIER_MODE`): with the requirement texts of the task its ledger's
-   ``run_start`` names (:func:`score_document`).
+   ``run_start`` names (:func:`score_document`). :func:`recheck` scores the held-out half
+   again on the same path (:func:`score_split`), logs nothing, writes nothing, and
+   requires the committed evaluation to hold that result (gate G5, DECISIONS D66).
 10. :func:`completeness_artifact`: E0b ledger completeness.
 
 Blindness: labelers, writers, and adjudicators run ``check-labels``, ``check-raw``, and
@@ -49,6 +51,7 @@ import hashlib
 import json
 import re
 import subprocess
+import sys
 import tomllib
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
@@ -151,6 +154,29 @@ EVAL = "artifacts/e0/seeded_eval.json"
 EVAL_DEV = "artifacts/e0/seeded_eval_dev.json"
 #: Every held-out evaluation appends one line here, so repeated scoring stays visible.
 ATTEMPTS = "artifacts/e0/heldout_attempts.jsonl"
+#: The fields of the held-out evaluation that :func:`recheck` derives again and requires
+#: unchanged (gate G5, DECISIONS D66): the verifier mode, the report count, the
+#: requirement digests (D54), the scoring items with their predictions, and every result
+#: computed from them, which the gate and the analyses read. The other fields that
+#: :func:`score_split` gives are fixed texts or name its inputs (the manifest, the counts,
+#: the attempt log), which the gate checks in the repository itself. When, where, and on
+#: which commit the scoring ran (``instrument``, ``attempt``, ``provenance``) are not
+#: compared, since a later commit can hold the same instrument: gate G5 holds the
+#: instrument files unchanged since the evaluated commit and checks the attempt against
+#: the attempt log.
+RECHECKED_FIELDS: tuple[str, ...] = (
+    "verifier_mode",
+    "reports",
+    "report_requirements",
+    "items",
+    "per_type",
+    "top5",
+    "passes",
+    "all_top5_pass",
+)
+#: The ``receipts`` package's own ``__init__.py``, which holds only the version: gate G5
+#: leaves it out of the instrument it binds, and :func:`loaded_sources` leaves it out.
+PACKAGE_INIT = "src/receipts/__init__.py"
 COMPLETENESS = "artifacts/e0/ledger_completeness.json"
 BLINDNESS = "artifacts/e0/blindness.json"
 CLAIM_TYPES_DOC = "docs/CLAIM_TYPES.md"
@@ -203,7 +229,7 @@ INSTRUMENT_RULES: tuple[tuple[str, str], ...] = (
     (
         "command",
         r"receipts-hook|\breceipts\s+(?:check|wrap)\b|\breceipts\.(?:cli|hook)\b"
-        r"|\be0\.py\s+(?:counts|evaluate)\b",
+        r"|\be0\.py\s+(?:counts|evaluate|recheck)\b",
     ),
     (
         "output",
@@ -275,6 +301,11 @@ _SUBJECT_KEYS = ("path", "command", "name", "description", "target", "tool", "sc
 
 class E0Error(Exception):
     """A refusal: the inputs or the repository state do not allow this step."""
+
+
+class RecheckMismatchError(E0Error):
+    """:func:`recheck` scored the held-out half again and the committed evaluation does
+    not hold that result (a check that found a problem, not a refusal)."""
 
 
 # ---------------------------------------------------------------- files and git
@@ -2692,39 +2723,28 @@ def log_attempt(root: Path, result: Mapping[str, Any], command: str) -> int:
     return attempt
 
 
-def evaluate(
-    root: Path, split: str = "heldout", *, command: str, allow_dirty: bool = False
-) -> dict[str, Any]:
-    """Score the instrument on the seeded ``split`` (``heldout`` for G5, or ``dev``).
+def score_split(root: Path, split: str, instrument: Mapping[str, Any]) -> dict[str, Any]:
+    """The scoring of the seeded ``split``: what :func:`evaluate` records, and what
+    :func:`recheck` derives again, on this one path.
 
-    For ``heldout``: ``allow_dirty`` is refused; SCORING_PATHS must have no uncommitted
-    change; :func:`check_frozen_heldout` must pass; ``claim_type_counts.json`` must pass
-    :func:`heldout_counts`; and ``ATTEMPTS`` must have no uncommitted change. The run is
-    then logged there (:func:`log_attempt`) and numbered in ``attempt``. A top-five type
-    passes only with predictions and gold claims and P >= 0.95 and R >= 0.90, and all
-    pass only when five types were counted. ``dev`` checks none of this (it is the
-    development loop, so a dirty instrument is recorded, not refused), is not logged,
-    and is never read by the gate.
-
-    Both splits verify every report in :data:`VERIFIER_MODE` (:func:`score_document`)
-    and record it: ``verifier_mode``, and ``report_requirements`` with each scored
-    report's ``task_id`` and ``requirements_sha256``.
+    For ``heldout`` it scores the reports of the frozen held-out manifest
+    (:func:`check_frozen_heldout`) and ranks the top five from counts that pass
+    :func:`heldout_counts` (against ``instrument``, the caller's
+    :func:`instrument_state`); for ``dev`` every dev report and whatever counts exist.
+    Every report is verified in :data:`VERIFIER_MODE` (:func:`score_document`), and
+    ``verifier_mode`` and ``report_requirements`` (each scored report's ``task_id`` and
+    ``requirements_sha256``) record it. A top-five type passes only with predictions and
+    gold claims and P >= 0.95 and R >= 0.90, and all pass only when five types were
+    counted. It refuses nothing about the instrument, logs no attempt, and writes no
+    file; the result has every field of the evaluation but ``instrument``, ``attempt``,
+    and ``provenance``.
     """
     if split not in ("heldout", "dev"):
         raise E0Error(f"unknown split {split!r}")
     heldout = split == "heldout"
-    if heldout and allow_dirty:
-        raise E0Error("--allow-dirty is not allowed for the held-out split")
-    instrument = instrument_state(root, SCORING_PATHS, allow_dirty=allow_dirty)
     manifest_sha = None
     counts_path = root / COUNTS
     if heldout:
-        refuse_dirty(instrument)
-        if uncommitted(root, ATTEMPTS):
-            raise E0Error(
-                f"{ATTEMPTS} has uncommitted changes: commit the earlier held-out attempt "
-                "before scoring again"
-            )
         manifest = check_frozen_heldout(root)
         files = [root / SEEDED / "heldout" / f"{rid}.json" for rid in sorted(manifest["reports"])]
         manifest_sha = sha256_file(root / MANIFEST)
@@ -2754,7 +2774,7 @@ def evaluate(
         scores.setdefault(name, TypeScore(name, 0, 0, 0))
     per_type = {name: type_entry(result) for name, result in sorted(scores.items())}
     passes = {name: bool(per_type[name]["meets_thresholds"]) for name in top5}
-    result: dict[str, Any] = {
+    return {
         "schema": "receipts.e0.seeded_eval/1",
         "split": split,
         "synthetic_reports": True,
@@ -2774,14 +2794,237 @@ def evaluate(
         "passes": passes,
         "all_top5_pass": len(top5) == TOP_N and all(passes.values()),
         "matching": MATCHING_RULE,
-        "instrument": instrument,
-        "attempt": None,
         "attempts_log": ATTEMPTS if heldout else None,
-        "provenance": provenance(root, command),
     }
+
+
+def evaluate(
+    root: Path, split: str = "heldout", *, command: str, allow_dirty: bool = False
+) -> dict[str, Any]:
+    """Score the instrument on the seeded ``split`` (``heldout`` for G5, or ``dev``).
+
+    For ``heldout``: ``allow_dirty`` is refused; SCORING_PATHS must have no uncommitted
+    change; :func:`check_frozen_heldout` must pass; ``claim_type_counts.json`` must pass
+    :func:`heldout_counts`; and ``ATTEMPTS`` must have no uncommitted change. The run is
+    then logged there (:func:`log_attempt`) and numbered in ``attempt``. A top-five type
+    passes only with predictions and gold claims and P >= 0.95 and R >= 0.90, and all
+    pass only when five types were counted. ``dev`` checks none of this (it is the
+    development loop, so a dirty instrument is recorded, not refused), is not logged,
+    and is never read by the gate.
+
+    Both splits verify every report in :data:`VERIFIER_MODE` (:func:`score_document`)
+    and record it: ``verifier_mode``, and ``report_requirements`` with each scored
+    report's ``task_id`` and ``requirements_sha256``. The scoring is :func:`score_split`,
+    which :func:`recheck` runs again; this adds the ``instrument`` record, the
+    ``attempt``, and the ``provenance``.
+    """
+    if split not in ("heldout", "dev"):
+        raise E0Error(f"unknown split {split!r}")
+    heldout = split == "heldout"
+    if heldout and allow_dirty:
+        raise E0Error("--allow-dirty is not allowed for the held-out split")
+    instrument = instrument_state(root, SCORING_PATHS, allow_dirty=allow_dirty)
+    if heldout:
+        refuse_dirty(instrument)
+        if uncommitted(root, ATTEMPTS):
+            raise E0Error(
+                f"{ATTEMPTS} has uncommitted changes: commit the earlier held-out attempt "
+                "before scoring again"
+            )
+    result = score_split(root, split, instrument)
+    result["instrument"] = instrument
+    result["attempt"] = None
+    result["provenance"] = provenance(root, command)
     if heldout:
         result["attempt"] = log_attempt(root, result, command)
     return result
+
+
+_HEX40 = re.compile(r"[0-9a-f]{40}")
+
+
+def is_commit(root: Path, sha: object) -> bool:
+    """True if ``sha`` is the full hex name of a commit of ``root``."""
+    if not isinstance(sha, str) or _HEX40.fullmatch(sha) is None:
+        return False
+    proc = subprocess.run(
+        ["git", "-C", str(root), "cat-file", "-e", f"{sha}^{{commit}}"],
+        capture_output=True,
+        check=False,
+    )
+    return proc.returncode == 0
+
+
+def loaded_sources(root: Path) -> list[str]:
+    """The files under ``root/src`` of the modules this process has loaded, relative to
+    ``root`` and sorted: after a scoring, the code that scoring ran. :data:`PACKAGE_INIT`
+    is left out, as gate G5 leaves it out of the instrument it binds."""
+    base, top = (root / "src").resolve(), root.resolve()
+    found: set[str] = set()
+    for module in list(sys.modules.values()):
+        name = getattr(module, "__file__", None)
+        if isinstance(name, str):
+            path = Path(name).resolve()
+            if path.is_relative_to(base):
+                found.add(path.relative_to(top).as_posix())
+    found.discard(PACKAGE_INIT)
+    return sorted(found)
+
+
+def require_evaluated_code(root: Path, recorded: Mapping[str, Any]) -> None:
+    """Refuse unless this process scored with the code of the evaluation's instrument
+    commit (``instrument.commit`` in ``recorded``, a commit of ``root``): every file
+    :func:`loaded_sources` lists must have no uncommitted change and be the same git blob
+    at HEAD as at that commit. So :func:`recheck` never reports a scoring of the held-out
+    half made with other code, which would be a held-out attempt that no log records;
+    scoring a revised instrument is a new attempt, which :func:`evaluate` logs. Gate G5
+    already holds the instrument files unchanged since that commit, so in its clone this
+    refuses nothing G5 would pass. Raises E0Error naming up to five differing files."""
+    instrument = recorded.get("instrument")
+    sha = instrument.get("commit") if isinstance(instrument, dict) else None
+    if not is_commit(root, sha):
+        raise E0Error(
+            f"{EVAL} records no evaluated commit of this repository (instrument.commit "
+            f"{sha!r}), so recheck cannot tell which code to score with"
+        )
+    loaded = loaded_sources(root)
+    if not loaded:
+        return
+    changed = set(uncommitted(root, *loaded))
+    changed |= {rel for rel in loaded if tree_id(root, rel, str(sha)) != tree_id(root, rel)}
+    if changed:
+        listed = ", ".join(sorted(changed)[:5]) + (", ..." if len(changed) > 5 else "")
+        raise E0Error(
+            f"the code recheck scored with is not the code of the evaluated commit "
+            f"{str(sha)[:12]} ({listed}): recheck scores the held-out half only with the "
+            "instrument the evaluation scored"
+        )
+
+
+_ABSENT = object()
+
+
+def _same_json(first: object, second: object) -> bool:
+    """True when two JSON values are the same: as canonical JSON, so a ``true`` is not a
+    ``1`` and a ``1.0`` is not a ``1``, though Python's ``==`` takes them as equal."""
+    if first is _ABSENT or second is _ABSENT:
+        return first is second
+    return canonical_json(first) == canonical_json(second)
+
+
+def _shown(value: object) -> str:
+    """A short form of a JSON value for a message (at most 60 characters)."""
+    if value is _ABSENT:
+        return "no value"
+    text = canonical_json(value)
+    return text if len(text) <= 60 else text[:57] + "..."
+
+
+def _differing_keys(first: Mapping[str, Any], second: Mapping[str, Any]) -> list[str]:
+    """The keys whose values differ between two JSON objects (a key one lacks included)."""
+    return sorted(
+        str(key)
+        for key in set(first) | set(second)
+        if not _same_json(first.get(key, _ABSENT), second.get(key, _ABSENT))
+    )
+
+
+def _first_item_difference(old: Sequence[object], fresh: Sequence[Mapping[str, Any]]) -> str:
+    """The first scoring item that differs between the file's list (``old``) and the new
+    scoring (``fresh``): its index, report, and claim type, and the keys that differ."""
+    for index in range(max(len(old), len(fresh))):
+        was = old[index] if index < len(old) else _ABSENT
+        new = fresh[index] if index < len(fresh) else _ABSENT
+        if _same_json(was, new):
+            continue
+        shown = new if isinstance(new, dict) else was if isinstance(was, dict) else {}
+        label = f"items[{index}] (report {shown.get('report_id')}, {shown.get('claim_type')})"
+        if was is _ABSENT:
+            return f"{label} is only in the new scoring"
+        if new is _ABSENT:
+            return f"{label} is only in the file"
+        if not isinstance(was, dict) or not isinstance(new, dict):
+            return f"{label} is not an object in the file"
+        keys = _differing_keys(was, new)
+        return f"{label}: " + "; ".join(
+            f"{key} {_shown(was.get(key, _ABSENT))} in the file, "
+            f"{_shown(new.get(key, _ABSENT))} scored again"
+            for key in keys[:3]
+        )
+    return ""
+
+
+def recheck_differences(recorded: Mapping[str, Any], fresh: Mapping[str, Any]) -> list[str]:
+    """How the evaluation ``recorded`` differs from the new scoring ``fresh`` in
+    :data:`RECHECKED_FIELDS`, compared as JSON: one entry per differing field, in that
+    order, naming the first three keys that differ in an object (``per_type
+    (file_modified)``), ``(missing)`` for a field the file lacks, or ``(not a list in the
+    file)`` for items that are not a list, and then, when two lists of items differ, the
+    first differing item. Empty when they agree."""
+    out: list[str] = []
+    item = ""
+    for name in RECHECKED_FIELDS:
+        if name not in recorded:
+            out.append(f"{name} (missing)")
+            continue
+        was, new = recorded[name], fresh[name]
+        if _same_json(was, new):
+            continue
+        if isinstance(was, dict) and isinstance(new, dict):
+            keys = _differing_keys(was, new)
+            listed = ", ".join(keys[:3]) + (", ..." if len(keys) > 3 else "")
+            out.append(f"{name} ({listed})")
+        elif name == "items" and not isinstance(was, list):
+            out.append(f"{name} (not a list in the file)")
+        else:
+            out.append(name)
+            if name == "items":
+                item = _first_item_difference(was, new)
+    return out + ([f"first differing item: {item}"] if item else [])
+
+
+def recheck(root: Path) -> dict[str, Any]:
+    """Score the held-out half again and require ``EVAL`` to hold that result (gate G5,
+    review B6, DECISIONS D66). Returns the evaluation as the file holds it.
+
+    No model is called and nothing changes: it logs no attempt and writes no file. It
+    reads ``EVAL``, requires the held-out split, and scores every report of the frozen
+    held-out manifest again through :func:`score_split`, the path :func:`evaluate`
+    takes, with the committed instrument at HEAD (SCORING_PATHS must have no uncommitted
+    change, so the code re-run is the code a commit holds), and reports nothing unless the
+    code it scored with is the code of the evaluated commit (:func:`require_evaluated_code`).
+    Every field of :data:`RECHECKED_FIELDS` must equal the new result as JSON
+    (:func:`recheck_differences`), so a prediction typed into the file, a typed per-type
+    value or pass, or a requirement text edited after the scoring (its digest in
+    ``report_requirements``, D54) shows.
+    Raises :class:`RecheckMismatchError` naming the differing fields and the first differing
+    item, and E0Error when it cannot score again: ``EVAL`` missing, not a JSON object, or
+    not the held-out split; a dirty instrument; a step :func:`score_split` refuses (a
+    held-out half or ledger changed since it was frozen, unchecked counts, or a task whose
+    requirements do not load); or scoring code other than the evaluated commit's.
+    """
+    recorded, error = read_json(root / EVAL)
+    if error is not None:
+        raise E0Error(f"{EVAL}: {error}")
+    if not isinstance(recorded, dict):
+        raise E0Error(f"{EVAL} is not a JSON object")
+    if recorded.get("split") != "heldout":
+        raise E0Error(
+            f"{EVAL} is not the held-out split (split {recorded.get('split')!r}); recheck "
+            "scores the held-out half"
+        )
+    instrument = instrument_state(root, SCORING_PATHS)
+    refuse_dirty(instrument)
+    fresh = json.loads(dump_json(score_split(root, "heldout", instrument)))
+    require_evaluated_code(root, recorded)
+    differences = recheck_differences(recorded, fresh)
+    if differences:
+        fields = [d for d in differences if not d.startswith("first differing item: ")]
+        message = f"{EVAL} differs from a new scoring of the held-out reports in " + ", ".join(
+            fields
+        )
+        raise RecheckMismatchError("; ".join([message, *differences[len(fields) :]]))
+    return recorded
 
 
 # ---------------------------------------------------------------- 10. completeness

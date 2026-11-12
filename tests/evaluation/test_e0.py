@@ -9,6 +9,7 @@ tests/evaluation/test_e0_labels.py and tests/repo_tools/test_e0_cli.py.
 
 from __future__ import annotations
 
+import importlib.util
 import itertools
 import json
 import re
@@ -1246,6 +1247,8 @@ INDIRECT_ROUTES: list[tuple[str, dict[str, Any]]] = [
     ("Bash", {"command": "python -c 'from receipts import claims; print(claims.__file__)'"}),
     ("Bash", {"command": "uv run receipts check --report draft.md --ledger ledger.jsonl"}),
     ("Bash", {"command": "uv run --no-sync python tools/e0.py evaluate --split dev"}),
+    # The re-scoring gate G5 runs prints the instrument's predictions when they differ.
+    ("Bash", {"command": "python tools/e0.py recheck"}),
     ("Write", {"file_path": "/tmp/peek.py", "content": "from receipts.hook import main\n"}),
     (
         "MultiEdit",
@@ -2391,6 +2394,288 @@ def test_requirements_sha256_is_the_digest_of_the_sorted_mapping() -> None:
     assert e0.requirements_sha256({**REQUIREMENTS, "R2": "Another text."}) != (
         e0.requirements_sha256(REQUIREMENTS)
     )
+
+
+# ---------------------------------------------------------------- recheck (gate G5, D66)
+
+
+def evaluated(root: Path, commit: Commit) -> dict[str, Any]:
+    """The synthetic world's held-out half scored once (:func:`frozen`), with the
+    evaluation and its attempt line committed, as ``tools/e0.py evaluate`` leaves them.
+    Returns the evaluation as the file holds it."""
+    frozen(root, commit)
+    result = e0.evaluate(root, "heldout", command="synthetic evaluate")
+    e0.write_json(root / e0.EVAL, result)
+    commit(root, "the first held-out attempt")
+    return dict(json.loads((root / e0.EVAL).read_text("utf-8")))
+
+
+def edit_evaluation(root: Path, edit: Callable[[dict[str, Any]], object]) -> None:
+    """Apply ``edit`` to the committed evaluation file in place (a hand edit)."""
+    data = json.loads((root / e0.EVAL).read_text("utf-8"))
+    edit(data)
+    e0.write_json(root / e0.EVAL, data)
+
+
+def worktree_state(root: Path) -> str:
+    """Every change, untracked file, and ignored file git sees under ``root``."""
+    return subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all", "--ignored"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
+def test_recheck_scores_the_heldout_half_again_and_changes_nothing(
+    git_repo: Path, commit: Commit
+) -> None:
+    recorded = evaluated(git_repo, commit)
+    # A later commit that leaves the scoring alone: when, where, and on which commit the
+    # evaluation ran (instrument, attempt, provenance) are not compared.
+    (git_repo / "NOTES.md").write_text("SYNTHETIC later edit\n", "utf-8")
+    commit(git_repo, "an unrelated change")
+    before = {rel: (git_repo / rel).read_bytes() for rel in (e0.EVAL, e0.ATTEMPTS)}
+    state = worktree_state(git_repo)
+    assert e0.recheck(git_repo) == recorded
+    # It logged no attempt and wrote no file.
+    assert {rel: (git_repo / rel).read_bytes() for rel in before} == before
+    assert worktree_state(git_repo) == state
+    assert len((git_repo / e0.ATTEMPTS).read_text("utf-8").splitlines()) == 1
+
+
+def test_recheck_finds_a_prediction_typed_into_the_evaluation(
+    git_repo: Path, commit: Commit
+) -> None:
+    recorded = evaluated(git_repo, commit)
+    index, item = next((n, i) for n, i in enumerate(recorded["items"]) if i["pred_verdict"])
+    typed = "contradicted" if item["pred_verdict"] == "supported" else "supported"
+
+    def retype(data: dict[str, Any]) -> None:
+        data["items"][index]["pred_verdict"] = typed
+
+    edit_evaluation(git_repo, retype)
+    commit(git_repo, "type a prediction into the evaluation")
+    expected = (
+        f"{e0.EVAL} differs from a new scoring of the held-out reports in items; first "
+        f"differing item: items[{index}] (report {item['report_id']}, {item['claim_type']}): "
+        f'pred_verdict "{typed}" in the file, "{item["pred_verdict"]}" scored again'
+    )
+    with pytest.raises(e0.RecheckMismatchError) as caught:
+        e0.recheck(git_repo)
+    assert str(caught.value) == expected
+
+
+def test_recheck_finds_a_typed_per_type_value(git_repo: Path, commit: Commit) -> None:
+    recorded = evaluated(git_repo, commit)
+    assert recorded["per_type"]["file_modified"]["correct"] == 2
+
+    def retype(data: dict[str, Any]) -> None:
+        data["per_type"]["file_modified"]["correct"] = 1
+
+    edit_evaluation(git_repo, retype)
+    with pytest.raises(e0.RecheckMismatchError) as caught:
+        e0.recheck(git_repo)
+    # The items agree, so no item is named.
+    assert str(caught.value) == (
+        f"{e0.EVAL} differs from a new scoring of the held-out reports in per_type (file_modified)"
+    )
+
+
+def test_recheck_finds_a_requirement_text_edited_after_the_scoring(
+    git_repo: Path, commit: Commit
+) -> None:
+    # D54: each report records the digest of the requirement texts it was verified with.
+    evaluated(git_repo, commit)
+    task = git_repo / "bench" / "tasks" / "py-alpha" / "task.toml"
+    text = task.read_text("utf-8")
+    task.write_text(text.replace(REQUIREMENTS["R2"], "The parser rejects bad rows fast."), "utf-8")
+    commit(git_repo, "edit a requirement text after the held-out scoring")
+    with pytest.raises(e0.RecheckMismatchError, match=r"in report_requirements \(rep-3, rep-9\)"):
+        e0.recheck(git_repo)
+
+
+def _flip_first_prediction(data: dict[str, Any]) -> None:
+    item = next(i for i in data["items"] if i["pred_verdict"])
+    item["pred_verdict"] = "contradicted" if item["pred_verdict"] == "supported" else "supported"
+
+
+@pytest.mark.parametrize(
+    ("edit", "named"),
+    [
+        pytest.param(
+            lambda d: d.update(verifier_mode="no_requirements"), "verifier_mode", id="mode"
+        ),
+        pytest.param(lambda d: d.update(reports=3), "reports", id="reports"),
+        pytest.param(
+            lambda d: d["report_requirements"]["rep-9"].update(requirements_sha256="0" * 64),
+            "report_requirements (rep-9)",
+            id="requirements",
+        ),
+        pytest.param(_flip_first_prediction, "items; first differing item: items[", id="items"),
+        pytest.param(lambda d: d.pop("items"), "items (missing)", id="no-items"),
+        pytest.param(
+            lambda d: d.update(items={}), "items (not a list in the file)", id="items-not-a-list"
+        ),
+        pytest.param(
+            lambda d: d["items"].pop(), "items; first differing item: items[", id="item-dropped"
+        ),
+        pytest.param(
+            lambda d: d["per_type"]["ran_command"].update(meets_thresholds=False),
+            "per_type (ran_command)",
+            id="per-type",
+        ),
+        pytest.param(lambda d: d["top5"].reverse(), "top5", id="top5"),
+        pytest.param(lambda d: d["passes"].update(bug_fixed=True), "passes (bug_fixed)", id="pass"),
+        # JSON false and 0 are different values, though Python's 0 == False.
+        pytest.param(lambda d: d.update(all_top5_pass=0), "all_top5_pass", id="false-as-0"),
+    ],
+)
+def test_recheck_compares_every_scored_field(
+    git_repo: Path, commit: Commit, edit: Callable[[dict[str, Any]], object], named: str
+) -> None:
+    evaluated(git_repo, commit)
+    edit_evaluation(git_repo, edit)
+    with pytest.raises(e0.RecheckMismatchError, match=re.escape(f"held-out reports in {named}")):
+        e0.recheck(git_repo)
+
+
+def test_recheck_names_every_differing_field(git_repo: Path, commit: Commit) -> None:
+    evaluated(git_repo, commit)
+
+    def retype(data: dict[str, Any]) -> None:
+        for name in ("file_modified", "ran_command", "tests_pass", "test_count"):
+            data["per_type"][name]["gold"] += 1
+        data["passes"]["tests_pass"] = False
+
+    edit_evaluation(git_repo, retype)
+    with pytest.raises(e0.RecheckMismatchError) as caught:
+        e0.recheck(git_repo)
+    assert str(caught.value) == (
+        f"{e0.EVAL} differs from a new scoring of the held-out reports in per_type "
+        "(file_modified, ran_command, test_count, ...), passes (tests_pass)"
+    )
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "missing",
+        "not-an-object",
+        "dev",
+        "dirty",
+        "dirty-task-loader",
+        "changed-report",
+        "changed-ledger",
+        "no-evaluated-commit",
+        "evaluated-commit-is-a-tree",
+    ],
+)
+def test_recheck_refuses_what_it_cannot_score_again(
+    git_repo: Path, commit: Commit, problem: str
+) -> None:
+    evaluated(git_repo, commit)
+    if problem == "missing":
+        (git_repo / e0.EVAL).unlink()
+        expected = f"{e0.EVAL}: file not found"
+    elif problem == "not-an-object":
+        (git_repo / e0.EVAL).write_text("[]\n", "utf-8")
+        expected = f"{e0.EVAL} is not a JSON object"
+    elif problem == "dev":
+        edit_evaluation(git_repo, lambda d: d.update(split="dev"))
+        expected = f"{e0.EVAL} is not the held-out split (split 'dev')"
+    elif problem == "dirty":
+        # The committed instrument is what G5 binds, so its scoring is what is re-run.
+        (git_repo / "src/receipts/verify").mkdir(parents=True)
+        (git_repo / "src/receipts/verify/wip.py").write_text("x = 1\n", "utf-8")
+        expected = "the instrument has uncommitted changes (src/receipts/verify/wip.py)"
+    elif problem == "dirty-task-loader":
+        # Every scoring path counts, not only the extractor and the verifier (D54).
+        (git_repo / "src/receipts/bench").mkdir(parents=True)
+        (git_repo / "src/receipts/bench/spec.py").write_text("x = 1\n", "utf-8")
+        expected = "the instrument has uncommitted changes (src/receipts/bench/spec.py)"
+    elif problem == "changed-report":
+        report = git_repo / e0.SEEDED / "heldout" / "rep-3.json"
+        text = report.read_text("utf-8")
+        report.write_text(text.replace("All tests pass", "Tests pass"), "utf-8")
+        expected = "held-out report rep-3 changed since the manifest"
+    elif problem == "changed-ledger":
+        ledger = git_repo / "artifacts/studies/smoke/runs/r1/ledger.jsonl"
+        write_ledger(ledger, "r1", "py-alpha", "A report banked later.", gap=True)
+        expected = "ledger artifacts/studies/smoke/runs/r1/ledger.jsonl is missing or changed"
+    else:
+        # An id that names no object, or one that names an object other than a commit.
+        fake = "0" * 40 if problem == "no-evaluated-commit" else e0.tree_id(git_repo, "")
+        assert fake is not None and len(fake) == 40
+        edit_evaluation(git_repo, lambda d: d["instrument"].update(commit=fake))
+        expected = f"{e0.EVAL} records no evaluated commit of this repository"
+    with pytest.raises(e0.E0Error, match=re.escape(expected)) as caught:
+        e0.recheck(git_repo)
+    assert not isinstance(caught.value, e0.RecheckMismatchError)
+    assert len((git_repo / e0.ATTEMPTS).read_text("utf-8").splitlines()) == 1
+
+
+def load_module(name: str, path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Load the Python file ``path`` as module ``name`` into this process for the test."""
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setitem(sys.modules, name, module)
+
+
+def test_recheck_scores_only_with_the_code_of_the_evaluated_commit(
+    git_repo: Path, commit: Commit, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A module of the repository's own src/ that the process has loaded, as every module
+    # of the scoring step is when tools/e0.py runs in a checkout (gate G5's clone). A
+    # revised instrument scored on the held-out half is an attempt that no log records.
+    probe = git_repo / "src" / "probe_scoring.py"
+    probe.parent.mkdir(parents=True)
+    probe.write_text("# SYNTHETIC scoring module\nRULES = 1\n", "utf-8")
+    recorded = evaluated(git_repo, commit)
+    load_module("receipts_b6_probe_scoring", probe, monkeypatch)
+    assert e0.loaded_sources(git_repo) == ["src/probe_scoring.py"]
+    assert e0.recheck(git_repo) == recorded
+    expected = re.escape(
+        f"the code recheck scored with is not the code of the evaluated commit "
+        f"{recorded['instrument']['commit'][:12]} (src/probe_scoring.py)"
+    )
+    probe.write_text("# SYNTHETIC scoring module, revised\nRULES = 2\n", "utf-8")
+    with pytest.raises(e0.E0Error, match=expected) as caught:
+        e0.recheck(git_repo)  # revised, not committed
+    assert not isinstance(caught.value, e0.RecheckMismatchError)
+    commit(git_repo, "revise a scoring module after the held-out scoring")
+    with pytest.raises(e0.E0Error, match=expected) as caught:
+        e0.recheck(git_repo)  # revised and committed: still not the evaluated code
+    assert not isinstance(caught.value, e0.RecheckMismatchError)
+    assert len((git_repo / e0.ATTEMPTS).read_text("utf-8").splitlines()) == 1
+
+
+def test_loaded_sources_are_the_repositorys_modules_but_the_version_file(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name, rel in (
+        ("receipts_b6_probe_version", e0.PACKAGE_INIT),
+        ("receipts_b6_probe_rules", "src/receipts/claims/rules.py"),
+        ("receipts_b6_probe_outside", "scripts/outside.py"),
+    ):
+        path = git_repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# SYNTHETIC module\n", "utf-8")
+        load_module(name, path, monkeypatch)
+    assert e0.loaded_sources(git_repo) == ["src/receipts/claims/rules.py"]
+
+
+def test_evaluate_records_what_score_split_gives(git_repo: Path, commit: Commit) -> None:
+    # One scoring path for evaluate and recheck: the evaluation is score_split's result
+    # plus the instrument, the attempt, and the provenance.
+    recorded = evaluated(git_repo, commit)
+    instrument = e0.instrument_state(git_repo, e0.SCORING_PATHS)
+    fresh = json.loads(e0.dump_json(e0.score_split(git_repo, "heldout", instrument)))
+    assert set(recorded) - set(fresh) == {"instrument", "attempt", "provenance"}
+    assert {key: recorded[key] for key in fresh} == fresh
+    assert set(e0.RECHECKED_FIELDS) <= set(fresh)
 
 
 # ---------------------------------------------------------------- completeness

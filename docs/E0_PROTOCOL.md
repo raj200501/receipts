@@ -35,7 +35,11 @@ held-out half. The development half may be used to improve the extractor. The he
 half is hashed into `artifacts/e0/heldout_manifest.json` and that file is committed before
 the held-out reports are ever scored; tools/ship_check.py verifies the manifest's first
 commit strictly precedes the evaluation's first commit and that no held-out report
-changed.
+changed. It also scores every held-out report again in its clone (`tools/e0.py
+recheck`), so the predictions in the evaluation are never taken on trust, and reads
+`artifacts/e0/heldout_attempts.jsonl`: the evaluation must be the last scoring of the
+held-out half, and an earlier scoring with another instrument (a file that the scoring
+step loads changed in between) fails the gate (DECISIONS D66; see Recheck).
 
 **Scoring.** `receipts.evaluation.seeded`: a predicted claim matches a gold claim of the
 same type when their spans overlap (one to one, largest overlap first). Per claim type,
@@ -76,8 +80,10 @@ labeler, a writer, or an adjudicator, calls a model, or needs the network. Paths
 relative to the repository root, and every artifact carries `provenance` (`git_sha`,
 `command`, `created`). Exit status is 0 on success, 1 when `check-labels`, `check-raw`,
 or `check-adjudication` finds problems (one line each), when `label-packets` writes a
-packet that would void its labeler, or when `blindness` writes a result that merge or
-counts would refuse, and 2 when a step refuses (the reason goes to stderr).
+packet that would void its labeler, when `blindness` writes a result that merge or
+counts would refuse, or when `recheck` finds that the held-out evaluation is not what its
+reports score now, and 2 when a step refuses (the reason goes to stderr, as does a
+`recheck` difference).
 
 1. `python tools/e0.py label-packets [--runs DIR] --out DIR` writes the labeler packets.
 2. `python tools/e0.py check-labels --packets DIR FILE...` checks labeler output.
@@ -111,6 +117,9 @@ counts would refuse, and 2 when a step refuses (the reason goes to stderr).
     `artifacts/e0/seeded_eval_dev.json` instead.
 12. `python tools/e0.py completeness [--runs DIR...] [--bench DIR]` writes
     `artifacts/e0/ledger_completeness.json`.
+13. `python tools/e0.py recheck` scores the held-out half again and compares the result
+    with `artifacts/e0/seeded_eval.json`; it writes nothing and logs no attempt. Gate G5
+    runs it in its clone (see Recheck).
 
 Put the packets and the labelers', writers', and adjudicators' output files under
 `artifacts/e0/` or outside the repository: a tool call that names `runs/`, `src/`,
@@ -253,8 +262,8 @@ system text, and the subagent's own prose are not. Two kinds of entry are kept:
   directory by any path (`tests/claims`, `claims/extract.py` after a `cd`,
   `**/claims/*.py`); an instrument entry point (`extract_claims`, `verify_run`, ...); an
   import such as `from receipts import claims`; a command that runs the instrument
-  (`receipts check`, `receipts-hook`, `tools/e0.py evaluate` or `counts`); or its banked
-  output (`verification.json`, `run.json`, `runs.jsonl`, `seeded_eval`,
+  (`receipts check`, `receipts-hook`, `tools/e0.py evaluate`, `counts`, or `recheck`);
+  or its banked output (`verification.json`, `run.json`, `runs.jsonl`, `seeded_eval`,
   `claim_type_counts`, the demo output, or, in what a tool returned, keys and labels
   only that output holds). A violation always voids.
 - A **review** entry is a tool call without a violation whose access fields (`command`,
@@ -364,9 +373,13 @@ undefined, and `meets_thresholds`), `top5` (ranked from `claim_type_counts.json`
 `all_top5_pass` (false unless five types were counted and all pass), `matching`,
 `instrument` (as in the extractor counts, over the five paths above), `attempt`, and
 `attempts_log`. A type with no predictions or no gold claims never passes. `--out FILE`
-writes elsewhere, to re-score and compare. The dev split checks none of the freeze
-conditions, records a dirty instrument instead of refusing, is not logged, and is never
-read by the gate.
+writes the result to another file, but a held-out scoring is still logged as the next
+attempt, and G5 accepts only an evaluation that is the log's last attempt, so after a
+scoring with `--out` the default file must be scored again on the same instrument. To
+score the held-out half again and compare without logging an attempt or writing a
+file, use `recheck` (see Recheck). The dev split checks none of the freeze conditions,
+records a dirty instrument instead of refusing, is not logged, and is never read by the
+gate.
 
 Every item has `report_id`, `claim_type`, `gold_verdict`, `pred_verdict`, `ignored`,
 `gold_claim_id`, `gold_span`, `ignored_claim_id`, `ignored_span`, `ignored_types`,
@@ -376,6 +389,44 @@ gold claim, one per ignored claim (`ignored: true`, `gold_verdict` null, with th
 prediction matched to it, if any), and one per prediction matched to nothing. Precision
 and recall skip ignored items, so the matching can be recomputed from the held-out files
 and these predictions.
+
+**Recheck.** `recheck` (DECISIONS D66) reads `seeded_eval.json`, refuses one that is
+missing, not a JSON object, or not the held-out split, and scores the reports of the
+frozen held-out manifest again on the code path `evaluate` takes
+(`receipts.evaluation.e0.score_split`), with the instrument at HEAD: it refuses while any
+of the five paths above has an uncommitted change, and every refusal of the evaluate step
+(a manifest, held-out report, or ledger that changed, unchecked counts, a task whose
+requirements do not load) applies. It also refuses, before it reports anything, unless
+every file of the repository's `src/` that the scoring loaded (`src/receipts/__init__.py`,
+which holds only the version, aside) has no uncommitted change and is the file of the
+evaluation's instrument commit: it never reports a scoring of the held-out half made with
+other code, which would be an attempt no log records (scoring a revised instrument is a
+new attempt, which `evaluate` logs). It calls no model, writes no file, and logs no
+attempt. The evaluation's `verifier_mode`, `reports`, `report_requirements`, `items`,
+`per_type`, `top5`, `passes`, and `all_top5_pass` must equal the new result as JSON (a
+`true` is not a `1`); when, where, and on which commit it ran (`instrument`, `attempt`,
+`provenance`) are not compared. So a prediction typed into the file, a typed per-type
+value, or a requirement text edited after the scoring (its digest in
+`report_requirements` changes) exits 1, with one stderr line that names the differing
+fields (and the first differing keys of each) and the first differing item. Gate G5 runs
+`recheck` in its fresh clone after `make setup` and quotes that line when it fails. G5
+also reads `heldout_attempts.jsonl`, which must be committed and never cut or rewritten
+(every committed version is the start of the one at HEAD), with one well-formed attempt
+per line, numbered 1 to n in order; the evaluation must be attempt n, and attempt n must
+have logged its instrument commit and trees, the per-type counts of its top five, its
+passes, and `all_top5_pass`; attempt n's trees must name exactly the paths the
+evaluation checked for uncommitted changes, so trees that leave a path out cannot hide a
+change to it; every attempt's trees must be git's trees at its commit; and every earlier
+attempt must have scored the same instrument as attempt n: each file of the scoring
+step's import closure (the instrument G5 binds, DECISIONS D36) at either attempt's
+commit must be the same git blob at both commits, and the earlier attempt's trees must
+name the same paths as attempt n's. The logged trees are of whole directories, which
+also hold code that the scoring never loads (E2 and E3 code, completeness code, the
+ledger recorder and parsers, the rest of the benchmark code); a change to that code
+between two attempts does not fail the gate, as it does not after the evaluation. A
+held-out half scored again after the instrument changed is no longer untouched, so G5
+fails on it, naming the changed files, rather than reporting a deviation; scoring again
+on the same instrument passes, and the evidence line names the attempt.
 
 **Completeness.** For every real minimal-agent run, the transcript's commands after the
 task request (the user message whose SHA-256 is `provenance.prompt_sha256` in `run.json`,
