@@ -79,14 +79,25 @@ other tools read:
   ``agreement``; ``exploratory``.
 - ``items[]``: one per scored claim (run, task, arm, claim, type, ledger verdict, and
   each judge's label). ``calls[]``: one per (judge, sampled run) with ``status``,
-  ``served``, and ``cache_key``. ``replies``: the path, SHA-256, and record count of the
-  replies file (:func:`reply_records`).
+  ``served``, and ``cache_key``. ``replies``: the path, SHA-256, and record count (the
+  reply records, one per served call) of the replies file.
 - ``confirmatory``, ``confirmatory_problems`` (:func:`confirmatory_problems`, also when
   exploratory), ``deviations``, ``provenance``.
+
+The replies file (``artifacts/e3/replies.jsonl``) holds everything the artifact took from
+the run that git does not hold elsewhere, so the artifact can be re-scored without a
+model call (DECISIONS D65): a first record (:func:`replies_header`) with each judge's
+model server provenance and the text of the failure log the run read (which lives under
+``runs/``, ignored by git), then one record per served call (:func:`reply_records`) with
+the reply text, tokens, wall time, finish reason, and cache hit. ``tools/run_judges.py
+--rescore`` reads it back (:class:`BankedReplies`) and serves every judge request from
+it by the request's cache key; a request without a banked reply, or a banked reply that
+no call uses, stops the re-score.
 """
 
 from __future__ import annotations
 
+import hashlib
 import itertools
 import json
 import math
@@ -124,6 +135,8 @@ from receipts.study.results_e4 import (
 )
 
 SCHEMA = "receipts.e3.judges/2"
+REPLIES_SCHEMA = "receipts.e3.replies/2"
+"""The ``schema`` of the replies file's first record (:func:`replies_header`)."""
 PREREG_PATH = "prereg/0003-e3-judges.md"
 ROWS = "artifacts/e1/runs.jsonl"
 E1_RESULTS = "artifacts/e1/results.json"
@@ -1471,11 +1484,13 @@ def confirmatory_problems(
 
 
 def reply_records(runs: Sequence[JudgeRun], excluded: Collection[str] = ()) -> list[dict[str, Any]]:
-    """One record per served call for ``artifacts/e3/replies.jsonl`` (section 8).
+    """One record per served call for ``artifacts/e3/replies.jsonl`` (section 8), which
+    follow its first record (:func:`replies_header`).
 
     Each holds the judge id, run id, cache key, cache hit, the raw reply text, its parse
     status, finish reason, tokens, wall time, and whether the run is excluded, so every
-    label can be checked against what the judge said.
+    label can be checked against what the judge said, and a re-score
+    (:class:`BankedReplies`) can serve the call again without a model.
     """
     return [
         {
@@ -1495,6 +1510,239 @@ def reply_records(runs: Sequence[JudgeRun], excluded: Collection[str] = ()) -> l
         for call in run.calls
         if call.served
     ]
+
+
+def replies_header(
+    servers: Mapping[str, Mapping[str, Any]], failure_log: tuple[str, str] | None
+) -> dict[str, Any]:
+    """The first record of the replies file: what the artifact takes from the run that
+    git holds nowhere else (section 8; DECISIONS D65).
+
+    ``model_servers`` is each judge's model server provenance as the artifact records it
+    under ``provenance.model_servers`` (the pinned model file, the server command, and
+    whether the server started, which depends on the run's response cache).
+    ``failure_log`` is the ``path`` and ``text`` of the failure log the run read (section
+    7), or None when there was none: the log lives under ``runs/``, which git ignores,
+    and the exclusions and the log's input hash come from it.
+    """
+    return {
+        "schema": REPLIES_SCHEMA,
+        "model_servers": {judge: dict(server) for judge, server in servers.items()},
+        "failure_log": None
+        if failure_log is None
+        else {"path": failure_log[0], "text": failure_log[1]},
+    }
+
+
+def jsonl_objects(text: str, where: str) -> list[dict[str, Any]]:
+    """The JSON objects of JSONL ``text``, one per non-blank line, in order.
+
+    Lines are split on ``\\n`` only (a JSON string holding U+2028 stays one line) and the
+    text is read as it is, so the failure log parses the same from its file and from the
+    copy the replies file banks.
+
+    Raises:
+        ValueError: A line is not strict JSON (NaN and Infinity refused) or not an
+            object; the message names ``where`` and the line number.
+    """
+
+    def refuse(constant: str) -> Any:
+        raise ValueError(f"{constant} is not strict JSON")
+
+    objects: list[dict[str, Any]] = []
+    for number, line in enumerate(text.split("\n"), start=1):
+        if not line.strip():
+            continue
+        try:
+            data = json.loads(line, parse_constant=refuse)
+        except ValueError as exc:  # json.JSONDecodeError included
+            raise ValueError(f"{where} line {number} is not strict JSON ({exc})") from exc
+        if not isinstance(data, dict):
+            raise ValueError(f"{where} line {number} is not a JSON object")
+        objects.append(data)
+    return objects
+
+
+class MissingReplyError(ValueError):
+    """A re-score met a judge request that no banked reply answers."""
+
+
+_REPLY_TEXT_FIELDS = ("judge_id", "run_id", "text", "status", "finish_reason")
+_REPLY_COUNT_FIELDS = ("input_tokens", "output_tokens")
+_REPLY_FLAG_FIELDS = ("cache_hit", "excluded")
+
+
+def _reply_record(record: Mapping[str, Any], where: str) -> dict[str, Any]:
+    """A banked reply record (:func:`reply_records`), after its fields are checked.
+
+    Raises:
+        ValueError: A field is missing or of the wrong type, or the record carries a
+            ``schema`` (only the first record does).
+    """
+    bad = [name for name in _REPLY_TEXT_FIELDS if not isinstance(record.get(name), str)]
+    for name in _REPLY_COUNT_FIELDS:
+        value = record.get(name)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            bad.append(name)
+    bad += [name for name in _REPLY_FLAG_FIELDS if not isinstance(record.get(name), bool)]
+    wall = record.get("wall_s")
+    if isinstance(wall, bool) or not isinstance(wall, int | float) or not wall >= 0:
+        bad.append("wall_s")
+    key = record.get("cache_key")
+    if not isinstance(key, str) or not _SHA256.match(key):
+        bad.append("cache_key")
+    if "schema" in record:
+        bad.append("schema")
+    if bad:
+        raise ValueError(f"{where} is not a reply record: {', '.join(bad)} missing or malformed")
+    return dict(record)
+
+
+class BankedReplies:
+    """An E3 run's replies file, read back to re-score the run without a model call.
+
+    ``tools/run_judges.py --rescore`` passes :meth:`completion` to :func:`run_judge` for
+    each judge in place of a model client, so every reply text, token count, wall time,
+    finish reason, and cache hit is the banked one, while the labels, parse statuses, and
+    every score are computed again by the code that runs. The judges' model server
+    provenance and the failure log the run read come from the first record
+    (:func:`replies_header`), and :meth:`check_served` requires every banked reply to
+    have answered one call.
+
+    Attributes:
+        where: The file's name in messages.
+        sha256: SHA-256 of the file's bytes.
+        servers: Each judge's banked model server provenance, by judge id.
+        failure_log: ``(path, text)`` of the failure log the run read, or None.
+        records: The reply records, in file order.
+    """
+
+    def __init__(self, raw: bytes, where: str) -> None:
+        """Parse and check the file's bytes ``raw``.
+
+        Raises:
+            ValueError: The bytes are not UTF-8 strict JSON lines, the first record is
+                not a :data:`REPLIES_SCHEMA` record with ``model_servers`` and
+                ``failure_log``, or a later record is not a reply record.
+        """
+        self.where = where
+        self.sha256 = hashlib.sha256(raw).hexdigest()
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"{where} is not UTF-8 text ({exc.reason})") from exc
+        objects = jsonl_objects(text, where)
+        header = objects[0] if objects else {}
+        if header.get("schema") != REPLIES_SCHEMA:
+            raise ValueError(
+                f"{where} does not begin with its {REPLIES_SCHEMA} record (the model servers "
+                "and the failure log of the run), so it cannot be re-scored"
+            )
+        servers = header.get("model_servers")
+        if not isinstance(servers, dict) or not all(isinstance(s, dict) for s in servers.values()):
+            raise ValueError(
+                f"{where}: the first record's model_servers is not an object of objects"
+            )
+        if "failure_log" not in header:
+            raise ValueError(f"{where}: the first record has no failure_log")
+        log = header["failure_log"]
+        if log is None:
+            self.failure_log: tuple[str, str] | None = None
+        elif isinstance(log, dict) and all(isinstance(log.get(k), str) for k in ("path", "text")):
+            self.failure_log = (log["path"], log["text"])
+        else:
+            raise ValueError(
+                f"{where}: the first record's failure_log is neither null nor a path and a text"
+            )
+        self.servers: dict[str, dict[str, Any]] = {str(j): dict(s) for j, s in servers.items()}
+        self.records: tuple[dict[str, Any], ...] = tuple(
+            _reply_record(record, f"{where} reply {number}")
+            for number, record in enumerate(objects[1:], start=1)
+        )
+        self._waiting: dict[tuple[str, str], list[int]] = {}
+        for index, record in enumerate(self.records):
+            self._waiting.setdefault((record["judge_id"], record["cache_key"]), []).append(index)
+        self._served: dict[str, list[int]] = {}
+
+    @classmethod
+    def read(cls, path: Path, where: str) -> BankedReplies:
+        """The replies file at ``path``, named ``where`` in messages.
+
+        Raises:
+            ValueError: The file is missing, or :class:`BankedReplies` refuses it.
+            OSError: It cannot be read.
+        """
+        if not path.is_file():
+            raise ValueError(
+                f"{where} is missing: a re-score serves every judge call from the banked replies"
+            )
+        return cls(path.read_bytes(), where)
+
+    def completion(self, judge_id: str) -> Completion:
+        """A completion function that serves ``judge_id``'s requests from the banked replies.
+
+        Each request gets the next unserved reply of that judge with the request's cache
+        key, in file order, so two calls with the same request (two runs with the same
+        transcript and claims) each get their own record, as they were made. The
+        function raises :class:`MissingReplyError` when no unserved banked reply of the
+        judge answers the request; it never calls a model.
+        """
+        served = self._served.setdefault(judge_id, [])
+
+        def complete(request: ModelRequest) -> ModelResponse:
+            key = request.cache_key()
+            waiting = self._waiting.get((judge_id, key))
+            if not waiting:
+                raise MissingReplyError(
+                    f"{self.where} has no banked reply of judge {judge_id} to request {key} "
+                    f"({request.purpose or 'no purpose'})"
+                )
+            index = waiting.pop(0)
+            served.append(index)
+            record = self.records[index]
+            return ModelResponse(
+                text=record["text"],
+                input_tokens=record["input_tokens"],
+                output_tokens=record["output_tokens"],
+                wall_s=record["wall_s"],
+                finish_reason=record["finish_reason"],
+                cache_hit=record["cache_hit"],
+            )
+
+        return complete
+
+    def check_served(self, runs: Sequence[JudgeRun]) -> None:
+        """Every banked reply answered exactly one call of ``runs``, about the run it records.
+
+        Raises:
+            ValueError: A reply answered a call about another run than the one it records,
+                or banked replies answered no call (the file is not this run's replies).
+        """
+        for run in runs:
+            judge = run.config.judge_id
+            calls = [call for call in run.calls if call.served]
+            served = self._served.get(judge, [])
+            if len(served) != len(calls):
+                raise ValueError(
+                    f"{self.where}: {len(served)} banked replies of judge {judge} were served "
+                    f"for {len(calls)} calls"
+                )
+            for call, index in zip(calls, served, strict=True):
+                recorded = self.records[index]["run_id"]
+                if recorded != call.run_id:
+                    raise ValueError(
+                        f"{self.where}: the banked reply of judge {judge} to request "
+                        f"{call.cache_key} records run {recorded}, not run {call.run_id}"
+                    )
+        used = {index for indexes in self._served.values() for index in indexes}
+        unused = [index for index in range(len(self.records)) if index not in used]
+        if unused:
+            first = self.records[unused[0]]
+            raise ValueError(
+                f"{self.where} holds {len(unused)} banked reply record(s) that answer no call "
+                f"of this re-score (first: judge {first['judge_id']}, run {first['run_id']}), "
+                "so it is not the replies file of this run"
+            )
 
 
 def _complete(
