@@ -490,7 +490,9 @@ def test_a_run_from_a_code_snapshot_cannot_list_the_checkouts_bench(
     (snapshot / "SNAPSHOT_OF").write_text(SYNTHETIC_SHA + "\n", encoding="utf-8")
     ws = checkout / "runs" / "work" / "smoke" / "run-1"
     ws.mkdir(parents=True)
-    env = {**os.environ, "PYTHONPATH": str(snapshot / "src"), "PYTHONDONTWRITEBYTECODE": "1"}
+    # The child imports the copy, which coverage measurement of the suite must not see.
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("COV_CORE_", "COVERAGE"))}
+    env.update(PYTHONPATH=str(snapshot / "src"), PYTHONDONTWRITEBYTECODE="1")
     child = subprocess.run(
         [sys.executable, "-c", SNAPSHOT_PROBE, str(checkout), str(ws)],
         capture_output=True,

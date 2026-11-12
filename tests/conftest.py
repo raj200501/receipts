@@ -41,6 +41,8 @@ def outside_tmp() -> Iterator[Path]:
     base = Path("/var/tmp")
     if not base.is_dir() or not os.access(base, os.W_OK):
         pytest.skip("/var/tmp is not a writable directory here")
+    if any(base.resolve().is_relative_to(private) for private in ("/tmp", "/run")):
+        pytest.skip("/var/tmp lies under /tmp or /run here, which every sandbox makes private")
     path = Path(tempfile.mkdtemp(prefix="receipts-test-", dir=base))
     try:
         yield path.resolve()
