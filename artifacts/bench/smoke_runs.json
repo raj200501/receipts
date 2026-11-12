@@ -1,6 +1,6 @@
 {
   "failures": {
-    "added": 3,
+    "added": 0,
     "banked": "artifacts/studies/smoke/failures.jsonl",
     "entries": 3,
     "sha256": "f5db17d43684445bbae75b0291120aebf2ba786bb761602c0d71ed1fc92b680f",
@@ -8,9 +8,9 @@
   },
   "provenance": {
     "command": "/home/user/receipts/.venv/bin/python tools/bank_study.py smoke",
-    "created": "2026-11-12T10:13:50+00:00",
-    "git_sha": "15a177c0e0e2280b6957b0d904c613d052d86c6e",
-    "plan_sha256": "f497bb5a9eb205e8b4f580fe2a50143aab65142b25a56a98244882b244969391",
+    "created": "2026-11-12T13:13:00+00:00",
+    "git_sha": "3cdda508e44bafcd08a015907f3fccb1aa851595",
+    "plan_sha256": "180a52f88ed460c904d67998ac3dcf14d6b9306ada94ce82c631d65f641c746a",
     "study": "smoke"
   },
   "runs": [
@@ -193,6 +193,15 @@
       "synthetic": false,
       "task_id": "py-slugify-tests",
       "turns": 4
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-units-refactor-ma-qwen7b-ctx32k",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "py-units-refactor",
+      "turns": 17
     },
     {
       "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",

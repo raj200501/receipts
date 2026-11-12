@@ -4,9 +4,9 @@
     "docs/figures/smoke_outcomes.svg"
   ],
   "files": {
-    "artifacts/report/numbers.json": "0eceb0cd33327e9c25f3c62c09c3a02cd59d77799015f56fcdfa95221ee52c00",
+    "artifacts/report/numbers.json": "d63cbebad1e19efd6186ac1eadc42dd38213ed9ae8db19fdee0eb9f337462209",
     "docs/figures/demo_report_card.svg": "8a65752fe5df2766080967f4fa519433629a0eca103d2d69f4788c4b87916010",
-    "docs/figures/smoke_outcomes.svg": "112fedbc16a3ed959062197c4f822dad4dfe20b33f041533c4c0609189f98e16"
+    "docs/figures/smoke_outcomes.svg": "a93ab1da3cfa1dfbb1fefdbc02f22805160bd923b2ea7f9901acd4b45e23eb70"
   },
   "numbers": 35,
   "schema": "receipts.report-manifest/1"
