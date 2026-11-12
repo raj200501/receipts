@@ -16,6 +16,9 @@ get a read-only toolchain with pytest built once by
 :data:`receipts.bench.spec.TOOLCHAIN_PACKAGES` (under ``runs/``, which git ignores).
 Each task's sandbox gets the address-space limit its language needs
 (:data:`receipts.bench.spec.MEMORY_MB`: Node's TypeScript loader needs more than 12 GB).
+Every sandbox hides this checkout, ``--project-root``, and ``--tasks-dir``, which hold
+every task's hidden checks and reference solutions, whatever code is imported
+(:func:`hidden_checkouts`), and one whose commands could still reach them is refused.
 
 A full run writes ``artifacts/bench/reference_validation.json`` (format in
 :mod:`receipts.bench.artifact`) with provenance: git SHA, command, creation time, and the
@@ -74,7 +77,8 @@ from receipts.bench.validate import (
     TaskValidation,
     capture_prior_work,
 )
-from receipts.sandbox.api import Sandbox, SandboxPolicy
+from receipts.sandbox.api import Sandbox, SandboxPolicy, SandboxUnavailableError
+from receipts.sandbox.bwrap import default_hidden_paths, project_root
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BACKENDS: tuple[str, ...] = ("bwrap", "unshare")
@@ -146,20 +150,37 @@ def select_tasks(tasks_dir: Path, ids: Sequence[str]) -> list[Path]:
     return [by_name[name] for name in sorted(set(ids))]
 
 
+def hidden_checkouts(args: argparse.Namespace) -> tuple[Path, ...]:
+    """The directories no task command may reach, resolved, the ones that exist.
+
+    This checkout (:data:`ROOT`), ``--project-root``, ``--tasks-dir`` (every task's hidden
+    checks and reference solutions), and the checkout the imported package lies in
+    (:func:`receipts.sandbox.bwrap.project_root`), so they are hidden whatever code
+    is imported (review N18, DECISIONS D67).
+    """
+    candidates = [ROOT, args.project_root, args.tasks_dir, project_root()]
+    found = {Path(path).resolve(): None for path in candidates if path is not None}
+    return tuple(path for path in found if path.exists())
+
+
 def default_factory(args: argparse.Namespace) -> tuple[FactoryMaker, dict[str, Any]]:
     """Sandboxes from :func:`receipts.sandbox.select.make_sandbox`, with the toolchain.
 
     The returned maker builds a factory for one address-space limit; each task gets
-    its :attr:`receipts.bench.spec.TaskSpec.memory_mb`.
+    its :attr:`receipts.bench.spec.TaskSpec.memory_mb`. Every sandbox hides the default
+    hidden paths and :func:`hidden_checkouts`, and a sandbox whose commands could still
+    reach one of those is refused (the toolchain stays reachable as a read-only path).
 
     Raises:
         SetupError: The sandbox package is not available or the toolchain cannot be built.
     """
     try:
-        from receipts.sandbox.select import make_sandbox
+        from receipts.sandbox.select import exposed, make_sandbox
         from receipts.sandbox.toolchain import ToolchainError, python_toolchain, with_toolchain
     except ImportError as exc:
         raise SetupError(f"receipts.sandbox is not available: {exc}") from exc
+    roots = hidden_checkouts(args)
+    hidden = tuple(dict.fromkeys([*default_hidden_paths(project=ROOT), *roots]))
     backends = tuple(args.backend or DEFAULT_BACKENDS)
     policy = SandboxPolicy()
     setup: dict[str, Any] = {"backends": list(backends), "memory_mb": dict(MEMORY_MB)}
@@ -181,7 +202,14 @@ def default_factory(args: argparse.Namespace) -> tuple[FactoryMaker, dict[str, A
         limited = replace(policy, memory_mb=memory_mb)
 
         def factory(workspace: Path) -> Sandbox:
-            return make_sandbox(workspace, limited, prefer=backends)
+            box = make_sandbox(workspace, limited, prefer=backends, hide_paths=hidden)
+            shown = exposed(box, roots)
+            if shown:
+                raise SandboxUnavailableError(
+                    f"the {box.backend} sandbox lets task commands reach "
+                    f"{', '.join(map(str, shown))}, which a validation sandbox must hide"
+                )
+            return box
 
         return factory
 

@@ -25,6 +25,7 @@ from receipts.bench.hashing import tree_sha256
 from receipts.bench.spec import TOOLCHAIN_PACKAGES
 from receipts.bench.validate import SandboxFactory
 from receipts.sandbox import select, toolchain
+from receipts.sandbox.api import SandboxUnavailableError
 from receipts.sandbox.toolchain import Toolchain, ToolchainError
 
 from .factory import TASK_TOML, build_task, manifest_with, prior_work
@@ -180,6 +181,19 @@ def _fake_toolchain(path: Path) -> Toolchain:
     )
 
 
+class HidingSandbox(SubprocessSandbox):
+    """The subprocess fake, claiming to hide every host path but its workspace
+    (SYNTHETIC: it hides nothing; only the factory's check reads the claim)."""
+
+    def hides(self, path: str | Path) -> bool:
+        target, ws = Path(path).resolve(), self.workspace.resolve()
+        return target != ws and ws not in target.parents
+
+    def shown_within(self, path: str | Path) -> tuple[Path, ...]:
+        target = Path(path).resolve()
+        return (self.workspace,) if target in self.workspace.resolve().parents else ()
+
+
 def test_default_factory_builds_the_toolchain_and_uses_make_sandbox(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -189,9 +203,12 @@ def test_default_factory_builds_the_toolchain_and_uses_make_sandbox(
         calls["toolchain"] = (path, packages, options)
         return _fake_toolchain(tmp_path / "toolchain")
 
-    def fake_make_sandbox(workspace: Path, policy: Any, prefer: tuple[str, ...]) -> Any:
+    def fake_make_sandbox(
+        workspace: Path, policy: Any, prefer: tuple[str, ...], **kwargs: Any
+    ) -> Any:
         calls["sandbox"] = (policy, prefer)
-        return SubprocessSandbox(workspace)
+        calls["hide_paths"] = kwargs["hide_paths"]
+        return HidingSandbox(workspace)
 
     monkeypatch.setattr(toolchain, "python_toolchain", fake_toolchain)
     monkeypatch.setattr(select, "make_sandbox", fake_make_sandbox)
@@ -211,12 +228,51 @@ def test_default_factory_builds_the_toolchain_and_uses_make_sandbox(
     assert setup["backends"] == ["unshare"]
     assert setup["memory_mb"] == {"python": 4096, "typescript": 16384}
     assert setup["toolchain"]["installed"] == ["pytest==9.1.1"]
+    # The checkout, with every task's hidden checks and reference solutions, is named as
+    # a hidden path whatever code is imported (review N18, DECISIONS D67).
+    hidden = set(calls["hide_paths"])
+    assert bench_validate.ROOT.resolve() in hidden
+    assert (bench_validate.ROOT / "bench" / "tasks").resolve() in hidden
+    assert set(bench_validate.default_hidden_paths(project=bench_validate.ROOT)) <= hidden
+
+
+def test_default_factory_hides_the_given_project_and_tasks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, tasks = tmp_path / "project", tmp_path / "elsewhere" / "tasks"
+    for directory in (project, tasks):
+        directory.mkdir(parents=True)
+    seen: list[Any] = []
+
+    def fake_make_sandbox(ws: Path, policy: Any, prefer: Any, **kwargs: Any) -> Any:
+        seen.append(set(kwargs["hide_paths"]))
+        return HidingSandbox(ws)
+
+    monkeypatch.setattr(select, "make_sandbox", fake_make_sandbox)
+    argv = ["--no-toolchain", "--project-root", str(project), "--tasks-dir", str(tasks)]
+    maker, _ = bench_validate.default_factory(bench_validate.parse_args(argv))
+    work = tmp_path / "work"
+    work.mkdir()
+    maker(4096)(work)
+    assert {project.resolve(), tasks.resolve(), bench_validate.ROOT.resolve()} <= seen[0]
+
+
+def test_default_factory_refuses_a_sandbox_that_shows_the_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The subprocess fake cannot say what it hides, like unshare, which sees the host.
+    monkeypatch.setattr(
+        select, "make_sandbox", lambda ws, policy, prefer, **k: SubprocessSandbox(ws)
+    )
+    maker, _ = bench_validate.default_factory(bench_validate.parse_args(["--no-toolchain"]))
+    with pytest.raises(SandboxUnavailableError, match="lets task commands reach"):
+        maker(4096)(tmp_path)
 
 
 def test_default_factory_without_a_toolchain(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(select, "make_sandbox", lambda ws, policy, prefer: SubprocessSandbox(ws))
+    monkeypatch.setattr(select, "make_sandbox", lambda ws, policy, prefer, **k: HidingSandbox(ws))
     maker, setup = bench_validate.default_factory(bench_validate.parse_args(["--no-toolchain"]))
     assert setup["backends"] == ["bwrap", "unshare"]
     assert "toolchain" not in setup
