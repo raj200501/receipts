@@ -5,6 +5,12 @@ docs/BUILD_BRIEF.md section 9), newest first.
 
 ## 2026-11-12
 
+- **README.md and docs/REPORT.md, the report card and the revised extractor** (changed
+  because the code changed back): the entry below describes a report card showing the
+  bizdays completion sentence contradicted, and both documents said that a revised
+  extractor (D60) reads most of the listed completion statements. D60 is reverted (D61), so
+  the demo again shows only the supported "all existing tests passed", and those sentences
+  are removed.
 - **README.md "What a report card looks like" and docs/REPORT.md Figure 1** (changed because
   the code changed): the offline demo replays a banked run with the current extractor, and
   the revised extractor (D60) now reads the bizdays report's completion sentence, so the

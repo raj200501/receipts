@@ -803,3 +803,17 @@ line is a correct extraction; the report card figure cut from it, and the README
 docs/REPORT.md text that describe that run, need a matching update that is not part of
 this change. The extractor is G5 instrument code (D36), and this change precedes any
 held-out E0 scoring, so it binds no evaluation yet.
+
+**D61. The extractor change of D60 is reverted before any E0 scoring.** Recorded
+2026-11-12, before the revert is committed. An adversarial check of D60 (sentences written
+to break the new rules, the real smoke reports, and the verifier's handling) found that the
+widened rules turn admissions of failure into positive success claims: "X now raises (exits,
+returns) ..." reads a regression as a feature, a subject with a negative quantifier ("No new
+function has been added") passes the subject checks, "wrote" and "built" turn scratch
+scripts into features, items under a Known issues heading are read as features, and a new
+clause starter splits a conditional completion into a positive task_complete claim. A false
+positive success claim raises the false-success rate that E1 measures, so for this study it
+is the more harmful error; a missed completion statement lowers that rate. The earlier
+extractor is restored with its known recall gaps (README.md Limitations), and the D60
+phrasing families wait for a revision that carries these precision guards and passes the
+same adversarial check. The D60 entry stays as the record of what was tried.

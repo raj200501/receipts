@@ -36,14 +36,7 @@ dates ("3 tests failed before my change", "Initially mypy failed") or that a lat
 clause of the sentence undoes ("`test_x` was failing; it passes now", "failed once, then
 passed on retry") is history, not the final state. A negated run of part of a suite ("I
 didn't run the integration tests") yields no claim, because the verifier matches generic
-runs of any part of the suite and would contradict an honest admission. A question ("Did
-all tests pass?") asserts nothing and yields no claim.
-
-Feature claims also come from the way small local models report completed work (DECISIONS
-D60): a completed change in the passive ("The toc function has been successfully added",
-"The kvstore has been updated to handle JSONDecodeError"), "X now <verb>" ("The invoicer
-now uses Decimal"), and a created workflow or script ("Created a script to check the
-examples in README.md", where README.md is in the purpose clause and gets no file claim).
+runs of any part of the suite and would contradict an honest admission.
 
 Headings and label lines ("## Done", "**Known failures:**") name a section and are read
 only for explicit status statements ("## All 42 tests pass", "Status: done"). Unchecked
@@ -739,9 +732,7 @@ _NEGATOR = (
     r"|not\s+yet)"
 )
 _DESCRIPTION_END = re.compile(
-    # An aside in parentheses ends a description, but an acronym inside a noun phrase
-    # does not: "time-to-live (TTL) support to the LRUCache class".
-    r"\s+\((?!\))(?!(?-i:[A-Z][A-Z0-9]{1,9})\)\s+\w)|\s*;\s|\s*:\s|\s+-{1,2}\s|\s+→\s"
+    r"\s+\((?!\))|\s*;\s|\s*:\s|\s+-{1,2}\s|\s+→\s"
     r"|,\s+(?:which|so|and|but|because|since|as|making|meaning|now|while|then|plus|after"
     r"|before|so\s+that|otherwise)\b"
     r"|\s+(?:so\s+that|so|because|since|which|making|meaning|and\s+now|now\s+that|while"
@@ -1150,10 +1141,6 @@ _FEATURE_NOUNS = (
     r"|toc|table\s+of\s+contents|jitter|output|limit|limits|keyword"
     r"|kwarg|attribute|attributes)"
 )
-#: Things whose creation is a feature claim ("Created a GitHub Actions workflow", "The
-#: recover function has been added"), on top of :data:`_FEATURE_NOUNS`. They name a whole
-#: unit of work, so they are not read as subjects of a state ("The checks are working").
-_CREATED_NOUNS = r"(?:functions?|class(?:es)?|workflows?|scripts?|jobs?|pipelines?|checks?|tools?)"
 _FEATURE_IMPLEMENTED = re.compile(
     r"(?P<neg>\b" + _NEGATOR + r"\s+(?:yet\s+)?)?"
     r"\b(?P<verb>implemented|implements|implement|added\s+support\s+for|adds\s+support\s+for"
@@ -1164,13 +1151,11 @@ _FEATURE_IMPLEMENTED = re.compile(
 _FEATURE_ADDED = re.compile(
     r"(?P<neg>\b" + _NEGATOR + r"\s+(?:yet\s+)?)?"
     r"\b(?P<verb>added|adds|add|introduced|introduces|introduce|created|creates|create|exposed"
-    r"|exposes|expose|wrote|built)\s+"
+    r"|exposes|expose)\s+"
     r"(?P<obj>(?:(?:a|an|the|new|optional|basic|full|simple|proper|initial|first-class|built-in"
     r"|configurable|dedicated|separate)\s+){0,6}"
     r"(?:(?:(?!(?:with|to|for|in|from|of|on|at|by|into|and|or|that|which)\b)"
-    # A word of the noun phrase, or an acronym in parentheses ("time-to-live (TTL) support").
-    r"(?:`C+`|--?[A-Za-z][\w-]*|[A-Za-z][\w'-]*|\((?-i:[A-Z][A-Z0-9]{1,9})\))\s+){0,4}?"
-    r"(?:" + _FEATURE_NOUNS + r"|" + _CREATED_NOUNS + r")\b"
+    r"(?:`C+`|--?[A-Za-z][\w-]*|[A-Za-z][\w'-]*)\s+){0,4}?" + _FEATURE_NOUNS + r"\b"
     r"|(?P<flag>`C+`|--[A-Za-z][\w-]*)(?=\s|$|[.,;:)])))",
     _I,
 )
@@ -1215,166 +1200,11 @@ _FEATURE_SUBJECT_SKIP = re.compile(
     r")\W*$",
     _I,
 )
-#: "X now <verb> ...": the change made X behave a new way ("The CLI now supports `--quiet`",
-#: "The invoicer now uses Decimal"). The verbs in ``report`` can also give the outcome of a
-#: run, so a bare pronoun before one of them gives no claim ("it now reports no errors").
 _FEATURE_NOW = re.compile(
-    r"\bnow\s+(?:also\s+)?(?:(?P<report>reports|returns|prints|shows|displays|produces|exits)"
-    r"|supports|accepts|respects|honou?rs|provides|exposes|offers|emits|outputs|has|includes"
-    r"|validates|implements|uses|handles|follows|raises|throws|writes|reads|parses|rejects"
-    r"|logs|warns|skips|ignores|retries|caches|stores|keeps|computes|calculates|counts|rounds"
-    r"|sorts|filters|detects|allows|requires|creates|generates|recovers)\b",
+    r"\bnow\s+(?:supports|accepts|respects|honou?rs|provides|exposes|offers|emits|outputs|has"
+    r"|includes|validates|implements)\b",
     _I,
 )
-#: A subject of "now <verb>" that names a test run or a checker gives a status, not a
-#: feature: "Running `pytest` now shows 12 passed", "mypy now reports no errors".
-_NOW_STATUS_SUBJECT = re.compile(
-    r"\b(?:tests?|test\s+suite|suites?|specs?|linters?|lint(?:ing)?|type\s*check\w*"
-    r"|typecheck\w*|builds?|coverage|(?:re-?)?running|run|pytest|py\.test|jest|vitest|mocha"
-    r"|tox|nox|mypy|pyright|tsc|ruff|flake8|pylint|eslint|black|prettier|biome)\b",
-    _I,
-)
-_PRONOUN_SUBJECT = re.compile(r"^\W*(?:it|they|this|that|these|those|everything|all|both)\W*$", _I)
-#: Hedges and conditions in the subject of a completed change or of "now <verb>": "The
-#: flag should have been added", "It seems the cache has been updated", "Once the
-#: function has been added".
-_FEATURE_HEDGE = re.compile(
-    r"\b(?:should|would|could|might|may|must|will|can|shall|seems?|appears?|apparently"
-    r"|supposedly|probably|likely|hopefully|presumably|maybe|perhaps|believe|think|hope|guess"
-    r"|suspect|assume|expect|once|unless|until|whether)\b",
-    _I,
-)
-#: A completed change in the passive, with optional adverbs: "The toc function has been
-#: (successfully) added", "The kvstore has been updated to handle JSONDecodeError", "The
-#: repair function has not been added". An added thing (``create``) is itself the feature;
-#: a changed thing (``change``) needs a purpose, or a feature after "with", to say what the
-#: change does.
-_FEATURE_PERFECT = re.compile(
-    _LEAD_FILLERS + r"(?P<subj>[^;]{2,120}?)\s+(?:has|have)(?P<neg>\s*n[o']?t|\s+not)?\s+"
-    r"(?:(?:yet|now|also|successfully|fully|properly|finally|completely|correctly)\s+){0,3}"
-    r"been\s+(?:(?:now|also|successfully|fully|properly|finally|completely|correctly)\s+){0,3}"
-    r"(?:(?P<create>added|created|introduced|implemented|built|written|exposed)"
-    r"|(?P<change>updated|extended|changed|modified|improved|enhanced|adapted|adjusted"
-    r"|expanded|reworked|refactored|rewritten|converted|migrated|configured|set\s+up))\b",
-    _I,
-)
-#: A cheap test that a unit can hold a completed change, so that units without one skip
-#: the slower subject search of :data:`_FEATURE_PERFECT`.
-_BEEN = re.compile(r"\bbeen\b", _I)
-#: The purpose after a completed change: "... has been updated to support multiple calendars".
-_FEATURE_PURPOSE = re.compile(r"\s+(?:(?:in\s+order|so\s+as)\s+)?to\s+(?P<verb>[a-z]+)\b", _I)
-#: Verbs whose purpose clause says what a completed change does ("to support", "to handle").
-_FEATURE_PURPOSE_VERBS = _words(
-    "support handle use accept reject return raise throw print write read load save parse"
-    " validate check verify detect follow respect honor honour include exclude allow enable"
-    " disable prevent avoid ensure keep store cache retry log warn report emit output produce"
-    " generate compute calculate count round sort filter skip ignore recover repair convert"
-    " normalize escape encode decode serialize format render show display list expose provide"
-    " work run call send fetch track limit cap clamp catch create build add implement"
-    " introduce remove fix resolve correct patch"
-)
-_FEATURE_WITH = re.compile(r"\s+with\s+", _I)
-#: Subjects of a completed change that state no feature: the work as a whole ("The
-#: requested changes have been implemented" is a task_complete claim), tests (a
-#: tests_added claim), documentation, files, and dependencies.
-_PERFECT_SKIP_SUBJECT = re.compile(
-    r"^\W*(?:(?:the|all|my|our|these|those)\s+)*(?:(?:requested|required|necessary|proposed"
-    r"|remaining|other)\s+)*(?:changes?|edits?|updates?|modifications?|fix(?:es)?|work|tasks?"
-    r"|requirements?|implementation|refactor\w*|migration)\b"
-    r"|\b(?:tests?|test\s+cases?|specs?|suites?|fixtures?|readme|changelog|docs|documentation"
-    r"|guides?|examples?|files?|lock\s*files?|lockfile|requirements|dependenc(?:y|ies)|deps)\b",
-    _I,
-)
-_FEATURE_NAME = re.compile(
-    r"--[A-Za-z]|\b(?:" + _FEATURE_NOUNS + r"|" + _CREATED_NOUNS + r")\b", _I
-)
-_SUBJECT_DETERMINER = re.compile(r"\W*(?:the|a|an|new)\s+", _I)
-
-
-def _names_feature(v: _View, start: int, end: int) -> bool:
-    """True when ``v.prose[start:end]`` names a feature: a feature noun or a flag."""
-    if _FEATURE_NAME.search(v.prose, start, end):
-        return True
-    return any(start <= a and b <= end and v.content((a, b)).startswith("-") for a, b in v.codes)
-
-
-def _only_a_name(v: _View, start: int, end: int) -> bool:
-    """True when ``v.text[start:end]`` is one code span or one path, after a determiner."""
-    lead = _SUBJECT_DETERMINER.match(v.prose, start, end)
-    token = v.text[lead.end() if lead else start : end].strip()
-    return " " not in token and (token.startswith("`") or path_param(token) is not None)
-
-
-def _completed_change(v: _View) -> tuple[tuple[str, Span] | None, bool, Span, ClaimType] | None:
-    """A feature claim stated as a completed change in the passive, or None.
-
-    Returns the description, whether it is negated, the anchor, and the claim type. "The
-    toc and toc_write functions have been added to mdkit" gives the subject, which is the
-    feature. "The kvstore has been updated to handle JSONDecodeError" gives the whole
-    statement: the subject names the part that changed and the purpose names the feature;
-    a purpose that fixes something ("updated to fix the crash") gives ``bug_fixed``. An
-    added thing needs a feature noun or a flag ("The `--strict` flag"), or a purpose and a
-    noun phrase that is more than a name ("A guard has been added to reject empty names",
-    not "`httpx` has been added to support HTTP/2"). A change needs a purpose or a feature
-    after "with" ("The CLI has been extended with a `--json` flag"); "The kvstore has been
-    updated" alone says nothing checkable.
-    """
-    match = _FEATURE_PERFECT.match(v.prose) if _BEEN.search(v.prose) else None
-    if match is None:
-        return None
-    start, end = match.span("subj")
-    subject = match.group("subj")
-    if (
-        _FEATURE_SUBJECT_SKIP.match(subject)
-        or _FEATURE_SUBJECT_CLAUSE.search(subject)
-        or _FEATURE_HEDGE.search(subject)
-        or _PERFECT_SKIP_SUBJECT.search(subject)
-    ):
-        return None
-    purpose = _FEATURE_PURPOSE.match(v.prose, match.end())
-    verb = purpose.group("verb").lower() if purpose is not None else ""
-    kind = ClaimType.BUG_FIXED if verb in _BUG_BASE_FORMS else ClaimType.FEATURE_IMPLEMENTED
-    has_purpose = verb in _FEATURE_PURPOSE_VERBS
-    negated = match.group("neg") is not None
-    if match.group("create"):
-        determined = _SUBJECT_DETERMINER.match(v.prose, start, end) is not None
-        plain = determined and not _only_a_name(v, start, end)
-        if not (_names_feature(v, start, end) or (has_purpose and plain)):
-            return None
-        return _description(v, start, end), negated, match.span(), kind
-    desc = _description(v, start)
-    with_ = _FEATURE_WITH.match(v.prose, match.end())
-    named = with_ is not None and desc is not None and _names_feature(v, with_.end(), desc[1][1])
-    if not (has_purpose or named):
-        return None
-    return desc, negated, match.span(), kind
-
-
-def _now_states_feature(v: _View, now: re.Match[str], start: int) -> bool:
-    """True when "now <verb>" at ``now``, with its subject from ``start``, states a feature.
-
-    Not when the subject names a test run or a checker, or is a command ("`pytest` now
-    shows 12 passed"), when a pronoun stands before a verb that can report a run ("it now
-    reports no errors"), or when a hedge or a condition governs it ("If the invoicer now
-    uses Decimal, ..."). The subject is the clause right before "now": a phrase before a
-    comma does not count, so "When run with `--json`, the CLI now prints one object per
-    line" states a feature.
-    """
-    before = v.prose[start : now.start()]
-    clause_start = start + max(before.rfind(","), before.rfind(";")) + 1
-    subject = v.prose[clause_start : now.start()]
-    if _NOW_STATUS_SUBJECT.search(subject) or _FEATURE_HEDGE.search(subject):
-        return False
-    if _FILE_CONDITION.search(v.prose[: now.start()]):
-        return False
-    if now.group("report") and _PRONOUN_SUBJECT.match(subject):
-        return False
-    return not any(
-        clause_start <= a < now.start() and command_param(v.content((a, b))) is not None
-        for a, b in v.codes
-    )
-
-
 _FEATURE_LABEL = re.compile(
     r"^\W*(?:implemented|feature|new\s+feature|added\s+feature|features?\s+added)\s*:\s*(?=\S)",
     _I,
@@ -1448,18 +1278,9 @@ def _feature(v: _View) -> list[_Candidate]:
         desc = _description(v, passive.start("subj"), passive.end("subj"))
         add(desc, negated, passive.span(), feature)
         return out
-    completed = _completed_change(v)
-    if completed is not None and completed[0] is not None:
-        desc, negated, anchor, kind = completed
-        add(desc, negated, anchor, kind)
-        return out
     now = _FEATURE_NOW.search(v.prose)
     if now is not None:
-        # The description starts after opening words: "Additionally, the invoicer now ..."
-        lead = _LEAD.match(v.prose)
-        start = min(lead.end() if lead is not None else 0, now.start())
-        if _now_states_feature(v, now, start):
-            add(_description(v, start), False, now.span(), feature)
+        add(_description(v, 0), False, now.span(), feature)
     return _first_per_span(out)
 
 
@@ -1627,12 +1448,6 @@ _NOT_COMPLETE = re.compile(
     r"|(?:i|we)\s+(?:have\s*n[o']?t|have\s+not|did\s*n[o']?t|did\s+not)\s+(?:yet\s+)?"
     r"(?:finish(?:ed)?|complete[d]?)\s+(?:the\s+task|everything|all\s+(?:of\s+)?(?:the\s+)?"
     r"(?:changes|requirements|work))"
-    # "The requested changes have not been implemented", the negation of the
-    # requirements statement of _COMPLETE.
-    r"|(?:all\s+)?(?:the\s+)?(?:requirements|(?:requested|required)\s+(?:changes|features)"
-    r"|changes|items|tasks|acceptance\s+criteria|steps)\s+(?:are|have|has)\s*(?:n[o']?t|not)"
-    r"\s+(?:yet\s+)?(?:been\s+)?(?:(?:all|fully)\s+)?(?:met|done|implemented|completed"
-    r"|addressed|satisfied|in\s+place|handled|finished)"
     r")\b",
     _I,
 )
@@ -3033,8 +2848,8 @@ _FILE_VERB = re.compile(
     r"|touched|touching|extended|extends|amended|revised|reformatted|formatted|fixed|fixes"
     r"|fixing|corrected|tidied(?:\s+up)?|hardened|improved|optimi[sz]ed|converted|migrated"
     r"|annotated|documented|implemented|implementing|wired\s+up|hooked\s+up|replaced|ported"
-    r"|commented|expanded|regenerated|recreated|configured|registered|exported|guarded|declared"
-    r"|bumped|sorted|reordered))\b",
+    r"|commented|expanded|regenerated|configured|registered|exported|guarded|declared|bumped"
+    r"|sorted|reordered))\b",
     _I,
 )
 _FILE_VERB_NEGATED = re.compile(
@@ -3059,27 +2874,19 @@ _WEAK_STOPS = _words(
 )
 _LOCATIONS = _words("in inside within at into of on under across throughout")
 _SEPARATOR_ONLY = re.compile(r"^\s*(?:,|and|&|plus|as\s+well\s+as|along\s+with|\s)*\s*$", _I)
-#: A noun that may follow the path in a passive file statement: "The EXPIRY.md file has
-#: been updated", "`ci.yml` workflow was removed".
-_FILE_NOUN = (
-    r"(?:\s+(?:file|module|script|document|page|template|workflow|fixture"
-    r"|config(?:uration)?(?:\s+file)?)s?)?"
-)
 _PASSIVE_FILE = re.compile(
-    r"(?:\s*(?:,|and|&)\s*(?:`[^`]*`|[\w@./\-]+))*" + _FILE_NOUN + r"\s+(?:(?:was|were|is|are"
-    r"|has\s+been|have\s+been|got|is\s+now|are\s+now)\s+)(?:(?:also|now|both|then|just"
-    r"|successfully|fully)\s+){0,6}"
-    r"(?:(?P<modify>updated|modified|changed|edited|refactored|rewritten|touched|fixed|adjusted"
-    r"|patched|reworked|recreated|regenerated|replaced|overwritten)"
+    r"(?:\s*(?:,|and|&)\s*(?:`[^`]*`|[\w@./\-]+))*\s+(?:(?:was|were|is|are|has\s+been|have\s+been"
+    r"|got|is\s+now|are\s+now)\s+)(?:(?:also|now|both|then|just)\s+){0,6}(?:(?P<modify>updated"
+    r"|modified|changed|edited|refactored|rewritten|touched|fixed|adjusted|patched|reworked)"
     r"|(?P<create>created|added|generated|introduced|new)|(?P<delete>deleted|removed|dropped"
     r"|gone))\b",
     _I,
 )
 _PASSIVE_UNCHANGED = re.compile(
-    _FILE_NOUN + r"\s+(?:(?:is|was|remains|remained|stays|stayed|was\s+left|is\s+left"
-    r"|has\s+been\s+left|were\s+left|are)\s+(?:completely\s+|entirely\s+|still\s+)?(?:unchanged"
-    r"|untouched|unmodified|as[- ]is|alone|intact)|(?:was|were|is|are|has|have)\s*(?:n[o']?t"
-    r"|not)\s+(?:been\s+)?(?:modified|changed|touched|edited|updated))\b",
+    r"\s+(?:(?:is|was|remains|remained|stays|stayed|was\s+left|is\s+left|has\s+been\s+left"
+    r"|were\s+left|are)\s+(?:completely\s+|entirely\s+|still\s+)?(?:unchanged|untouched"
+    r"|unmodified|as[- ]is|alone|intact)|(?:was|were|is|are|has|have)\s*(?:n[o']?t|not)\s+"
+    r"(?:been\s+)?(?:modified|changed|touched|edited|updated))\b",
     _I,
 )
 _LEFT_UNCHANGED = re.compile(
@@ -3146,16 +2953,6 @@ _BASE_VERBS = _words(
     " apply schedule cancel close open start stop build run"
 )
 _IRREGULAR_PAST = _words("wrote rewrote made kept ran built sent took got split set put")
-#: Verbs that open a purpose clause after "to": in "Created a script to check the examples
-#: in README.md" the path is what the purpose clause is about, not what was changed.
-_PURPOSE_VERBS = (
-    _BASE_VERBS
-    | _FEATURE_PURPOSE_VERBS
-    | _words(
-        "verify test lint reflect describe explain mention cover demonstrate illustrate confirm"
-        " exercise reproduce measure benchmark be"
-    )
-)
 
 
 def _is_verb(word: str) -> bool:
@@ -3298,9 +3095,6 @@ def _relation(words: list[str], kind: str) -> str | None:
 
     Returns "direct" (the path is the verb's object), "location" (the change happened in
     the path), or None (the path is a reference, a purpose, or otherwise not changed).
-    After a create, delete or move verb "to" names a location ("added a test to `t.py`"),
-    except before a verb, where it opens a purpose clause: in "Created a script to check
-    the examples in README.md" the path belongs to the purpose, not to the change.
     """
     to_is_location = kind in ("create", "delete", "move")
     from_is_location = kind in ("delete", "move")
@@ -3308,15 +3102,13 @@ def _relation(words: list[str], kind: str) -> str | None:
     strong_seen = soft_seen = False
     last: str | None = None
     last_word = ""
-    for index, word in enumerate(words):
-        following = words[index + 1] if index + 1 < len(words) else ""
-        purpose = word == "to" and following in _PURPOSE_VERBS
+    for word in words:
         if word == "that":
             soft_seen = True  # "the imports that referenced it in `app/main.py`"
             last = "stop"
         elif (
             word in _STRONG_STOPS
-            or (word == "to" and (not to_is_location or purpose))
+            or (word == "to" and not to_is_location)
             or (word == "from" and not from_is_location)
         ):
             strong_seen = True
@@ -3780,11 +3572,6 @@ _WORK_TYPES = frozenset(
 )
 
 
-#: A unit that asks a question asserts nothing: "Did all tests pass?", "Should I have
-#: added a `--json` flag?". A question mark inside parentheses or code does not count.
-_QUESTION = re.compile(r"\?[\"'*_\s]*$")
-
-
 def _count_admission(hit: PatternHit) -> PatternHit | None:
     """The negated ``tests_pass`` a test count with failures implies ("39 passed, 3 failed")."""
     failed = hit.params.get("failed")
@@ -3800,11 +3587,11 @@ def match_unit(unit: Unit) -> list[PatternHit]:
     overlaps a region reserved by an earlier rule for its family is dropped, and
     claims with identical (type, params) are kept once, the first in unit order. A
     heading or label line is read only for explicit status statements; an unchecked
-    task box ("- [ ] Added pagination") and a question ("Did all tests pass?") give no
-    claim; and for the items listed under a section of work not done ("Next steps", "Not
-    done", "TODO") only admissions and status claims are kept.
+    task box ("- [ ] Added pagination") gives no claim; and for the items listed under
+    a section of work not done ("Next steps", "Not done", "TODO") only admissions and
+    status claims are kept.
     """
-    if unit.checked is False or _QUESTION.search(unit.text):
+    if unit.checked is False:
         return []
     view = _View(unit)
     kept: list[_Candidate] = []
