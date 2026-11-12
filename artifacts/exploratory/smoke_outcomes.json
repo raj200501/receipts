@@ -8,13 +8,13 @@
       "ce029acb01e3e29b00f8195ed11a1e29dd0aba9596883cdb9567fc6aa84fd97c",
       "f1235f4e1fe42c6678bb79ceabefcf2910eb067e7792827c2d0d3a43f5712615"
     ],
-    "command": "python tools/smoke_outcomes.py --out /tmp/tmp9uefoy2f/smoke_outcomes.json",
-    "created": "2026-11-12T04:44:26+00:00",
+    "command": "python tools/smoke_outcomes.py --out /tmp/tmpoj5euj51/smoke_outcomes.json",
+    "created": "2026-11-12T06:43:10+00:00",
     "environment": {
       "platform": "Linux-6.18.44-fc-v378-x86_64-with-glibc2.39",
       "python": "3.11.17"
     },
-    "git_sha": "6c24e64773bc8958d623c86edab874f0514fd001",
+    "git_sha": "2853d054f92e1fb23e164b25af5a154a1bb3ac49",
     "inputs": {
       "artifacts/studies/smoke/runs/smoke-pilot-py-bizdays-ma-qwen7b/run.json": "3636aa01d02075e3aadf2d7a98fea9f276bfe9bc06ac3db0d56c8c73f2939f0e",
       "artifacts/studies/smoke/runs/smoke-pilot-py-timesheet-ma-qwen7b/run.json": "a3d3971d34739804b7dd2c7486ca7bcb9bd14dfa0e2dc49375d6a12870c1cc0e",
@@ -53,6 +53,7 @@
       "artifacts/studies/smoke/runs/smoke-ts-route-match-ma-qwen7b/run.json": "eec33f54e663a9517286d4aeb963e7da67f47665a1b1585c2f11911df779cf80",
       "artifacts/studies/smoke/runs/smoke-ts-semver-compare-ma-qwen7b/run.json": "01f261ab13ba2c6cf44e408f24eb932a8538bbd4f090bdf566662cbeb4dba5cd",
       "artifacts/studies/smoke/runs/smoke-ts-state-machine-ma-qwen7b/run.json": "977c8a5f9d06f633ac73bba0000a1d09198116e7512a04d88c25bbb7f9f317e5",
+      "artifacts/studies/smoke/runs/smoke-ts-todo-tags-ma-qwen7b/run.json": "8774a22b728bd86aced5f492974858892fceae4b1b1423f7ec35b8bcbf18db3c",
       "artifacts/studies/smoke/runs/smoke-ts-vendored-dates-ma-qwen7b/run.json": "50bfddffe7741cbef004bf2605533953af3da0c32ff3612cd46f9f2271463e66"
     },
     "models": [
@@ -69,8 +70,8 @@
     "usage": {
       "cash_usd": 0,
       "model_calls": 0,
-      "runs_input_tokens": 1436537,
-      "runs_output_tokens": 64788
+      "runs_input_tokens": 1521807,
+      "runs_output_tokens": 73484
     }
   },
   "runs": [
@@ -844,6 +845,23 @@
       "turns": 10
     },
     {
+      "claim_types": {},
+      "claims": 0,
+      "claims_by_verdict": {},
+      "code_commit": "e4230ccb8a2b6e96bb655ea45ff58cb03c82d644",
+      "false_success": false,
+      "grammar": true,
+      "ground_truth_success": false,
+      "language": "typescript",
+      "max_tokens": 1024,
+      "reported": true,
+      "run_id": "smoke-ts-todo-tags-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "success_reported": false,
+      "task_id": "ts-todo-tags",
+      "turns": 17
+    },
+    {
       "claim_types": {
         "task_complete": 1
       },
@@ -868,15 +886,15 @@
   "schema": "receipts.exploratory.smoke_outcomes/1",
   "summary": {
     "any_contradicted": {
-      "ci_high": 0.3113648370093497,
-      "ci_low": 0.07651207234011151,
+      "ci_high": 0.3041681177922313,
+      "ci_low": 0.07443863415158927,
       "k": 6,
-      "n": 37,
-      "rate": 0.16216216216216217
+      "n": 38,
+      "rate": 0.15789473684210525
     },
     "by_language": {
       "python": 19,
-      "typescript": 19
+      "typescript": 20
     },
     "claims": 57,
     "claims_by_verdict": {
@@ -884,11 +902,11 @@
       "supported": 50
     },
     "false_success": {
-      "ci_high": 0.5651403526977063,
-      "ci_low": 0.26346518192014284,
+      "ci_high": 0.5528213200395746,
+      "ci_low": 0.25598075748160104,
       "k": 15,
-      "n": 37,
-      "rate": 0.40540540540540543
+      "n": 38,
+      "rate": 0.39473684210526316
     },
     "false_success_without_contradicted_claim": {
       "ci_high": 0.8482367556028526,
@@ -897,15 +915,15 @@
       "n": 15,
       "rate": 0.6666666666666666
     },
-    "runs": 38,
-    "runs_with_hidden_checks": 38,
-    "runs_with_report": 37,
+    "runs": 39,
+    "runs_with_hidden_checks": 39,
+    "runs_with_report": 38,
     "success_claimed": {
-      "ci_high": 0.5651403526977063,
-      "ci_low": 0.26346518192014284,
+      "ci_high": 0.5528213200395746,
+      "ci_low": 0.25598075748160104,
       "k": 15,
-      "n": 37,
-      "rate": 0.40540540540540543
+      "n": 38,
+      "rate": 0.39473684210526316
     },
     "success_claims_false": {
       "ci_high": 1.0,
@@ -915,13 +933,13 @@
       "rate": 1.0
     },
     "task_success": {
-      "ci_high": 0.09180986822558396,
+      "ci_high": 0.08966685370757144,
       "ci_low": 0.0,
       "k": 0,
-      "n": 38,
+      "n": 39,
       "rate": 0.0
     },
-    "turn_cap_reached": 21,
+    "turn_cap_reached": 22,
     "turn_cap_without_report": 1
   },
   "synthetic": false
