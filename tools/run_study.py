@@ -10,6 +10,15 @@ through :mod:`receipts.study.runner` with the sandbox chosen by
 never re-run, so the command is safe to restart. Start long plans in the background with
 ``nohup``; the PID is written to ``runs/<study>/pid`` (section 8, usage hygiene).
 
+The agent's sandbox hides this checkout (the benchmark's hidden checks and reference
+solutions, the instrument, ``private/``, other runs' files) whatever code the session
+imports (DECISIONS D67): :func:`study_sandbox` names it as a hidden path, and
+:func:`checkout_hiding` refuses a sandbox whose commands could reach it, once before any
+model server starts (:func:`preflight`, exit status 2) and again before each run; the run
+record says how it was hidden (``provenance.sandbox``). A session that imports a code
+snapshot (``runs/code/<sha>/src``) starts only when the snapshot's files are ``src/`` of
+the commit it names (:func:`snapshot_differences`).
+
 Infrastructure failures (prereg/0001-e1-main-study.md section 10, prereg 0002 section
 6): an exception raised in ``execute_run`` (a model server, sandbox, or workspace error,
 never agent behavior) leaves the run unbanked, and the failed attempt is appended to
@@ -33,10 +42,16 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import io
 import json
 import os
+import re
+import shlex
+import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 import threading
 import traceback
 from collections.abc import Callable, Mapping, Sequence
@@ -51,7 +66,8 @@ from receipts.client.backends import LocalOpenAIBackend
 from receipts.client.models import LOCAL_MODELS
 from receipts.client.server import LocalServer
 from receipts.client.wrapper import ModelClient
-from receipts.sandbox.api import SandboxPolicy
+from receipts.sandbox.api import HidesPaths, Sandbox, SandboxPolicy, SandboxUnavailableError
+from receipts.sandbox.bwrap import default_hidden_paths, project_root
 from receipts.sandbox.select import make_sandbox
 from receipts.sandbox.toolchain import Toolchain, python_toolchain, with_toolchain
 from receipts.study.plan import Plan, load_plan
@@ -91,22 +107,133 @@ def dirty_files() -> list[str]:
     return sorted(line[3:] for line in out.splitlines() if line.strip())
 
 
+SNAPSHOT_MARKER = "SNAPSHOT_OF"
+"""The file beside a code snapshot's ``src/`` that names the commit it was taken from."""
+
+#: A full commit id as git prints it (SHA-1, or SHA-256 in a repository that uses it).
+FULL_COMMIT = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
+
+#: One entry of a ``src/`` tree: ``("file", bytes, executable)`` or ``("symlink",
+#: target, False)``; anything else is ``("other", b"", False)``.
+TreeEntry = tuple[str, bytes, bool]
+
+
+def _git_output(*args: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, check=False)
+
+
+def _archived_tree(archive: bytes) -> dict[str, TreeEntry]:
+    entries: dict[str, TreeEntry] = {}
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        for member in tar.getmembers():
+            if member.isdir():
+                continue
+            if member.issym():
+                entries[member.name] = ("symlink", member.linkname.encode(), False)
+            elif member.isfile():
+                handle = tar.extractfile(member)
+                data = b"" if handle is None else handle.read()
+                entries[member.name] = ("file", data, bool(member.mode & 0o100))
+            else:
+                entries[member.name] = ("other", b"", False)
+    return entries
+
+
+def _is_bytecode_cache(rel: Path) -> bool:
+    return "__pycache__" in rel.parts[:-1] and rel.suffix == ".pyc"
+
+
+def _disk_tree(snapshot: Path) -> dict[str, TreeEntry]:
+    entries: dict[str, TreeEntry] = {}
+    for top, dirs, files in os.walk(snapshot / "src"):
+        for name in [*dirs, *files]:
+            path = Path(top) / name
+            rel = path.relative_to(snapshot)
+            if path.is_symlink():
+                entries[rel.as_posix()] = ("symlink", str(path.readlink()).encode(), False)
+            elif path.is_dir() or _is_bytecode_cache(rel):
+                continue
+            elif path.is_file():
+                executable = bool(path.stat().st_mode & 0o100)
+                entries[rel.as_posix()] = ("file", path.read_bytes(), executable)
+            else:
+                entries[rel.as_posix()] = ("other", b"", False)
+    return entries
+
+
+def snapshot_differences(snapshot: Path, sha: str) -> list[str]:
+    """How ``snapshot/src`` differs from the ``src/`` tree of commit ``sha`` (empty: none).
+
+    The commit's tree is read with ``git archive <sha> src``, as
+    ``tools/snapshot_code.sh`` extracts it, and compared with the files on disk: the
+    same paths, each a regular file with the same bytes and executable bit, or a
+    symlink with the same target. The bytecode caches that importing the snapshot
+    writes (``*.pyc`` files in ``__pycache__`` directories) are skipped, and directories
+    count only through the files they hold. ``sha`` must be the full id of a commit in
+    this repository (:data:`ROOT`).
+    """
+    if not FULL_COMMIT.fullmatch(sha):
+        return [f"{SNAPSHOT_MARKER} holds {sha!r}, not a full commit id"]
+    resolved = _git_output("rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}")
+    if resolved.returncode != 0 or resolved.stdout.decode().strip() != sha:
+        return [f"commit {sha} is not in the repository at {ROOT}"]
+    archive = _git_output("archive", "--format=tar", sha, "src")
+    if archive.returncode != 0:
+        reason = archive.stderr.decode(errors="replace").strip()
+        return [f"git archive {sha} src failed: {reason}"]
+    if not (snapshot / "src").is_dir():
+        return [f"{snapshot / 'src'} is not a directory"]
+    expected, found = _archived_tree(archive.stdout), _disk_tree(snapshot)
+    differences = [f"{name} is missing" for name in sorted(expected.keys() - found.keys())]
+    extra = sorted(found.keys() - expected.keys())
+    differences += [f"{name} is not in commit {sha}" for name in extra]
+    for name in sorted(expected.keys() & found.keys()):
+        (kind, data, executable), (disk_kind, disk_data, disk_executable) = (
+            expected[name],
+            found[name],
+        )
+        if kind != disk_kind:
+            differences.append(f"{name} is a {disk_kind} here and a {kind} in the commit")
+        elif data != disk_data:
+            differences.append(f"{name} differs from the commit")
+        elif executable != disk_executable:
+            differences.append(f"{name} has a different executable bit")
+    return differences
+
+
 def code_state() -> dict[str, Any]:
-    """Which code this session runs: the working tree, or a snapshot of one commit.
+    """Which code this session runs: the working tree, or a checked snapshot of one commit.
 
     ``tools/snapshot_code.sh <sha>`` extracts a commit's ``src/`` under
     ``runs/code/<sha>/`` with a ``SNAPSHOT_OF`` marker; running with ``PYTHONPATH``
-    pointing at it imports that exact code while other work edits the working tree.
+    pointing at it imports that exact code while other work edits the working tree. A
+    snapshot is used only when its files are the ``src/`` tree of the commit its marker
+    names (:func:`snapshot_differences`), so ``snapshot_of`` is checked, not declared;
+    the record then says ``snapshot_verified``.
+
+    Raises:
+        SystemExit: receipts is imported from a directory that is neither this
+            checkout's ``src/`` nor a snapshot's, or the snapshot differs from its
+            commit.
     """
     import receipts
 
     src = Path(receipts.__file__).resolve().parents[1]
     if src == (ROOT / "src").resolve():
         return {"code": "working tree", "uncommitted_at_start": dirty_files()}
-    marker = src.parent / "SNAPSHOT_OF"
-    if not marker.is_file():
+    marker = src.parent / SNAPSHOT_MARKER
+    if src.name != "src" or not marker.is_file():
         raise SystemExit(f"receipts imported from {src}, which is not a recorded snapshot")
-    return {"code": "snapshot", "snapshot_of": marker.read_text(encoding="utf-8").strip()}
+    sha = marker.read_text(encoding="utf-8").strip()
+    differences = snapshot_differences(src.parent, sha)
+    if differences:
+        listed = "; ".join(differences[:5])
+        more = f"; and {len(differences) - 5} more" if len(differences) > 5 else ""
+        raise SystemExit(
+            f"refusing the code snapshot {src.parent}: it is not src/ of commit {sha} "
+            f"({listed}{more})"
+        )
+    return {"code": "snapshot", "snapshot_of": sha, "snapshot_verified": True}
 
 
 def _now() -> str:
@@ -227,6 +354,111 @@ def toolchain() -> Toolchain:
         return _TOOLCHAIN[0]
 
 
+class CheckoutExposedError(RuntimeError):
+    """The sandbox a study run would use lets its commands reach the checkout.
+
+    The run must not start. This is never an infrastructure failure: it would fail
+    every attempt alike, so it stops the session and no attempt is logged.
+    """
+
+
+def checkouts() -> tuple[Path, ...]:
+    """The checkouts a study run's sandbox must hide, resolved.
+
+    This checkout (:data:`ROOT`: the benchmark's hidden checks and reference solutions,
+    the instrument, ``private/``, and every run's files) and, when the imported package
+    lies in another one (the main checkout around a worktree, for example), that one
+    too (:func:`receipts.sandbox.bwrap.project_root`). Named here, they are hidden
+    whatever code the session imports, a code snapshot under ``runs/code/`` included.
+    """
+    found = {ROOT.resolve(): None}
+    outer = project_root()
+    if outer is not None:
+        found[outer.resolve()] = None
+    return tuple(found)
+
+
+def hidden_paths() -> tuple[Path, ...]:
+    """What a study run's bubblewrap sandbox hides: the default hidden paths with this
+    checkout named (``default_hidden_paths(project=ROOT)``) and every :func:`checkouts`."""
+    return tuple(dict.fromkeys([*default_hidden_paths(project=ROOT), *checkouts()]))
+
+
+def study_sandbox(work: Path, policy: SandboxPolicy) -> Sandbox:
+    """The sandbox of one study run on workspace ``work``: a backend of :data:`BACKENDS`
+    that hides :func:`hidden_paths`; ``policy.readonly_paths`` (the toolchain) and the
+    workspace stay reachable even inside the hidden checkout."""
+    return make_sandbox(work, policy, prefer=BACKENDS, hide_paths=hidden_paths())
+
+
+def _relative_to_root(path: Path) -> str:
+    return path.relative_to(ROOT.resolve()).as_posix() if path.is_relative_to(ROOT) else str(path)
+
+
+def checkout_hiding(box: Sandbox) -> dict[str, Any]:
+    """Check that no command in ``box`` can reach a checkout; the run record's account.
+
+    Two checks, before any agent command runs: the sandbox's own layout must hide every
+    one of :func:`checkouts` (a backend that cannot say what it hides is refused), and a
+    command run inside it must not find any checkout's ``pyproject.toml``. A Docker
+    sandbox passes when neither its workspace nor a read-only path is a checkout or lies
+    above one, since a container sees no other host path. The read-only paths and the
+    workspace inside a checkout (the toolchain under ``runs/toolchains``, the run's
+    workspace under ``runs/work``) stay reachable and are listed.
+
+    Returns:
+        ``{"backend": ..., "checkout_hidden": True, "shown_in_checkout": [...]}``, the
+        last relative to :data:`ROOT` and sorted.
+
+    Raises:
+        CheckoutExposedError: A checkout is within reach of the sandbox's commands.
+    """
+    roots = checkouts()
+    if not isinstance(box, HidesPaths):
+        raise CheckoutExposedError(
+            f"the {box.backend} sandbox cannot say which host paths it hides, so it may "
+            f"show the checkout {roots[0]}"
+        )
+    reached = [str(root) for root in roots if not box.hides(root)]
+    if reached:
+        raise CheckoutExposedError(
+            f"the {box.backend} sandbox lets commands reach the checkout {', '.join(reached)}"
+        )
+    markers = [root / "pyproject.toml" for root in roots if (root / "pyproject.toml").is_file()]
+    if markers:
+        probe = " && ".join(f"test ! -e {shlex.quote(str(marker))}" for marker in markers)
+        outcome = box.run(probe, timeout_s=60.0)
+        if outcome.exit_code != 0:
+            raise CheckoutExposedError(
+                f"a command in the {box.backend} sandbox finds "
+                f"{' or '.join(map(str, markers))} (probe exit {outcome.exit_code})"
+            )
+    shown = {_relative_to_root(path) for root in roots for path in box.shown_within(root)}
+    return {"backend": box.backend, "checkout_hidden": True, "shown_in_checkout": sorted(shown)}
+
+
+def preflight(study: str) -> dict[str, Any]:
+    """Check, before any model server starts, that a run of ``study`` would get a
+    sandbox that hides the checkout (:func:`checkout_hiding`).
+
+    The sandbox is built as for a run (:func:`study_sandbox`, the toolchain read-only)
+    on an empty workspace beside the runs' workspaces, ``runs/work/<study>/``, which is
+    removed afterwards.
+
+    Raises:
+        CheckoutExposedError: The sandbox shows the checkout.
+        SandboxUnavailableError: No sandbox backend works here.
+    """
+    policy = with_toolchain(SandboxPolicy(), toolchain())
+    work_root = RUNS / "work" / study
+    work_root.mkdir(parents=True, exist_ok=True)
+    probe = Path(tempfile.mkdtemp(prefix=".preflight-", dir=work_root))
+    try:
+        return checkout_hiding(study_sandbox(probe, policy))
+    finally:
+        shutil.rmtree(probe, ignore_errors=True)
+
+
 def one_run(
     plan: Plan,
     spec: RunSpec,
@@ -238,10 +470,16 @@ def one_run(
 ) -> RunRecord:
     """Make one attempt at one planned run and bank it.
 
+    The run's sandbox hides the checkout (:func:`study_sandbox`) and is checked before
+    the run starts (:func:`checkout_hiding`); its record is banked as
+    ``provenance["sandbox"]``.
+
     Raises:
         InfrastructureError: ``execute_run`` raised, so the run is left unbanked.
             Errors before it (the arm, the task files, the toolchain, the task tree hash)
             propagate unchanged: they would fail every attempt alike.
+        CheckoutExposedError: The run's sandbox shows the checkout; it propagates
+            unchanged too, so it stops the session and is never logged as an attempt.
     """
     task_dir = ROOT / "bench" / "tasks" / spec.task_id
     arm = plan.arm(spec.config_id)
@@ -264,11 +502,14 @@ def one_run(
             study=plan.text,
             artifacts_dir=artifacts,
             work_root=RUNS / "work" / plan.study,
-            sandbox_factory=lambda work: make_sandbox(work, policy, prefer=BACKENDS),
+            sandbox_factory=lambda work: study_sandbox(work, policy),
+            sandbox_check=checkout_hiding,
             git_sha=sha,
             server_provenance=server.provenance(),
             extra_provenance=extra,
         )
+    except CheckoutExposedError:
+        raise  # a refusal, not an infrastructure failure: the session stops, unlogged
     except Exception as exc:  # infrastructure failure: the run stays unbanked
         raise InfrastructureError(
             f"{type(exc).__name__}: {exc}", traceback.format_exc()[-4000:]
@@ -461,18 +702,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         todo = todo[: args.limit]
     code = code_state()
     sha = str(code["snapshot_of"]) if code["code"] == "snapshot" else git_sha()
+    if todo:
+        try:
+            hiding = preflight(plan.study)
+        except (CheckoutExposedError, SandboxUnavailableError) as exc:
+            print(f"REFUSED: {exc}; no run of study {plan.study} starts", file=sys.stderr)
+            return 2
+        shown = ", ".join(hiding["shown_in_checkout"]) or "nothing"
+        print(f"sandbox: {hiding['backend']} hides the checkout (shown in it: {shown})", flush=True)
     specs = {r.run_id: r for r in plan.runs}
     by_model: dict[str, list[RunSpec]] = {}
     for run_id in todo:
         by_model.setdefault(plan.arm(specs[run_id].config_id).model, []).append(specs[run_id])
     total = SessionResult()
-    for model_name, runs in by_model.items():
-        result = run_model(plan, model_name, runs, args, artifacts, state, sha, code)
-        total.banked += result.banked
-        total.excluded += result.excluded
-        if result.stopped:
-            total.stopped = True
-            break
+    try:
+        for model_name, runs in by_model.items():
+            result = run_model(plan, model_name, runs, args, artifacts, state, sha, code)
+            total.banked += result.banked
+            total.excluded += result.excluded
+            if result.stopped:
+                total.stopped = True
+                break
+    except CheckoutExposedError as exc:
+        print(f"REFUSED: {exc}; study {plan.study} stops, no attempt logged", file=sys.stderr)
+        return 2
     print(f"study {plan.study}: {len(total.banked)} run(s) banked this session", flush=True)
     if total.excluded:
         print(

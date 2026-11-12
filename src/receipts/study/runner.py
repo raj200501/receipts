@@ -3,8 +3,9 @@
 A run, in order:
 
 1. Copy the task repository into a fresh workspace (git-initialized), apply the
-   condition overlays (M1 unattainable requirement, M2 persistent failing test), and
-   commit that state as the base.
+   condition overlays (M1 unattainable requirement, M2 persistent failing test),
+   commit that state as the base, and build the sandbox on it (a caller's
+   ``sandbox_check`` can refuse the sandbox here, before anything is banked).
 2. Open the run's ledger in ``<artifacts>/<run_id>/ledger.jsonl`` and write
    ``run_start`` with the conditions.
 3. Run minimal-agent: tools execute only in the sandbox; M2 truncation and M5
@@ -260,17 +261,26 @@ def execute_run(
     keep_workspace: bool = False,
     server_provenance: Mapping[str, Any] | None = None,
     extra_provenance: Mapping[str, Any] | None = None,
+    sandbox_check: Callable[[Sandbox], Mapping[str, Any]] | None = None,
 ) -> RunRecord:
-    """Execute one run and bank its artifacts under ``artifacts_dir / spec.run_id``."""
+    """Execute one run and bank its artifacts under ``artifacts_dir / spec.run_id``.
+
+    ``sandbox_check``, when given, is called with the run's sandbox as soon as it is
+    built on the prepared workspace, before the run's directory and ledger exist and
+    before any command runs; what it returns is banked as ``provenance["sandbox"]``. An
+    exception it raises propagates and the run does not start (``tools/run_study.py``
+    refuses a sandbox that shows the checkout this way).
+    """
     check_conditions(spec.conditions)
     started = time.monotonic()
+    work = work_root / spec.run_id
+    base = prepare_workspace(task, spec.conditions, work)
+    sandbox = sandbox_factory(work)
+    sandbox_record = None if sandbox_check is None else dict(sandbox_check(sandbox))
     run_dir = artifacts_dir / spec.run_id
     if run_dir.exists():
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True)
-    work = work_root / spec.run_id
-    base = prepare_workspace(task, spec.conditions, work)
-    sandbox = sandbox_factory(work)
     recorder = Recorder(LedgerWriter(run_dir / "ledger.jsonl"), workspace=work)
     recorder.record_run_start(
         run_id=spec.run_id,
@@ -321,6 +331,7 @@ def execute_run(
         "prompt_sha256": sha256_text(prompt),
         "environment": {"platform": platform.platform(), "python": platform.python_version()},
         "sandbox_backend": sandbox.backend,
+        **({} if sandbox_record is None else {"sandbox": sandbox_record}),
         "model_server": dict(server_provenance or {}),
         **dict(extra_provenance or {}),
     }

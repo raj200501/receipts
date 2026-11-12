@@ -1,16 +1,23 @@
-"""tools/run_study.py: the three-attempt retry rule for infrastructure failures.
+"""tools/run_study.py: the three-attempt retry rule for infrastructure failures, the
+sandbox that hides the checkout, and the code-snapshot check.
 
 prereg/0001-e1-main-study.md section 10: a failed attempt is logged with its attempt
 number, the run is retried with the same seed up to two times, the attempts are counted
 from ``runs/<study>/failures.jsonl`` so the cap holds across restarts, and a run with
-three logged failures is excluded. Every plan, run, failure, and server here is a
-SYNTHETIC test fixture: no model is called, no sandbox starts, and nothing is written
-outside tmp_path.
+three logged failures is excluded. DECISIONS D67 (review N18): every run's sandbox hides
+the checkout and a sandbox that shows it is refused; a code snapshot must be the src/
+tree of its commit. Every plan, run, failure, checkout, commit, and server here is a
+SYNTHETIC test fixture and no model is called. One test starts a real bubblewrap
+sandbox on a synthetic checkout under /var/tmp (removed afterwards); nothing else is
+written outside tmp_path.
 """
 
 from __future__ import annotations
 
+import io
 import json
+import subprocess
+import tarfile
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -19,9 +26,13 @@ from typing import Any, ClassVar
 
 import pytest
 
+import receipts
 import run_study
+from receipts.sandbox.bwrap import probe_bwrap
 from receipts.study.plan import Plan, local_arm, write_plan
 from receipts.study.spec import RunSpec
+
+needs_bwrap = pytest.mark.skipif(not probe_bwrap().ok, reason="bubblewrap does not work here")
 
 SYNTHETIC_MODELS = ("synthetic-model-a", "synthetic-model-b")
 
@@ -411,7 +422,8 @@ class FakeServer:
 
 @pytest.fixture
 def no_models(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Stand-ins for the model server, backend, client, and code state (all SYNTHETIC)."""
+    """Stand-ins for the model server, backend, client, code state, and the sandbox
+    preflight (all SYNTHETIC)."""
     FakeServer.started = []
     models = {name: SimpleNamespace(name=name) for name in SYNTHETIC_MODELS}
     monkeypatch.setattr(run_study, "RUNS", tmp_path / "state")
@@ -421,6 +433,8 @@ def no_models(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(run_study, "ModelClient", lambda *a, **k: object())
     monkeypatch.setattr(run_study, "code_state", lambda: {"code": "working tree"})
     monkeypatch.setattr(run_study, "git_sha", lambda: "b" * 40)
+    hidden = {"backend": "synthetic", "checkout_hidden": True, "shown_in_checkout": []}
+    monkeypatch.setattr(run_study, "preflight", lambda study: hidden)
 
 
 def test_main_retries_excludes_and_reports_per_model_group(
@@ -493,3 +507,345 @@ def test_an_untracked_source_file_counts_as_uncommitted_code(
     (git_repo / "src" / "planted.py").write_text("x = 2\n", encoding="utf-8")
     monkeypatch.setattr(run_study, "ROOT", git_repo)
     assert run_study.dirty_files() == ["src/planted.py"]
+
+
+# The sandbox hides the checkout (review N18, DECISIONS D67) ---------------------------
+
+
+class SyntheticBox:
+    """A SYNTHETIC sandbox that hides the given paths; its one command is the probe."""
+
+    def __init__(
+        self, workspace: Path, hidden: list[Path], *, backend: str = "bwrap", seen: bool = False
+    ) -> None:
+        self.workspace = workspace
+        self.backend = backend
+        self.hidden = [p.resolve() for p in hidden]
+        self.shown = [workspace.resolve()]
+        self.seen = seen
+        self.commands: list[str] = []
+
+    def hides(self, path: str | Path) -> bool:
+        target = Path(path).resolve()
+        if any(s == target or s in target.parents for s in self.shown):
+            return False
+        return any(h == target or h in target.parents for h in self.hidden)
+
+    def shown_within(self, path: str | Path) -> tuple[Path, ...]:
+        target = Path(path).resolve()
+        return tuple(sorted(s for s in self.shown if target in s.parents))
+
+    def run(self, cmd: str, **kwargs: Any) -> Any:
+        self.commands.append(cmd)
+        return SimpleNamespace(exit_code=1 if self.seen else 0, stdout="", stderr="")
+
+
+@pytest.fixture
+def checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_checkout: Callable[[Path], Path]
+) -> Path:
+    """A SYNTHETIC checkout as ROOT, the only checkout the study sandbox must hide."""
+    root = make_checkout(tmp_path / "checkout").resolve()
+    monkeypatch.setattr(run_study, "ROOT", root)
+    monkeypatch.setattr(run_study, "RUNS", root / "runs")
+    monkeypatch.setattr(run_study, "project_root", lambda: root)
+    return root
+
+
+def test_the_study_sandbox_hides_the_checkout_and_the_default_paths(
+    checkout: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_make_sandbox(workspace: Path, policy: Any, **kwargs: Any) -> Any:
+        calls.append({"workspace": workspace, "policy": policy, **kwargs})
+        return SyntheticBox(workspace, list(kwargs["hide_paths"]))
+
+    monkeypatch.setattr(run_study, "make_sandbox", fake_make_sandbox)
+    work = checkout / "runs" / "work" / "smoke" / "run-1"
+    work.mkdir(parents=True)
+    policy = run_study.SandboxPolicy()
+    box = run_study.study_sandbox(work, policy)
+    (call,) = calls
+    assert call["workspace"] == work and call["policy"] is policy
+    assert call["prefer"] == run_study.BACKENDS == ("bwrap",)
+    hidden = set(call["hide_paths"])
+    assert checkout in hidden
+    assert set(run_study.default_hidden_paths(project=checkout)) <= hidden
+    # The workspace under the checkout stays the sandbox's own.
+    assert box.hides(checkout) and not box.hides(work)
+
+
+def test_the_checkout_of_the_imported_package_is_hidden_too(
+    checkout: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # For example the main checkout around a worktree that runs the study.
+    outer = (tmp_path / "outer").resolve()
+    outer.mkdir()
+    monkeypatch.setattr(run_study, "project_root", lambda: outer)
+    assert run_study.checkouts() == (checkout, outer)
+    assert {checkout, outer} <= set(run_study.hidden_paths())
+
+
+def test_checkout_hiding_records_the_backend_and_what_stays_visible(checkout: Path) -> None:
+    toolchain = checkout / "runs" / "toolchains" / "bench-py311"
+    work = checkout / "runs" / "work" / "smoke" / "run-1"
+    for directory in (toolchain, work):
+        directory.mkdir(parents=True)
+    box = SyntheticBox(work, [checkout])
+    box.shown.append(toolchain)
+    record = run_study.checkout_hiding(box)
+    assert record == {
+        "backend": "bwrap",
+        "checkout_hidden": True,
+        "shown_in_checkout": ["runs/toolchains/bench-py311", "runs/work/smoke/run-1"],
+    }
+    # A command inside looked for the checkout's pyproject.toml and did not find it.
+    assert box.commands == [f"test ! -e {checkout / 'pyproject.toml'}"]
+
+
+def test_checkout_hiding_refuses_a_sandbox_that_shows_the_checkout(
+    checkout: Path, tmp_path: Path
+) -> None:
+    work = tmp_path / "work"
+    work.mkdir()
+    with pytest.raises(run_study.CheckoutExposedError, match="lets commands reach"):
+        run_study.checkout_hiding(SyntheticBox(work, []))
+    # A backend that cannot say what it hides (unshare sees the whole host).
+    blind = SimpleNamespace(backend="unshare", workspace=work)
+    with pytest.raises(run_study.CheckoutExposedError, match="cannot say"):
+        run_study.checkout_hiding(blind)
+    # The layout says hidden, but a command inside still finds the checkout.
+    with pytest.raises(run_study.CheckoutExposedError, match="finds"):
+        run_study.checkout_hiding(SyntheticBox(work, [checkout], seen=True))
+    # A workspace that is the checkout itself shows all of it.
+    with pytest.raises(run_study.CheckoutExposedError, match="lets commands reach"):
+        run_study.checkout_hiding(SyntheticBox(checkout, [checkout]))
+
+
+def test_one_run_builds_hidden_sandboxes_and_checks_them_before_the_run(
+    no_setup: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def execute(spec: RunSpec, task: Any, arm: Any, client: Any, **kwargs: Any) -> Any:
+        seen.update(kwargs)
+        return SimpleNamespace(stop_reason="finished", turns=1, false_success=False)
+
+    monkeypatch.setattr(run_study, "execute_run", execute)
+    built: list[tuple[Path, Any]] = []
+
+    def record(work: Path, policy: Any) -> None:
+        built.append((work, policy))
+
+    monkeypatch.setattr(run_study, "study_sandbox", record)
+    call_one_run(synthetic_plan().runs[0])
+    assert seen["sandbox_check"] is run_study.checkout_hiding
+    seen["sandbox_factory"](Path("/nonexistent/work"))
+    assert built and built[0][0] == Path("/nonexistent/work")
+
+
+def test_a_refusal_in_a_run_stops_the_session_and_logs_no_attempt(
+    no_setup: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def refused(*args: Any, **kwargs: Any) -> Any:
+        raise run_study.CheckoutExposedError("SYNTHETIC: the sandbox shows the checkout")
+
+    monkeypatch.setattr(run_study, "execute_run", refused)
+    spec = synthetic_plan().runs[0]
+    with pytest.raises(run_study.CheckoutExposedError):
+        call_one_run(spec)
+    with pytest.raises(run_study.CheckoutExposedError):
+        run_study.run_session([spec], lambda s: call_one_run(s), tmp_path)
+    assert logged(tmp_path) == []
+
+
+def test_main_refuses_to_start_when_the_sandbox_shows_the_checkout(
+    tmp_path: Path,
+    no_models: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def exposed(study: str) -> dict[str, Any]:
+        raise run_study.CheckoutExposedError("SYNTHETIC: bwrap lets commands reach /x")
+
+    monkeypatch.setattr(run_study, "preflight", exposed)
+    attempts: list[str] = []
+    monkeypatch.setattr(run_study, "one_run", lambda plan, spec, *rest: attempts.append(spec))
+    plan = synthetic_plan(n_runs=1)
+    assert run_study.main(["--plan", str(plan_file(tmp_path, plan))]) == 2
+    assert FakeServer.started == [] and attempts == []
+    assert "REFUSED" in capsys.readouterr().err
+
+
+def test_main_stops_with_status_2_when_a_run_refuses_its_sandbox(
+    tmp_path: Path,
+    no_models: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def refusing(plan: Plan, spec: RunSpec, *rest: Any) -> None:
+        raise run_study.CheckoutExposedError("SYNTHETIC: the sandbox shows the checkout")
+
+    monkeypatch.setattr(run_study, "one_run", refusing)
+    plan = synthetic_plan(n_runs=2)
+    assert run_study.main(["--plan", str(plan_file(tmp_path, plan))]) == 2
+    assert "REFUSED" in capsys.readouterr().err
+    assert run_study.failure_counts(tmp_path / "state" / plan.study) == {}
+
+
+def test_preflight_checks_a_sandbox_beside_the_run_workspaces(
+    checkout: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(run_study, "toolchain", lambda: SimpleNamespace(installed=()))
+    monkeypatch.setattr(run_study, "with_toolchain", lambda policy, chain: policy)
+    workspaces: list[Path] = []
+
+    def sandbox(work: Path, policy: Any) -> SyntheticBox:
+        workspaces.append(work)
+        assert work.is_dir()
+        return SyntheticBox(work, [checkout])
+
+    monkeypatch.setattr(run_study, "study_sandbox", sandbox)
+    record = run_study.preflight("synthetic-study")
+    assert record["checkout_hidden"] is True and record["backend"] == "bwrap"
+    (work,) = workspaces
+    assert work.parent == checkout / "runs" / "work" / "synthetic-study"
+    assert not work.exists()
+    monkeypatch.setattr(run_study, "study_sandbox", lambda work, policy: SyntheticBox(work, []))
+    with pytest.raises(run_study.CheckoutExposedError):
+        run_study.preflight("synthetic-study")
+    assert list((checkout / "runs" / "work" / "synthetic-study").iterdir()) == []
+
+
+@needs_bwrap
+def test_a_real_study_sandbox_cannot_list_the_checkouts_bench(
+    outside_tmp: Path, monkeypatch: pytest.MonkeyPatch, make_checkout: Callable[[Path], Path]
+) -> None:
+    # The checkout lies outside /tmp, and this test process imports receipts from
+    # another checkout, so only the explicit hide in run_study can keep it out.
+    root = make_checkout(outside_tmp / "checkout")
+    monkeypatch.setattr(run_study, "ROOT", root)
+    toolchain = root / "runs" / "toolchains" / "synthetic"
+    (toolchain / "bin").mkdir(parents=True)
+    (toolchain / "bin" / "tool").write_text("SYNTHETIC tool\n", encoding="utf-8")
+    work = root / "runs" / "work" / "smoke" / "run-1"
+    work.mkdir(parents=True)
+    policy = run_study.SandboxPolicy(readonly_paths=(toolchain,))
+    box = run_study.study_sandbox(work, policy)
+    listing = box.run(f"ls -A {root}/bench")
+    assert listing.exit_code != 0 and listing.stdout == ""
+    assert box.run(f"cat {root}/private/notes.txt").stdout == ""
+    assert box.run(f"cat {toolchain}/bin/tool").stdout == "SYNTHETIC tool\n"
+    assert box.run("echo made > made.txt && cat made.txt").stdout == "made\n"
+    assert (work / "made.txt").read_text(encoding="utf-8") == "made\n"
+    record = run_study.checkout_hiding(box)
+    assert record["backend"] == "bwrap" and record["checkout_hidden"] is True
+    assert record["shown_in_checkout"] == ["runs/toolchains/synthetic", "runs/work/smoke/run-1"]
+
+
+# The code snapshot is the src/ tree of the commit it names --------------------------------
+
+
+def snapshot_of(repo: Path, sha: str, dest: Path) -> Path:
+    """Extract ``git archive <sha> src`` under ``dest/<sha>`` as tools/snapshot_code.sh does."""
+    snapshot = dest / sha
+    snapshot.mkdir(parents=True)
+    archive = subprocess.run(
+        ["git", "-C", str(repo), "archive", sha, "src"], capture_output=True, check=True
+    ).stdout
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        tar.extractall(snapshot, filter="tar")
+    (snapshot / "SNAPSHOT_OF").write_text(sha + "\n", encoding="utf-8")
+    return snapshot
+
+
+@pytest.fixture
+def committed(
+    git_repo: Path, commit: Callable[[Path, str], str], monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, str]:
+    """A SYNTHETIC repository as ROOT with a committed src/ tree, and its commit."""
+    package = git_repo / "src" / "receipts"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text('"""SYNTHETIC package."""\n', encoding="utf-8")
+    (package / "mod.py").write_text("VALUE = 1\n", encoding="utf-8")
+    script = package / "run.sh"
+    script.write_text("#!/bin/sh\necho synthetic\n", encoding="utf-8")
+    script.chmod(0o755)
+    (git_repo / "README.md").write_text("SYNTHETIC\n", encoding="utf-8")
+    monkeypatch.setattr(run_study, "ROOT", git_repo)
+    return git_repo, commit(git_repo, "SYNTHETIC source")
+
+
+def test_a_snapshot_of_its_commit_has_no_differences(
+    committed: tuple[Path, str], tmp_path: Path
+) -> None:
+    repo, sha = committed
+    snapshot = snapshot_of(repo, sha, tmp_path / "code")
+    # Importing the snapshot writes bytecode caches; they are not part of the tree.
+    cache = snapshot / "src" / "receipts" / "__pycache__"
+    cache.mkdir()
+    (cache / "mod.cpython-311.pyc").write_bytes(b"SYNTHETIC bytecode")
+    assert run_study.snapshot_differences(snapshot, sha) == []
+
+
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        ("edit", "src/receipts/mod.py differs from the commit"),
+        ("extra", "src/receipts/planted.py is not in commit"),
+        ("missing", "src/receipts/mod.py is missing"),
+        ("mode", "src/receipts/run.sh has a different executable bit"),
+        ("not-pyc", "src/receipts/__pycache__/note.txt is not in commit"),
+    ],
+)
+def test_a_snapshot_that_differs_from_its_commit_is_listed(
+    committed: tuple[Path, str], tmp_path: Path, change: str, expected: str
+) -> None:
+    repo, sha = committed
+    snapshot = snapshot_of(repo, sha, tmp_path / "code")
+    package = snapshot / "src" / "receipts"
+    if change == "edit":
+        (package / "mod.py").write_text("VALUE = 2\n", encoding="utf-8")
+    elif change == "extra":
+        (package / "planted.py").write_text("x = 1\n", encoding="utf-8")
+    elif change == "missing":
+        (package / "mod.py").unlink()
+    elif change == "mode":
+        (package / "run.sh").chmod(0o644)
+    else:
+        (package / "__pycache__").mkdir()
+        (package / "__pycache__" / "note.txt").write_text("SYNTHETIC\n", encoding="utf-8")
+    differences = run_study.snapshot_differences(snapshot, sha)
+    assert any(expected in line for line in differences), differences
+
+
+def test_a_snapshot_naming_no_commit_of_this_repository_is_refused(
+    committed: tuple[Path, str], tmp_path: Path
+) -> None:
+    repo, sha = committed
+    snapshot = snapshot_of(repo, sha, tmp_path / "code")
+    assert "not a full commit id" in run_study.snapshot_differences(snapshot, sha[:12])[0]
+    unknown = "f" * 40
+    assert f"commit {unknown} is not in" in run_study.snapshot_differences(snapshot, unknown)[0]
+
+
+def test_code_state_verifies_the_snapshot_it_imports(
+    committed: tuple[Path, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, sha = committed
+    snapshot = snapshot_of(repo, sha, tmp_path / "code")
+    monkeypatch.setattr(receipts, "__file__", str(snapshot / "src" / "receipts" / "__init__.py"))
+    assert run_study.code_state() == {
+        "code": "snapshot",
+        "snapshot_of": sha,
+        "snapshot_verified": True,
+    }
+    (snapshot / "src" / "receipts" / "mod.py").write_text("VALUE = 3\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match=f"not src/ of commit {sha}"):
+        run_study.code_state()
+    # A self-declared marker naming another commit is refused the same way.
+    (snapshot / "src" / "receipts" / "mod.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (snapshot / "SNAPSHOT_OF").write_text("f" * 40 + "\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="is not in"):
+        run_study.code_state()

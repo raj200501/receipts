@@ -22,7 +22,7 @@ from receipts.bench.canary import CANARY
 from receipts.client.wrapper import ModelClient, ModelRequest, ModelResponse
 from receipts.drivers.minimal_agent.loop import AgentConfig
 from receipts.ledger.events import Ledger
-from receipts.sandbox.api import CommandOutcome
+from receipts.sandbox.api import CommandOutcome, Sandbox
 from receipts.study import runner, spec
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -300,3 +300,63 @@ def test_hook_mitigation_requests_a_correction(tmp_path: Path) -> None:
     assert [c["blocked"] for c in record.hook_checks] == [True]
     assert record.report.startswith("One test still fails")
     assert record.input_tokens == 15 and record.wall_s >= record.model_wall_s
+
+
+def test_the_sandbox_check_runs_before_the_run_starts_and_is_banked(tmp_path: Path) -> None:
+    task = make_task(tmp_path)
+    run_dir = tmp_path / "artifacts" / "r5"
+    seen: list[tuple[Path, bool]] = []
+
+    def check(box: Sandbox) -> dict[str, object]:
+        seen.append((box.workspace, run_dir.exists()))
+        return {"backend": box.backend, "checkout_hidden": True}
+
+    run_spec = spec.RunSpec("r5", "test", task.task_id, ARM.config_id, {}, seed=0)
+    record = runner.execute_run(
+        run_spec,
+        task,
+        ARM,
+        make_client(tmp_path, [act("finish", report="Nothing done.")]),
+        study=spec.StudyText(),
+        artifacts_dir=tmp_path / "artifacts",
+        work_root=tmp_path / "work",
+        sandbox_factory=SubprocessSandbox,
+        sandbox_check=check,
+        git_sha="0" * 40,
+    )
+    # The check saw the run's own workspace before the run's directory existed.
+    assert seen == [(tmp_path / "work" / "r5", False)]
+    assert record.provenance["sandbox"] == {"backend": "fake", "checkout_hidden": True}
+    banked = json.loads((run_dir / "run.json").read_text())
+    assert banked["provenance"]["sandbox"] == {"backend": "fake", "checkout_hidden": True}
+
+
+def test_a_refused_sandbox_starts_no_run(tmp_path: Path) -> None:
+    task = make_task(tmp_path)
+    replies = [act("finish", report="Nothing done.")]
+    scripted = Scripted(replies)
+    root = tmp_path / "repo-root"
+    root.mkdir()
+    shutil.copy(ROOT / "budget.toml", root / "budget.toml")
+    client = ModelClient(root, {"local": scripted}, root / "cache", env={}, guard_check=list)
+
+    def refuse(box: Sandbox) -> dict[str, object]:
+        raise RuntimeError("SYNTHETIC refusal: the sandbox shows the checkout")
+
+    run_spec = spec.RunSpec("r6", "test", task.task_id, ARM.config_id, {}, seed=0)
+    with pytest.raises(RuntimeError, match="SYNTHETIC refusal"):
+        runner.execute_run(
+            run_spec,
+            task,
+            ARM,
+            client,
+            study=spec.StudyText(),
+            artifacts_dir=tmp_path / "artifacts",
+            work_root=tmp_path / "work",
+            sandbox_factory=SubprocessSandbox,
+            sandbox_check=refuse,
+            git_sha="0" * 40,
+        )
+    # No run directory and no model call: the agent never started.
+    assert not (tmp_path / "artifacts" / "r6").exists()
+    assert len(scripted.replies) == 1
