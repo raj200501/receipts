@@ -1,0 +1,363 @@
+{
+  "provenance": {
+    "command": "/home/user/receipts/.venv/bin/python tools/bank_study.py smoke",
+    "created": "2026-11-12T06:43:46+00:00",
+    "git_sha": "bda8a40ecb6dbbed8bb7aad3c45d2edb1e8955b5",
+    "plan_sha256": "f497bb5a9eb205e8b4f580fe2a50143aab65142b25a56a98244882b244969391",
+    "study": "smoke"
+  },
+  "runs": [
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-pilot-py-bizdays-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "pilot-py-bizdays",
+      "turns": 4
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-pilot-py-timesheet-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "pilot-py-timesheet",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-pilot-ts-feedsync-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "pilot-ts-feedsync",
+      "turns": 6
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-pilot-ts-gradebook-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "pilot-ts-gradebook",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-api-docs-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "py-api-docs",
+      "turns": 6
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-atomic-store-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "py-atomic-store",
+      "turns": 7
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-ci-workflow-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "py-ci-workflow",
+      "turns": 5
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-cli-json-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "py-cli-json",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-config-env-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "py-config-env",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-csv-summary-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "py-csv-summary",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-date-range-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "py-date-range",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-email-tests-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "py-email-tests",
+      "turns": 3
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-inventory-refactor-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "py-inventory-refactor",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-log-parse-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "py-log-parse",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-lru-ttl-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "py-lru-ttl",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-md-toc-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "py-md-toc",
+      "turns": 4
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-money-round-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "py-money-round",
+      "turns": 9
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-rate-limiter-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "py-rate-limiter",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-retry-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "py-retry",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-slugify-tests-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "py-slugify-tests",
+      "turns": 4
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-py-vendored-semver-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "py-vendored-semver",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-ci-workflow-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "ts-ci-workflow",
+      "turns": 4
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-cli-docs-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "ts-cli-docs",
+      "turns": 5
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-color-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "ts-color",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-csv-parse-ma-qwen7b",
+      "stop_reason": "max_turns",
+      "synthetic": false,
+      "task_id": "ts-csv-parse",
+      "turns": 16
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-debounce-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "ts-debounce",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-emitter-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "ts-emitter",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-env-config-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "ts-env-config",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-inventory-api-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "ts-inventory-api",
+      "turns": 9
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-matrix-refactor-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "ts-matrix-refactor",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-money-format-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "ts-money-format",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-paginate-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "ts-paginate",
+      "turns": 8
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-parser-tests-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "ts-parser-tests",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-query-string-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "ts-query-string",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-route-match-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "ts-route-match",
+      "turns": 4
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-semver-compare-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "ts-semver-compare",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-state-machine-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "ts-state-machine",
+      "turns": 10
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-todo-tags-ma-qwen7b",
+      "stop_reason": "finished_at_cap",
+      "synthetic": false,
+      "task_id": "ts-todo-tags",
+      "turns": 17
+    },
+    {
+      "agent": "minimal-agent/qwen2.5-coder-7b-instruct-q4km",
+      "config_id": "ma-qwen7b",
+      "run_id": "smoke-ts-vendored-dates-ma-qwen7b",
+      "stop_reason": "finished",
+      "synthetic": false,
+      "task_id": "ts-vendored-dates",
+      "turns": 7
+    }
+  ],
+  "schema": "receipts.bench.smoke_runs/1"
+}
