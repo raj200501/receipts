@@ -5,6 +5,12 @@ docs/BUILD_BRIEF.md section 9), newest first.
 
 ## 2026-11-12
 
+- **docs/REPORT.md section 7.2, the contradicted claims** (changed because new runs were
+  banked): it said the contradicted claims "were all feature claims refuted by hidden
+  checks". In the newly banked ts-parser-tests run, a claim that tests were added and a
+  file claim are contradicted by the empty post-run diff. The section now says most were
+  feature claims and describes that run.
+
 - **docs/REPORT.md section 3.1 and docs/BENCH.md section 6, "the agent never sees" the hidden
   checks** (review N18): true of the agent's workspace, which receives them only after the
   agent stops, but the sandbox did not hide the checkout that stores them for runs made from
