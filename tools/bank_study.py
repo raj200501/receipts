@@ -12,11 +12,15 @@ smoke also ties every banked run to the smoke plan (``artifacts/studies/smoke/pl
 DECISIONS D71) and refuses (exit 2, nothing written) a run that was not made as planned
 (:func:`receipts.study.plan.run_record_problems`): a run the plan does not hold, a run a
 plan amendment replaced (an excluded run stays excluded), a run that does not record
-its planned task, arm, and run spec, or a run an amendment added that does not record
-the amendment and a model server meeting its requirement. Each row of
+its planned task, arm, model, and run spec, or a run an amendment added that does not
+record the amendment, a model server meeting its requirement, and its own response
+cache. The plan's amendments must hold against the pinned models
+(:func:`receipts.study.plan.check_amendments`). Each row of
 ``artifacts/bench/smoke_runs.json`` is then a run gate G6 can tie to its plan. The
 smoke failure log is banked as e1's and e4's are (below), with its summary in
-``smoke_runs.json`` (``failures``), so the attempts that excluded a run stay on record.
+``smoke_runs.json`` (``failures``), so the attempts that excluded a run stay on record,
+and it must agree with what is banked: no banked run has :data:`SMOKE_MAX_ATTEMPTS`
+logged failures (the runner excluded it), and every run an amendment replaced has.
 
 e1 and e4 follow DECISIONS D42 item 1: every banked run is rescored
 (:func:`receipts.study.rescore.rescore_run`): its final report is re-extracted and
@@ -77,6 +81,9 @@ ROOT = Path(__file__).resolve().parents[1]
 STUDIES: tuple[str, ...] = ("smoke", "pilot", "e1", "e4")
 #: The plan every banked smoke run must be a run of (DECISIONS D71).
 SMOKE_PLAN = "artifacts/studies/smoke/plan.json"
+#: The logged failures that exclude a run: ``MAX_ATTEMPTS`` of tools/run_study.py, which
+#: this tool does not import (it would load the sandbox and server code).
+SMOKE_MAX_ATTEMPTS = 3
 #: The held-out G5 evaluation whose valid types ``any_contradicted`` counts.
 SEEDED_EVAL = "artifacts/e0/seeded_eval.json"
 #: Code that turns banked runs into rows, besides the instrument: it must be committed
@@ -225,13 +232,19 @@ def _listed(items: Sequence[str]) -> str:
     return ", ".join(items[:5]) + (", ..." if len(items) > 5 else "")
 
 
-def smoke_problems(records: Sequence[Mapping[str, Any]]) -> list[str]:
+def smoke_problems(
+    records: Sequence[Mapping[str, Any]], failure_log: str | None = None
+) -> list[str]:
     """Every way the banked smoke runs ``records`` were not made as the smoke plan plans
     them (:func:`receipts.study.plan.run_record_problems`), each after its run id; a
-    missing plan, or one whose amendments do not hold, is a problem too."""
+    missing plan, or one whose amendments do not hold against the pinned models, is a
+    problem too. ``failure_log`` is the text of the failure log banking would write
+    (None without one): a banked run must have fewer than :data:`SMOKE_MAX_ATTEMPTS`
+    logged failures, and a run a plan amendment replaced must have that many."""
     # Imported here, not with the module: these checks never compute an e1 or e4 row, so
     # the plan module stays out of the code that banks them (BANKING_CODE in
     # tools/analyze.py lists what a row depends on).
+    from receipts.client.models import LOCAL_MODELS
     from receipts.study.plan import check_amendments, load_plan, run_record_problems
 
     path = ROOT / SMOKE_PLAN
@@ -239,14 +252,33 @@ def smoke_problems(records: Sequence[Mapping[str, Any]]) -> list[str]:
         return [f"{SMOKE_PLAN} is missing, so no smoke run can be tied to its plan"]
     try:
         plan = load_plan(path)
-        check_amendments(plan)
+        check_amendments(plan, {name: model.n_ctx for name, model in LOCAL_MODELS.items()})
     except (ValueError, KeyError, TypeError) as exc:
         return [f"{SMOKE_PLAN}: {exc}"]
-    return [
+    problems = [
         f"{record.get('run_id')}: {problem}"
         for record in records
         for problem in run_record_problems(plan, record)
     ]
+    counts = Counter(
+        str(json.loads(line)["run_id"]) for line in (failure_log or "").splitlines() if line
+    )
+    for record in records:
+        logged = counts[str(record.get("run_id"))]
+        if logged >= SMOKE_MAX_ATTEMPTS:
+            problems.append(
+                f"{record.get('run_id')}: the failure log holds {logged} failed attempts of "
+                "it, so the runner excluded it, and an excluded run is never banked"
+            )
+    for replaced in sorted(plan.replaced()):
+        logged = counts[replaced]
+        if logged < SMOKE_MAX_ATTEMPTS:
+            problems.append(
+                f"{replaced}: a plan amendment replaced it, and the failure log holds {logged} "
+                f"failed attempt(s) of it, fewer than the {SMOKE_MAX_ATTEMPTS} that exclude a "
+                "run"
+            )
+    return problems
 
 
 @dataclass(frozen=True)
@@ -497,11 +529,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     records = aggregate.load_records(runs)
     prov = provenance(args.study)
     if args.study == "smoke":
-        problems = smoke_problems(records)
         try:
-            failures = None if problems else banked_failures("smoke")
+            failures = banked_failures("smoke")
         except RefusalError as exc:
-            problems = [str(exc)]
+            print(f"bank_study smoke: refused: {exc}", file=sys.stderr)
+            return 2
+        problems = smoke_problems(records, None if failures is None else failures[1])
         if problems:
             for problem in problems:
                 print(f"bank_study smoke: refused: {problem}", file=sys.stderr)

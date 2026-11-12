@@ -467,9 +467,22 @@ def stand_in(root: Path, run_id: str = ADDED, **provenance: Any) -> Path:
     return run
 
 
+def log_failures(root: Path, run_id: str = EXCLUDED, attempts: int = 3) -> Path:
+    """A SYNTHETIC runner failure log with ``attempts`` failed attempts of ``run_id``."""
+    log = root / "runs" / "smoke" / "failures.jsonl"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    entries = [
+        {"run_id": run_id, "attempt": n, "started": "s", "time": "t", "error": "SYNTHETIC"}
+        for n in range(1, attempts + 1)
+    ]
+    log.write_text("".join(json.dumps(e) + "\n" for e in entries), encoding="utf-8")
+    return log
+
+
 def test_smoke_banking_includes_the_run_a_plan_amendment_added(checkout: Path) -> None:
     amend_smoke_plan(checkout)
     stand_in(checkout)
+    log_failures(checkout)
     assert bank_study.main(["smoke"]) == 0
     smoke = json.loads((checkout / "artifacts" / "bench" / "smoke_runs.json").read_text())
     rows = {row["run_id"]: row for row in smoke["runs"]}
@@ -479,7 +492,28 @@ def test_smoke_banking_includes_the_run_a_plan_amendment_added(checkout: Path) -
     assert rows[ADDED]["synthetic"] is False  # the shape a real run would have; test-only
     plan_bytes = (checkout / SMOKE_PLAN).read_bytes()
     assert smoke["provenance"]["plan_sha256"] == hashlib.sha256(plan_bytes).hexdigest()
-    assert smoke["failures"] is None  # no failure log in this scratch checkout
+    # The failure log that excluded the replaced run is banked with its summary.
+    banked = (checkout / "artifacts" / "studies" / "smoke" / "failures.jsonl").read_bytes()
+    assert smoke["failures"]["entries"] == 3
+    assert smoke["failures"]["sha256"] == hashlib.sha256(banked).hexdigest()
+
+
+def test_the_attempt_cap_is_the_runners() -> None:
+    import run_study
+
+    assert bank_study.SMOKE_MAX_ATTEMPTS == run_study.MAX_ATTEMPTS
+
+
+def amend_for_another_pinned_window(root: Path) -> None:
+    """Amend the scratch smoke plan as if the 7B model's pinned window were 8192."""
+    path = root / SMOKE_PLAN
+    server = ServerRequirement(
+        min_n_ctx_per_slot=32768, max_parallel_slots=1, pinned_n_ctx_per_slot=8192
+    )
+    amended = amend_plan(
+        load_plan(path), EXCLUDED, server, decision="D71", reason="SYNTHETIC", date="2026-11-12"
+    )
+    write_plan(path, amended)
 
 
 def bank_excluded_run(root: Path) -> None:
@@ -511,6 +545,31 @@ def bank_excluded_run(root: Path) -> None:
         ),
         pytest.param(
             lambda root: (root / SMOKE_PLAN).unlink(), "smoke/plan.json is missing", id="no-plan"
+        ),
+        pytest.param(
+            lambda root: (amend_smoke_plan(root), stand_in(root), log_failures(root, attempts=2)),
+            "2 failed attempt(s) of it, fewer than the 3",
+            id="replaced-run-not-excluded",
+        ),
+        pytest.param(
+            lambda root: (amend_smoke_plan(root), stand_in(root)),
+            "0 failed attempt(s) of it, fewer than the 3",
+            id="no-failure-log",
+        ),
+        pytest.param(
+            lambda root: (
+                amend_smoke_plan(root),
+                stand_in(root),
+                log_failures(root),
+                log_failures(root, RUN_ID),
+            ),
+            "the runner excluded it",
+            id="excluded-run-banked-under-its-id",
+        ),
+        pytest.param(
+            lambda root: (amend_for_another_pinned_window(root), stand_in(root)),
+            "pinned window of 16384",
+            id="another-pinned-window",
         ),
     ],
 )
