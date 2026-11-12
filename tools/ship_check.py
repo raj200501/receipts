@@ -2977,8 +2977,207 @@ def g5(ctx: Context) -> str:
     )
 
 
+# The plan every smoke run must be a run of (DECISIONS D71), the directory of the banked
+# smoke runs, and the planned-run fields a run a plan amendment added shares with the run
+# it replaces (receipts.study.plan.SAME_AS_REPLACED).
+SMOKE_PLAN = "artifacts/studies/smoke/plan.json"
+SMOKE_RUN_DIR = "artifacts/studies/smoke/runs"
+SAME_AS_REPLACED = ("study", "task_id", "config_id", "conditions", "seed", "mitigation")
+
+
+def positive_int(value: object) -> TypeGuard[int]:
+    """An int (not a bool) of at least 1."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+
+def smoke_plan_runs(root: Path) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    """The planned runs of the smoke plan by run id, and its amendments by the run each
+    added (DECISIONS D71), read as receipts.study.plan writes them. The plan holds a list
+    of planned runs with distinct run ids. Each amendment adds a planned run in place of
+    another planned run that shares every planned field but the id
+    (:data:`SAME_AS_REPLACED`), with a server requirement of two positive integers, and
+    no task is amended twice."""
+    plan = load_json(root, SMOKE_PLAN)
+    runs = plan.get("runs") if isinstance(plan, dict) else None
+    require(
+        isinstance(runs, list)
+        and all(isinstance(run, dict) and is_text(run.get("run_id")) for run in runs),
+        f"{SMOKE_PLAN} holds no list of planned runs with run ids",
+    )
+    assert isinstance(runs, list) and isinstance(plan, dict)
+    planned = {str(run["run_id"]): run for run in runs}
+    require(len(planned) == len(runs), f"{SMOKE_PLAN} repeats a run id")
+    amendments = plan.get("amendments", [])
+    require(
+        isinstance(amendments, list) and all(isinstance(a, dict) for a in amendments),
+        f"{SMOKE_PLAN}: its amendments are not a list of amendment records",
+    )
+    added: dict[str, dict[str, Any]] = {}
+    tasks: set[str] = set()
+    for amendment in amendments:
+        rid, old = amendment.get("run_id"), amendment.get("replaces")
+        new_run, old_run = planned.get(str(rid)), planned.get(str(old))
+        missing = [str(name) for name, run in ((rid, new_run), (old, old_run)) if run is None]
+        require(
+            not missing,
+            f"{SMOKE_PLAN}: amendment {rid!r} names {', '.join(missing)}, which is not a "
+            "planned run",
+        )
+        assert new_run is not None and old_run is not None
+        require(
+            rid != old and all(new_run.get(f) == old_run.get(f) for f in SAME_AS_REPLACED),
+            f"{SMOKE_PLAN}: amended run {rid} is not the planned run {old} under a new id",
+        )
+        server = amendment.get("server")
+        require(
+            isinstance(server, dict)
+            and positive_int(server.get("min_n_ctx_per_slot"))
+            and positive_int(server.get("max_parallel_slots")),
+            f"{SMOKE_PLAN}: amendment {rid} has no server requirement of two positive integers",
+        )
+        task = json.dumps(new_run.get("task_id"))
+        require(
+            task not in tasks,
+            f"{SMOKE_PLAN} amends task {new_run.get('task_id')} more than once "
+            "(one new run per task)",
+        )
+        tasks.add(task)
+        added[str(rid)] = amendment
+    return planned, added
+
+
+def flag_value(command: Sequence[str], name: str) -> str | None:
+    """The word after ``name`` in a command line, or None when it is not there."""
+    for index, word in enumerate(command[:-1]):
+        if word == name:
+            return command[index + 1]
+    return None
+
+
+def check_server_requirement(rid: str, need: Mapping[str, Any], server: object) -> None:
+    """The model server smoke run ``rid`` recorded (``provenance.model_server``) meets the
+    requirement ``need`` of the plan amendment that added the run, and agrees with itself
+    (the reading of ``receipts.study.plan.server_record_problems``): its window per slot
+    (``n_ctx_per_slot``) and slots (``parallel_slots``) are at least the required window
+    on at most the required slots; its command line is the one its SHA-256 names and
+    gives the same window and slots (llama.cpp's ``--ctx-size`` is the window times the
+    slots, with ``--parallel`` slots; llama-cpp-python's ``--n_ctx`` is the window on one
+    slot), as does ``ctx_size``; and ``n_ctx_per_slot_is_default`` says whether the window
+    is ``n_ctx_per_slot_default``, the pinned one. So a run made on a smaller window, or
+    a record edited in one field only, fails."""
+    require(isinstance(server, dict), f"smoke run {rid} records no model server")
+    assert isinstance(server, dict)
+    window, slots = server.get("n_ctx_per_slot"), server.get("parallel_slots")
+    require(
+        positive_int(window) and positive_int(slots),
+        f"smoke run {rid}: its model server records no window per slot and slots as "
+        "positive integers",
+    )
+    assert isinstance(window, int) and isinstance(slots, int)
+    least, most = need["min_n_ctx_per_slot"], need["max_parallel_slots"]
+    require(
+        window >= least,
+        f"smoke run {rid} was served {window} tokens per slot, and the plan amendment that "
+        f"added it needs at least {least} tokens per slot",
+    )
+    require(
+        slots <= most,
+        f"smoke run {rid} ran on a server with {slots} slots, and the plan amendment that "
+        f"added it needs at most {most} slot(s)",
+    )
+    command = server.get("server_command")
+    require(
+        isinstance(command, list) and all(isinstance(word, str) for word in command),
+        f"smoke run {rid}: its model server records no command line",
+    )
+    assert isinstance(command, list)
+    digest = hashlib.sha256(" ".join(command).encode("utf-8")).hexdigest()
+    require(
+        digest == server.get("server_command_sha256"),
+        f"smoke run {rid}: its server command is not the one its SHA-256 "
+        "(server_command_sha256) names",
+    )
+    engine = server.get("engine")
+    if engine == "llama.cpp":
+        expected, size = (
+            {"--ctx-size": str(window * slots), "--parallel": str(slots)},
+            window * slots,
+        )
+    elif engine == "llama-cpp-python":
+        require(slots == 1, f"smoke run {rid}: llama-cpp-python serves one slot, not {slots}")
+        expected, size = {"--n_ctx": str(window)}, window
+    else:
+        raise GateError(f"smoke run {rid}: its model server's engine {engine!r} is not known")
+    for name, value in expected.items():
+        found = flag_value(command, name)
+        require(
+            found == value,
+            f"smoke run {rid}: its server command gives {name} {found}, not the {value} that "
+            f"{window} tokens per slot on {slots} slot(s) take",
+        )
+    require(
+        server.get("ctx_size") == size,
+        f"smoke run {rid}: ctx_size {server.get('ctx_size')!r} is not the {size} tokens it serves",
+    )
+    default = server.get("n_ctx_per_slot_default")
+    require(
+        positive_int(default) and server.get("n_ctx_per_slot_is_default") is (window == default),
+        f"smoke run {rid}: n_ctx_per_slot_is_default does not say whether its {window} tokens "
+        f"per slot are the pinned window (n_ctx_per_slot_default {default!r})",
+    )
+
+
+def check_planned_smoke_runs(root: Path, runs: Sequence[BankedRun]) -> int:
+    """Every real smoke run is a run of the smoke plan, made as planned (DECISIONS D71):
+    its run.json records the planned task and arm, and its provenance the planned run
+    spec (``run_spec``). No run that a plan amendment replaced is banked, so an excluded
+    run stays excluded. A run an amendment added records that amendment
+    (``plan_amendment``) and a model server that meets its requirement
+    (:func:`check_server_requirement`). Returns the number of real smoke runs an
+    amendment added."""
+    planned, added = smoke_plan_runs(root)
+    for amendment in added.values():
+        old = str(amendment.get("replaces"))
+        require(
+            not (root / SMOKE_RUN_DIR / old).exists(),
+            f"{SMOKE_RUN_DIR}/{old} is banked, but it was replaced by a plan amendment, and "
+            "an excluded run stays excluded",
+        )
+    for run in runs:
+        rid = str(run.row["run_id"])
+        spec = planned.get(rid)
+        require(spec is not None, f"smoke run {rid} is not a planned run of {SMOKE_PLAN}")
+        assert spec is not None
+        record = run.record
+        require(
+            record.get("task_id") == spec.get("task_id")
+            and record.get("config_id") == spec.get("config_id"),
+            f"smoke run {rid}: its run.json does not record its planned task and arm",
+        )
+        prov = record.get("provenance")
+        require(
+            isinstance(prov, dict) and prov.get("run_spec") == spec,
+            f"smoke run {rid}: its run.json does not record its planned run spec "
+            "(provenance.run_spec)",
+        )
+        assert isinstance(prov, dict)
+        added_by = added.get(rid)
+        if added_by is not None:
+            require(
+                prov.get("plan_amendment") == added_by,
+                f"smoke run {rid} does not record the plan amendment that added it "
+                "(provenance.plan_amendment)",
+            )
+            check_server_requirement(rid, added_by["server"], prov.get("model_server"))
+    return sum(1 for run in runs if str(run.row["run_id"]) in added)
+
+
 def g6(ctx: Context) -> str:
-    """Benchmark complete: >= 30 tasks, each with hidden checks, reference, manifest, smoke run."""
+    """Benchmark complete: >= 30 tasks, each with hidden checks, reference, manifest, smoke run.
+
+    Each smoke run counts once tied to its banked run (:func:`verified_smoke_runs`) and
+    to the smoke plan (:func:`check_planned_smoke_runs`), and no banked smoke run was
+    changed after it was committed (:func:`require_unchanged_runs`)."""
     root = ctx.clone
     tasks_dir = root / "bench" / "tasks"
     tasks = sorted(p for p in tasks_dir.glob("*") if (p / "task.toml").is_file())
@@ -2987,7 +3186,10 @@ def g6(ctx: Context) -> str:
     require_provenance("artifacts/bench/reference_validation.json", validation)
     smoke = load_json(root, SMOKE_RUNS)
     require_provenance(SMOKE_RUNS, smoke)
-    smoked = {str(run.row["task_id"]) for run in verified_smoke_runs(root, smoke)}
+    require_unchanged_runs(root, "smoke")
+    runs = verified_smoke_runs(root, smoke)
+    amended = check_planned_smoke_runs(root, runs)
+    smoked = {str(run.row["task_id"]) for run in runs}
     checked = dict(validation.get("tasks", {}))
     problems: list[str] = []
     for task in tasks:
@@ -3006,7 +3208,8 @@ def g6(ctx: Context) -> str:
         if tid not in smoked:
             problems.append(f"{tid}: no real agent smoke run")
     require(not problems, f"{len(problems)} problem(s): " + "; ".join(problems[:3]))
-    return f"{len(tasks)} tasks; references pass hidden checks; manifests; smoke runs for all"
+    note = f"; {amended} from a plan amendment, on the server it needs" if amended else ""
+    return f"{len(tasks)} tasks; references pass hidden checks; manifests; smoke runs for all{note}"
 
 
 # ---------------------------------------------------------------- G7
@@ -3225,15 +3428,10 @@ def check_e1_rows(
         )
 
 
-def check_coverage(root: Path, study: str, rel: str, ids: Iterable[str]) -> int:
-    """The rows of ``rel`` (their run ids are ``ids``) cover every run banked under
-    artifacts/studies/<study>/runs/ (DECISIONS D57): each directory there that holds a
-    committed file is a banked run, and each has a row. With the checks that no run id
-    repeats and that every row is a banked run, the rows are one row per banked run
-    (prereg 0001 section 11), so a run banked without a row never counts as a missing
-    run. No committed file of a banked run may have been modified or deleted in any later
-    commit (D62), so a run cannot leave the analysis by being removed or replaced after it
-    was banked. Returns the number of banked runs."""
+def require_unchanged_runs(root: Path, study: str) -> None:
+    """No committed file of a run banked under artifacts/studies/<study>/runs/ was modified
+    or deleted by a later commit (DECISIONS D62; git log with renames off, so a rename is a
+    deletion): a run is banked once and never changed, and a run redone is a new run."""
     base = f"artifacts/studies/{study}/runs/"
     # A banked run is never changed or removed afterwards: a run banked after the freeze
     # and then deleted, rewritten, or replaced by another attempt would otherwise vanish
@@ -3258,6 +3456,19 @@ def check_coverage(root: Path, study: str, rel: str, ids: Iterable[str]) -> int:
         "deleted, and a banked run is never changed or removed: "
         + ", ".join(sorted(set(changed))[:3]),
     )
+
+
+def check_coverage(root: Path, study: str, rel: str, ids: Iterable[str]) -> int:
+    """The rows of ``rel`` (their run ids are ``ids``) cover every run banked under
+    artifacts/studies/<study>/runs/ (DECISIONS D57): each directory there that holds a
+    committed file is a banked run, and each has a row. With the checks that no run id
+    repeats and that every row is a banked run, the rows are one row per banked run
+    (prereg 0001 section 11), so a run banked without a row never counts as a missing
+    run. No committed file of a banked run may have been modified or deleted in any later
+    commit (D62, :func:`require_unchanged_runs`), so a run cannot leave the analysis by
+    being removed or replaced after it was banked. Returns the number of banked runs."""
+    base = f"artifacts/studies/{study}/runs/"
+    require_unchanged_runs(root, study)
     banked = {path[len(base) :].split("/", 1)[0] for path in tracked(root, base)}
     unrowed = sorted(banked - set(ids))
     require(
