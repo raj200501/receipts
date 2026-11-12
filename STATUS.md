@@ -54,11 +54,13 @@ CAP_SHARE 0.2).
   checked against their commit, and a path audit (`tools/audit_run_paths.py`) checks a
   run's ledger before banking (D67, D68).
 - **Smoke study:** 38 of the 40 runs are banked, each audited for paths outside its
-  workspace (one run's code named nonexistent paths above it; D68). py-units-refactor
-  (attempt 2 after a server timeout) and ts-todo-tags are still running from the e4230cc
-  snapshot. When both are banked, `python tools/bank_study.py smoke` writes
-  `artifacts/bench/smoke_runs.json`, which G6 needs. A new key result: in ts-parser-tests
-  the agent wrote no file and reported adding tests, and receipts contradicted both claims.
+  workspace (one run's code named nonexistent paths above it; D68). ts-todo-tags is still
+  running. **py-units-refactor is excluded** after three failed attempts, as the runner's
+  rule says: after its first turn the request no longer fits the model server's context
+  window (the server log reports a request of 16437 tokens against 16384), and the first
+  attempt timed out on the same request. So G6, which needs a smoke run of every task,
+  cannot pass from this study. A new key result: in ts-parser-tests the agent wrote no file
+  and reported adding tests, and receipts contradicted both claims.
 - **Open, non-blocking:** G7 and G9 do not yet require `provenance.sandbox.checkout_hidden`
   or `snapshot_verified` for E1 and E4 runs; the held-out attempt log records no
   requirement digests (D69); the banked E3 replies file is not yet immutable (D70); the
@@ -70,9 +72,11 @@ CAP_SHARE 0.2).
 
 ## Next three actions
 
-1. Bank the last two smoke runs after the path audit, write `smoke_runs.json` (G6), then
-   log requirement digests per held-out attempt and run the E0 labelers, writers, and
-   adjudicators (D40, D43) and the held-out scoring (G5).
+1. Bank ts-todo-tags after the path audit and write `smoke_runs.json` with
+   `tools/bank_study.py smoke`. For G6, decide how a smoke run of py-units-refactor with a
+   larger context window is planned and banked (a new run id, the server setting recorded,
+   the exclusion kept and reported), make it, and bank it. Then log requirement digests
+   per held-out attempt and run E0 (D40, D43) and the held-out scoring (G5).
 2. Before E1: G7 and G9 require the sandbox and snapshot fields, the `tests_added` checker
    follows docs/CLAIM_TYPES.md, and the replies file becomes immutable; then the pilot,
    power run, freezing 0001 to 0003, and E1 and E4 from the freeze-commit snapshot (G7 to
