@@ -1,8 +1,15 @@
 {
+  "failures": {
+    "added": 3,
+    "banked": "artifacts/studies/smoke/failures.jsonl",
+    "entries": 3,
+    "sha256": "f5db17d43684445bbae75b0291120aebf2ba786bb761602c0d71ed1fc92b680f",
+    "source": "runs/smoke/failures.jsonl"
+  },
   "provenance": {
     "command": "/home/user/receipts/.venv/bin/python tools/bank_study.py smoke",
-    "created": "2026-11-12T06:43:46+00:00",
-    "git_sha": "bda8a40ecb6dbbed8bb7aad3c45d2edb1e8955b5",
+    "created": "2026-11-12T10:13:50+00:00",
+    "git_sha": "15a177c0e0e2280b6957b0d904c613d052d86c6e",
     "plan_sha256": "f497bb5a9eb205e8b4f580fe2a50143aab65142b25a56a98244882b244969391",
     "study": "smoke"
   },

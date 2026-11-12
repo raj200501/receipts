@@ -5,6 +5,13 @@ docs/BUILD_BRIEF.md section 9), newest first.
 
 ## 2026-11-12
 
+- **README.md (opening and status), STATUS.md, and DECISIONS D71: why py-units-refactor was
+  excluded.** They said that after its first turn the request no longer fit the model
+  server's context window, and that the first attempt timed out on the same request. The
+  banked usage ledger and the server log show that in its second and third attempts the run
+  reached its turn cap, and its final-report request then exceeded the window; the first
+  attempt timed out on an earlier request that fit. The documents now say so (D72).
+
 - **docs/REPORT.md section 7.2, the contradicted claims** (changed because new runs were
   banked): it said the contradicted claims "were all feature claims refuted by hidden
   checks". In the newly banked ts-parser-tests run, a claim that tests were added and a

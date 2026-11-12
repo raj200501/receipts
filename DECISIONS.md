@@ -941,3 +941,27 @@ the same agent and model with the server's window per slot raised for that run o
 a server with one slot. The plan change is made by a committed tool, the run records the
 window in its provenance, and the README and REPORT report it as a deviation of the smoke
 study. The runner's rule for E1 and E4 (never attempt an excluded run again) is unchanged.
+
+**D72. How the D71 run is made, checked, and banked.** Recorded 2026-11-12, before the
+plan amendment is committed (adversarial checks of the D71 mechanism). (1) D71's account
+of the failure is wrong, and CORRECTIONS records the change: in its second and third
+attempts the run reached its turn cap, and its final-report request (16437 tokens) then
+exceeded the window of 16384 tokens per slot, which the server refused; the first attempt
+timed out on an earlier request that fit the window. (2) The added run's model replies are
+cached in a directory of its own, never in the shared response cache: the cache key covers
+the request, not the server, and the shared cache holds the replies the excluded run got
+on the smaller window, so the new run would otherwise replay them and only its last call
+would reach the larger window. Section 8's "a banked call is never re-run" is read as
+applying to calls to the same server setting; a call to a server with another window is
+another call, local and free. (3) The added run is served by llama.cpp only, whose server
+reports its window per slot, slots, and model file; a session starts no server on a port
+that already answers, confirms before each run that the server is its own process serving
+what it was started with, and records that report in the run. (4) D71's terms are enforced
+in the plan library, the runner, smoke banking, and G6, not only in
+`tools/amend_plan.py`: the decision is D71, the window per slot is above the model's pinned
+window, the server has one slot, the added run is the plan's last, the amendment records
+the hash of the plan before it, no committed version of the plan changes a planned run
+outside an amendment, and the banked failure log shows the replaced run's three failed
+attempts. (5) G6 also requires `smoke_runs.json` to be exactly the rows banking derives
+from the committed runs, the failure log it summarizes to be append-only, and no banked
+smoke file to change in any commit, merge, type, or mode (D62).

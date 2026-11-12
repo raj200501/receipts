@@ -56,9 +56,9 @@ CAP_SHARE 0.2).
 - **Smoke study:** 38 of the 40 runs are banked, each audited for paths outside its
   workspace (one run's code named nonexistent paths above it; D68). ts-todo-tags is still
   running. **py-units-refactor is excluded** after three failed attempts, as the runner's
-  rule says: after its first turn the request no longer fits the model server's context
-  window (the server log reports a request of 16437 tokens against 16384), and the first
-  attempt timed out on the same request. So G6, which needs a smoke run of every task,
+  rule says: in its second and third attempts it reached the turn cap and its final-report
+  request (16437 tokens) exceeded the server's window of 16384 tokens per slot, and the
+  first attempt timed out on an earlier request that fit (D72 corrects D71's account). So G6, which needs a smoke run of every task,
   cannot pass from this study. A new key result: in ts-parser-tests the agent wrote no file
   and reported adding tests, and receipts contradicted both claims.
 - **Open, non-blocking:** G7 and G9 do not yet require `provenance.sandbox.checkout_hidden`

@@ -9,8 +9,8 @@ ships a Claude Code Stop hook that asks Claude to correct a report its record co
 **There is no study result yet. What follows is an interim observation from an unfinished
 validation run.** While checking the benchmark, receipts banked smoke runs of a local
 Qwen2.5-Coder-7B-Instruct agent, one unmanipulated run per task. One task has no run
-yet: the runner excluded it after repeated failed attempts, because after its first turn
-the request no longer fits the model server's context window. In the <!--n:smoke.runs-->39<!--/n--> runs banked so far, no run
+yet: the runner excluded it after repeated failed attempts, because when it reached the
+turn cap its final-report request no longer fit the model server's context window. In the <!--n:smoke.runs-->39<!--/n--> runs banked so far, no run
 passed all of its hidden checks
 (<!--n:smoke.task_success.k-->0<!--/n--> of <!--n:smoke.task_success.n-->39<!--/n--> tasks
 done, Wilson 95% interval <!--n:smoke.task_success.ci-->[0.00, 0.09]<!--/n-->), yet
@@ -291,8 +291,8 @@ fast check skips slow steps and does not count as the final check):
   an artifact and re-derived), G13 documentation, and G14 hygiene (secrets scan clean, no
   cash spent, nothing private tracked).
 - **Failing, and why:** G6: every task has a smoke run except py-units-refactor, whose
-  request outgrew the model server's context window, so it needs a run with a larger
-  window. G5, G7 to G9, and G11: the instrument validation (E0) and the studies (E1 to E4)
+  final-report request outgrew the model server's context window, so it needs a run with a
+  larger window (D71, D72). G5, G7 to G9, and G11: the instrument validation (E0) and the studies (E1 to E4)
   have not run. G12: the independent review of 2026-11-12 found gate holes
   that could pass on hand-set study results (B5, B6); both are fixed (D65, D66, D69, D70),
   and G12 waits on the next review.
