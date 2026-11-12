@@ -501,6 +501,19 @@ def test_smoke_banking_refuses_a_run_not_made_as_planned(
     assert not (checkout / "artifacts" / "studies" / "smoke" / "failures.jsonl").exists()
 
 
+def test_smoke_banking_refuses_a_failure_log_it_cannot_read(
+    checkout: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log = checkout / "runs" / "smoke" / "failures.jsonl"
+    log.parent.mkdir(parents=True)
+    log.write_text('{"run_id": \n', encoding="utf-8")
+    assert bank_study.main(["smoke"]) == 2
+    err = capsys.readouterr().err
+    assert "bank_study smoke: refused:" in err and "runs/smoke/failures.jsonl:1" in err
+    assert not (checkout / "artifacts" / "bench" / "smoke_runs.json").exists()
+    assert not (checkout / "artifacts" / "studies" / "smoke" / "failures.jsonl").exists()
+
+
 def test_smoke_banking_banks_the_failure_log_without_traces(checkout: Path) -> None:
     log = checkout / "runs" / "smoke" / "failures.jsonl"
     log.parent.mkdir(parents=True)
