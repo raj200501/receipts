@@ -498,49 +498,85 @@ def _input_problem(item: Derived, recorded: object, inputs: Mapping[str, str]) -
     )
 
 
-def check(root: Path, items: Sequence[Derived] = DERIVED, *, present: bool = False) -> list[str]:
-    """Every way a committed derived artifact differs from a fresh derivation.
+@dataclass(frozen=True)
+class Outcome:
+    """What :func:`examine` found for one derived artifact.
 
-    An artifact that is absent is skipped, unless its input pattern matches a file, or
-    ``present`` asks for every item to exist (:func:`main` with named paths).
+    Attributes:
+        item: The artifact.
+        problems: Every way it is not a fresh derivation; empty when it agrees with one.
+        command: The command the fresh derivation ran, with every argument it passed but
+            ``--out`` (``python tools/analyze.py e1 --n-boot 10``); None when none ran
+            (the artifact is absent or unreadable, or its recorded command is refused).
     """
-    problems: list[str] = []
-    for item in items:
-        target = root / item.path
-        inputs = current_inputs(root, item)
-        if not target.is_file():
-            if inputs:
-                problems.append(
-                    f"{item.path}: missing, though {item.inputs} matches {len(inputs)} "
-                    f"file(s); {item.remedy}"
-                )
-            elif present:
-                problems.append(f"{item.path}: missing, so there is nothing to derive again")
-            continue
-        try:
-            committed = _read(target)
-        except ValueError as exc:
-            problems.append(f"{item.path}: {exc}")
-            continue
-        prov = committed.get("provenance")
-        if not isinstance(prov, dict):
-            problems.append(f"{item.path}: its provenance is not a JSON object; {item.remedy}")
-            continue
-        if item.inputs is not None:
-            problem = _input_problem(item, prov.get("inputs"), inputs)
-            if problem is not None:
-                problems.append(problem)
-        try:
-            fresh = derive(root, item, arguments(root, item, committed))
-        except DerivedError as exc:
-            problems.append(f"{item.path}: {exc}")
-            continue
-        if not agree(comparable(fresh), comparable(committed)):
-            problems.append(
-                f"{item.path}: differs from a fresh derivation by {item.script} "
-                f"({differences(comparable(fresh), comparable(committed))}); {item.remedy}"
+
+    item: Derived
+    problems: tuple[str, ...]
+    command: str | None = None
+
+
+def _examine(root: Path, item: Derived, present: bool) -> Outcome:
+    """What :func:`examine` finds for ``item``."""
+    target = root / item.path
+    inputs = current_inputs(root, item)
+    if not target.is_file():
+        if inputs:
+            missing = (
+                f"{item.path}: missing, though {item.inputs} matches {len(inputs)} file(s); "
+                f"{item.remedy}"
             )
-    return problems
+            return Outcome(item, (missing,))
+        if present:
+            return Outcome(item, (f"{item.path}: missing, so there is nothing to derive again",))
+        return Outcome(item, ())
+    try:
+        committed = _read(target)
+    except ValueError as exc:
+        return Outcome(item, (f"{item.path}: {exc}",))
+    prov = committed.get("provenance")
+    if not isinstance(prov, dict):
+        return Outcome(item, (f"{item.path}: its provenance is not a JSON object; {item.remedy}",))
+    problems: list[str] = []
+    if item.inputs is not None:
+        problem = _input_problem(item, prov.get("inputs"), inputs)
+        if problem is not None:
+            problems.append(problem)
+    try:
+        args = arguments(root, item, committed)
+    except DerivedError as exc:
+        return Outcome(item, (*problems, f"{item.path}: {exc}"))
+    command = " ".join(["python", item.script, *args])
+    try:
+        fresh = derive(root, item, args)
+    except DerivedError as exc:
+        return Outcome(item, (*problems, f"{item.path}: {exc}"), command)
+    if not agree(comparable(fresh), comparable(committed)):
+        problems.append(
+            f"{item.path}: differs from a fresh derivation by {command} "
+            f"({differences(comparable(fresh), comparable(committed))}); {item.remedy}"
+        )
+    return Outcome(item, tuple(problems), command)
+
+
+def examine(
+    root: Path, items: Sequence[Derived] = DERIVED, *, present: bool = False
+) -> list[Outcome]:
+    """Derive each of ``items`` again under ``root`` and say how each committed artifact
+    differs from its fresh derivation, and with which command it was derived.
+
+    An artifact that is absent is skipped (no problem, no command), unless its input
+    pattern matches a file, or ``present`` asks for every item to exist (:func:`main`
+    with named paths).
+    """
+    return [_examine(root, item, present) for item in items]
+
+
+def check(root: Path, items: Sequence[Derived] = DERIVED, *, present: bool = False) -> list[str]:
+    """Every way a committed derived artifact differs from a fresh derivation
+    (:func:`examine`), in the order of ``items``."""
+    return [
+        problem for outcome in examine(root, items, present=present) for problem in outcome.problems
+    ]
 
 
 def refresh(root: Path, items: Sequence[Derived] = DERIVED) -> list[str]:
@@ -577,7 +613,9 @@ def refresh(root: Path, items: Sequence[Derived] = DERIVED) -> list[str]:
 def main(argv: Sequence[str] | None = None) -> int:
     """``python -m receipts.report.derived [--root DIR] [PATH ...]``: check the named
     derived artifacts (every one of :data:`DERIVED` when none is named) against fresh
-    derivations; a named artifact must exist. Prints each problem, then
+    derivations; a named artifact must exist. Prints each problem, then for each artifact
+    that agrees ``<path>: re-derived by <command>; agrees with the committed artifact``,
+    naming every argument the derivation passed (review N1 of the B5 fix), then
     ``DERIVED: PASS`` or ``DERIVED: FAIL <n>``; exit status 0, 1 on a problem, 2 for a
     path that :data:`DERIVED` does not list."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -593,13 +631,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 2
     items = [known[path] for path in args.paths] or list(DERIVED)
-    problems = check(args.root, items, present=bool(args.paths))
+    outcomes = examine(args.root, items, present=bool(args.paths))
+    problems = [problem for outcome in outcomes for problem in outcome.problems]
     for problem in problems:
         print(f"problem: {problem}")
-    failed = {problem.split(": ", 1)[0] for problem in problems}
-    for item in items:
-        if item.path not in failed and (args.root / item.path).is_file():
-            print(f"{item.path}: re-derived by {item.command}; equals the committed artifact")
+    for outcome in outcomes:
+        if not outcome.problems and outcome.command is not None:
+            print(
+                f"{outcome.item.path}: re-derived by {outcome.command}; agrees with the "
+                "committed artifact"
+            )
     print("DERIVED: " + ("PASS" if not problems else f"FAIL {len(problems)}"))
     return 0 if not problems else 1
 

@@ -492,7 +492,7 @@ def test_a_summary_value_typed_by_hand_fails_although_the_inputs_are_current(
     studies.edit(root, SMOKE.path, lambda art: art["summary"]["false_success"].update(k=0))
 
     assert check(root) == [
-        f"{SMOKE.path}: differs from a fresh derivation by {SMOKE.script} "
+        f"{SMOKE.path}: differs from a fresh derivation by python {SMOKE.script} "
         "(summary.false_success.k); run make report"
     ]
 
@@ -636,7 +636,7 @@ def e4_repo(tmp_path: Path) -> Path:
 
 @pytest.mark.slow  # two E1 analyses with 10 bootstrap resamples each
 def test_the_e1_and_e2_artifacts_equal_a_fresh_derivation_in_a_fresh_clone(
-    e1_repo: Path, tmp_path: Path
+    e1_repo: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     there = studies.fresh_clone(e1_repo, tmp_path / "clone")
     assert check(there, [E1, E2]) == []
@@ -645,6 +645,14 @@ def test_the_e1_and_e2_artifacts_equal_a_fresh_derivation_in_a_fresh_clone(
     assert results["provenance"]["command"] == "python tools/analyze.py e1 --n-boot 10"
     assert arguments(there, E1, results) == ["e1", "--n-boot", "10"]
     assert results["settings"]["n_boot"] == 10 and results["confirmatory"] is False
+    # The command line names the arguments each derivation ran (review N1 of the B5 fix).
+    assert derived.main(["--root", str(there), E1.path, E2.path]) == 0
+    agrees = "agrees with the committed artifact"
+    assert capsys.readouterr().out.splitlines() == [
+        f"{E1.path}: re-derived by python tools/analyze.py e1 --n-boot 10; {agrees}",
+        f"{E2.path}: re-derived by python tools/analyze.py e2; {agrees}",
+        "DERIVED: PASS",
+    ]
 
 
 def test_the_e3_artifact_is_re_scored_from_its_banked_replies_in_a_fresh_clone(
@@ -694,18 +702,33 @@ HAND_SET = [
     pytest.param(
         "e1_repo",
         E1,
+        "python tools/analyze.py e1 --n-boot 10",
         raise_statistic_and_flip_decision,
         ("tests.arm_tests.Y1.statistic", "tests.manipulation_tests.0.reject"),
         id="e1-test-statistic-and-decision",
         marks=pytest.mark.slow,
     ),
     pytest.param(
-        "e1_repo", E2, reclassify, ("claims.0.class",), id="e2-class", marks=pytest.mark.slow
+        "e1_repo",
+        E2,
+        "python tools/analyze.py e2",
+        reclassify,
+        ("claims.0.class",),
+        id="e2-class",
+        marks=pytest.mark.slow,
     ),
-    pytest.param("e3_repo", E3, add_a_true_positive, ("judges.0.per_type.",), id="e3-count"),
+    pytest.param(
+        "e3_repo",
+        E3,
+        "python tools/run_judges.py --rescore",
+        add_a_true_positive,
+        ("judges.0.per_type.",),
+        id="e3-count",
+    ),
     pytest.param(
         "e4_repo",
         E4,
+        "python tools/analyze_e4.py",
         flip_holm_and_ratio,
         ("outcomes.Z1.holm.reject.0", "outcomes.Z1.contrasts.0.odds_ratio"),
         id="e4-test-decision-and-ratio",
@@ -713,27 +736,32 @@ HAND_SET = [
 ]
 
 
-@pytest.mark.parametrize(("repo_fixture", "item", "change", "where"), HAND_SET)
+@pytest.mark.parametrize(("repo_fixture", "item", "command", "change", "where"), HAND_SET)
 def test_a_hand_set_study_value_fails_the_gate_check_and_make_freshness(
     request: pytest.FixtureRequest,
     capsys: pytest.CaptureFixture[str],
     repo_fixture: str,
     item: Derived,
+    command: str,
     change: Change,
     where: tuple[str, ...],
 ) -> None:
     """The gates run ``python -m receipts.report.derived <path>`` (:func:`derived.main`) in
     their clone, and ``make freshness`` checks every derived artifact: each fails on a
-    value typed into a study artifact that a fresh derivation does not give."""
+    value typed into a study artifact that a fresh derivation does not give. Each line
+    names the command the derivation ran, its recorded arguments included (review N1 of
+    the B5 fix)."""
     root: Path = request.getfixturevalue(repo_fixture)
     assert derived.main(["--root", str(root), item.path]) == 0
     out = capsys.readouterr().out
-    assert f"{item.path}: re-derived by {item.command}; equals the committed artifact" in out
-    assert out.splitlines()[-1] == "DERIVED: PASS"
+    assert out.splitlines() == [
+        f"{item.path}: re-derived by {command}; agrees with the committed artifact",
+        "DERIVED: PASS",
+    ]
     studies.edit(root, item.path, change)
     assert derived.main(["--root", str(root), item.path]) == 1
     out = capsys.readouterr().out
-    lead = f"problem: {item.path}: differs from a fresh derivation by {item.script} ("
+    lead = f"problem: {item.path}: differs from a fresh derivation by {command} ("
     (problem,) = [line for line in out.splitlines() if line.startswith("problem: ")]
     assert problem.startswith(lead) and all(path in problem for path in where), problem
     assert out.splitlines()[-1] == "DERIVED: FAIL 1"
@@ -807,7 +835,7 @@ def test_the_e4_results_equal_a_derivation_with_other_numerical_kernels(
 
     studies.edit(there, E4.path, nudge)
     (problem,) = check(there, [E4])
-    assert problem.startswith(f"{E4.path}: differs from a fresh derivation by {E4.script} (")
+    assert problem.startswith(f"{E4.path}: differs from a fresh derivation by python {E4.script} (")
     assert "(outcomes.Z1.contrasts.0.odds_ratio)" in problem
 
 
@@ -934,9 +962,10 @@ def test_the_command_line_names_artifacts_and_reports_each(
     out = capsys.readouterr().out
     assert f"problem: {E1.path}: missing, so there is nothing to derive again" in out
     assert derived.main(root) == 0  # every one: the absent ones are skipped
-    out = capsys.readouterr().out
-    assert f"{E4.path}: re-derived by python tools/analyze_e4.py" in out
-    assert E1.path not in out and out.splitlines()[-1] == "DERIVED: PASS"
+    assert capsys.readouterr().out.splitlines() == [
+        f"{E4.path}: re-derived by python tools/analyze_e4.py; agrees with the committed artifact",
+        "DERIVED: PASS",
+    ]
 
 
 def test_the_module_runs_as_a_script(e4_repo: Path) -> None:

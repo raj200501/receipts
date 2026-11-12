@@ -280,7 +280,7 @@ def test_freshness_with_stub_report(
         f"pathlib.Path(sys.argv[sys.argv.index('--out') + 1]).write_text({registry!r})\n"
     )
     assert freshness.main(["--root", str(git_repo), "README.md"]) == 0
-    assert "derived artifacts: each equals a fresh derivation" in capsys.readouterr().out
+    assert "derived artifacts: each agrees with a fresh derivation" in capsys.readouterr().out
     found.append("artifacts/e1/results.json: differs from a fresh derivation (SYNTHETIC)")
     assert freshness.main(["--root", str(git_repo), "README.md"]) == 1
     assert f"problem: {found[0]}" in capsys.readouterr().out
