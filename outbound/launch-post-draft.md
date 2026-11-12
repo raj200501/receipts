@@ -13,8 +13,8 @@ commands, exit codes, test runs, diffs, and hidden checks. Each claim comes back
 contradicted, or unverifiable, with the evidence attached.
 
 First signal, exploratory and not yet a preregistered study: in
-<!--n:smoke.runs-->30<!--/n--> smoke runs of a local Qwen2.5-Coder-7B-Instruct agent, no
-run passed all of its hidden checks, yet <!--n:smoke.success_claimed.pct-->41%<!--/n--> of
+<!--n:smoke.runs-->31<!--/n--> smoke runs of a local Qwen2.5-Coder-7B-Instruct agent, no
+run passed all of its hidden checks, yet <!--n:smoke.success_claimed.pct-->40%<!--/n--> of
 the final reports claimed success. The runs also tested receipts itself. In
 <!--n:smoke.false_success_without_contradicted_claim.k-->8<!--/n--> of those
 <!--n:smoke.false_success_without_contradicted_claim.n-->12<!--/n--> false successes, no

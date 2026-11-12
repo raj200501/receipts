@@ -3,211 +3,211 @@
     "smoke.claims": {
       "derivation": "receipts.report.spec:_count.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
-      "value": "45"
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
+      "value": "48"
     },
     "smoke.claims.contradicted": {
       "derivation": "receipts.report.spec:_verdict.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "4"
     },
     "smoke.claims.supported": {
       "derivation": "receipts.report.spec:_verdict.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
-      "value": "41"
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
+      "value": "44"
     },
     "smoke.claims.unverifiable": {
       "derivation": "receipts.report.spec:_verdict.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "0"
     },
     "smoke.false_success.ci": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
-      "value": "[0.26, 0.59]"
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
+      "value": "[0.25, 0.58]"
     },
     "smoke.false_success.k": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "12"
     },
     "smoke.false_success.n": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
-      "value": "29"
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
+      "value": "30"
     },
     "smoke.false_success.pct": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
-      "value": "41%"
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
+      "value": "40%"
     },
     "smoke.false_success.rate": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
-      "value": "0.41"
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
+      "value": "0.40"
     },
     "smoke.false_success_without_contradicted_claim.ci": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "[0.39, 0.86]"
     },
     "smoke.false_success_without_contradicted_claim.k": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "8"
     },
     "smoke.false_success_without_contradicted_claim.n": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "12"
     },
     "smoke.false_success_without_contradicted_claim.pct": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "67%"
     },
     "smoke.false_success_without_contradicted_claim.rate": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "0.67"
     },
     "smoke.language.python": {
       "derivation": "receipts.report.spec:_language.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "19"
     },
     "smoke.language.typescript": {
       "derivation": "receipts.report.spec:_language.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
-      "value": "11"
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
+      "value": "12"
     },
     "smoke.runs": {
       "derivation": "receipts.report.spec:_count.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
-      "value": "30"
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
+      "value": "31"
     },
     "smoke.runs_with_report": {
       "derivation": "receipts.report.spec:_count.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
-      "value": "29"
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
+      "value": "30"
     },
     "smoke.success_claimed.ci": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
-      "value": "[0.26, 0.59]"
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
+      "value": "[0.25, 0.58]"
     },
     "smoke.success_claimed.k": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "12"
     },
     "smoke.success_claimed.n": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
-      "value": "29"
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
+      "value": "30"
     },
     "smoke.success_claimed.pct": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
-      "value": "41%"
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
+      "value": "40%"
     },
     "smoke.success_claimed.rate": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
-      "value": "0.41"
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
+      "value": "0.40"
     },
     "smoke.success_claims_false.ci": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "[0.76, 1.00]"
     },
     "smoke.success_claims_false.k": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "12"
     },
     "smoke.success_claims_false.n": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "12"
     },
     "smoke.success_claims_false.pct": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "100%"
     },
     "smoke.success_claims_false.rate": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "1.00"
     },
     "smoke.task_success.ci": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "[0.00, 0.11]"
     },
     "smoke.task_success.k": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "0"
     },
     "smoke.task_success.n": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
-      "value": "30"
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
+      "value": "31"
     },
     "smoke.task_success.pct": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "0%"
     },
     "smoke.task_success.rate": {
       "derivation": "receipts.report.spec:_rate_part.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "0.00"
     },
     "smoke.turn_cap_reached": {
       "derivation": "receipts.report.spec:_count.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
-      "value": "16"
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
+      "value": "17"
     },
     "smoke.turn_cap_without_report": {
       "derivation": "receipts.report.spec:_count.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",
-      "source_sha256": "f4c199d89f8fff7ff286769aefd883601ee9c0280e6bec5bc42b1fb19cf48cab",
+      "source_sha256": "05c07ee84a6df103fa0ad9bee880194530d0168d33bd8c0c4ee9979e3790e9a9",
       "value": "1"
     }
   },
