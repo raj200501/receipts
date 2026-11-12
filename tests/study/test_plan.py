@@ -15,6 +15,8 @@ from typing import Any
 
 import pytest
 
+from receipts.client.server import LocalModel, LocalServer
+from receipts.ledger.events import sha256_text
 from receipts.study import plan
 from receipts.study.spec import CONDITION_LEVELS, RunSpec, StudyText
 
@@ -324,3 +326,142 @@ def test_a_server_requirement_names_what_a_server_lacks(
     assert len(found) == len(problems)
     assert all(want in got for want, got in zip(problems, found, strict=True))
     assert WINDOW.describe() == "at least 32768 tokens per slot on at most 1 slot(s)"
+
+
+# A banked run record against its plan (DECISIONS D71) -------------------------------------
+
+PINNED = 16384
+
+
+def model_server(n_ctx: int = 32768, slots: int = 1, engine: str = "llama.cpp") -> dict[str, Any]:
+    """A SYNTHETIC run record's model server, as tools/run_study.py records it: the
+    server's own provenance plus the pinned window and whether it was served."""
+    model = LocalModel("synthetic-model", "fam", Path("/nonexistent.gguf"), "0" * 64, "SYN", n_ctx)
+    served = LocalServer(model, engine=engine, parallel=slots)
+    record: dict[str, Any] = dict(served.provenance())
+    record["n_ctx_per_slot_default"] = PINNED
+    record["n_ctx_per_slot_is_default"] = n_ctx == PINNED
+    return record
+
+
+def run_record(p: plan.Plan, run_id: str, **provenance: Any) -> dict[str, Any]:
+    """A SYNTHETIC run.json of planned run ``run_id``, made as planned."""
+    spec = next(run for run in p.runs if run.run_id == run_id)
+    prov: dict[str, Any] = {
+        "run_spec": {**dataclasses.asdict(spec), "conditions": dict(spec.conditions)},
+        "model_server": model_server(PINNED, 4),
+    }
+    amendment = p.amendment(run_id)
+    if amendment is not None:
+        prov.update(plan_amendment=amendment.to_json(), model_server=model_server())
+    prov.update(provenance)
+    return {
+        "run_id": run_id,
+        "task_id": spec.task_id,
+        "config_id": spec.config_id,
+        "provenance": prov,
+    }
+
+
+def test_a_record_made_as_planned_has_no_problems() -> None:
+    p = amended()
+    assert plan.run_record_problems(p, run_record(p, "smoke-py-alpha-ma-syn")) == []
+    assert plan.run_record_problems(p, run_record(p, ADDED)) == []
+    assert plan.server_record_problems(WINDOW, model_server()) == []
+    assert plan.server_record_problems(WINDOW, model_server(65536)) == []
+    single = model_server(engine="llama-cpp-python")
+    assert plan.server_record_problems(WINDOW, single) == []
+
+
+def rehash(server: dict[str, Any]) -> dict[str, Any]:
+    """``server`` with its command's SHA-256 recomputed (a consistent edit)."""
+    return {**server, "server_command_sha256": sha256_text(" ".join(server["server_command"]))}
+
+
+def edit_flag(server: dict[str, Any], flag: str, value: str) -> dict[str, Any]:
+    """``server`` with one flag of its command set to ``value``."""
+    command = list(server["server_command"])
+    command[command.index(flag) + 1] = value
+    return {**server, "server_command": command}
+
+
+@pytest.mark.parametrize(
+    ("server", "problem"),
+    [
+        pytest.param(model_server(PINNED, 4), "at least 32768 tokens per slot", id="pinned"),
+        pytest.param(model_server(32768, 4), "at most 1 slot(s)", id="four-slots"),
+        pytest.param({**model_server(PINNED), "n_ctx_per_slot": 32768}, "--ctx-size", id="window"),
+        pytest.param(
+            {**model_server(PINNED), "n_ctx_per_slot": 32768, "ctx_size": 32768},
+            "--ctx-size",
+            id="window-and-size",
+        ),
+        pytest.param(edit_flag(model_server(), "--port", "9999"), "SHA-256", id="command"),
+        pytest.param(
+            rehash(edit_flag(model_server(), "--parallel", "2")), "--parallel", id="slots-flag"
+        ),
+        pytest.param({**model_server(), "ctx_size": 65536}, "ctx_size", id="ctx-size"),
+        pytest.param(
+            {**model_server(), "n_ctx_per_slot_is_default": True}, "is_default", id="flag"
+        ),
+        pytest.param(
+            {**model_server(), "n_ctx_per_slot_default": None}, "pinned window", id="no-default"
+        ),
+        pytest.param(
+            {k: v for k, v in model_server().items() if k != "n_ctx_per_slot"},
+            "window per slot",
+            id="no-window",
+        ),
+        pytest.param({**model_server(), "parallel_slots": True}, "window per slot", id="bool"),
+        pytest.param({**model_server(), "engine": "synthetic-engine"}, "engine", id="engine"),
+        pytest.param(
+            rehash(edit_flag(model_server(engine="llama-cpp-python"), "--n_ctx", "16384")),
+            "--n_ctx",
+            id="python-engine-window",
+        ),
+        pytest.param(
+            {**model_server(engine="llama-cpp-python"), "parallel_slots": 2},
+            "one slot",
+            id="python-engine-slots",
+        ),
+        pytest.param("SYNTHETIC", "model server", id="not-an-object"),
+    ],
+)
+def test_a_server_record_that_does_not_meet_or_match_itself_is_found(
+    server: Any, problem: str
+) -> None:
+    found = plan.server_record_problems(WINDOW, server)
+    assert any(problem in line for line in found), found
+
+
+@pytest.mark.parametrize(
+    ("run_id", "changes", "problem"),
+    [
+        pytest.param("smoke-py-delta-ma-syn", {}, "not a planned run", id="unplanned"),
+        pytest.param(EXCLUDED, {}, "replaced", id="excluded-run-banked"),
+        pytest.param("smoke-py-alpha-ma-syn", {"task_id": "py-beta"}, "task", id="other-task"),
+        pytest.param("smoke-py-alpha-ma-syn", {"config_id": "ma-x"}, "arm", id="other-arm"),
+        pytest.param("smoke-py-alpha-ma-syn", {"seed": 5}, "run spec", id="other-seed"),
+        pytest.param(ADDED, {"plan_amendment": None}, "plan amendment", id="no-amendment"),
+        pytest.param(
+            ADDED, {"model_server": model_server(PINNED, 4)}, "at least 32768", id="small-window"
+        ),
+        pytest.param(ADDED, {"provenance": None}, "provenance", id="no-provenance"),
+    ],
+)
+def test_a_record_not_made_as_planned_is_found(
+    run_id: str, changes: dict[str, Any], problem: str
+) -> None:
+    p = amended()
+    if run_id in {run.run_id for run in p.runs}:
+        record = run_record(p, run_id)
+    else:
+        record = {"run_id": run_id, "task_id": "py-delta", "config_id": "ma-syn", "provenance": {}}
+    for key in ("task_id", "config_id", "provenance"):
+        if key in changes:
+            record[key] = changes.pop(key)
+    if "seed" in changes:
+        record["provenance"]["run_spec"]["seed"] = changes.pop("seed")
+    record["provenance"] = record["provenance"] and {**record["provenance"], **changes}
+    found = plan.run_record_problems(p, record)
+    assert any(problem in line for line in found), found

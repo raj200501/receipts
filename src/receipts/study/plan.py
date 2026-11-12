@@ -22,7 +22,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 from receipts.drivers.minimal_agent.loop import AgentConfig
 from receipts.drivers.minimal_agent.protocol import ACTION_SCHEMA
@@ -227,7 +227,8 @@ def _arm_from_json(data: Mapping[str, Any]) -> Arm:
     )
 
 
-def _positive_int(value: object) -> bool:
+def _positive_int(value: object) -> TypeGuard[int]:
+    """True for an int (not a bool) of at least 1."""
     return isinstance(value, int) and not isinstance(value, bool) and value >= 1
 
 
@@ -438,6 +439,109 @@ def amend_plan(
     )
     check_amendments(amended)
     return amended
+
+
+def _flag(command: Sequence[str], name: str) -> str | None:
+    """The value after ``name`` in a command line, or None when it is not there."""
+    for index, word in enumerate(command[:-1]):
+        if word == name:
+            return command[index + 1]
+    return None
+
+
+def server_record_problems(server: ServerRequirement, record: object) -> list[str]:
+    """How a run record's model server (``provenance.model_server``, as
+    ``tools/run_study.py`` records it) fails ``server`` or disagrees with itself; an empty
+    list when it meets the requirement and every field agrees (DECISIONS D71).
+
+    The server must record its window per slot (``n_ctx_per_slot``) and its slots
+    (``parallel_slots``) as positive integers that meet ``server``; its command line must
+    be the one its SHA-256 names and give the same window and slots (llama.cpp:
+    ``--ctx-size`` is the window times the slots, with ``--parallel`` slots;
+    llama-cpp-python: ``--n_ctx`` is the window on one slot), as must ``ctx_size``; and
+    ``n_ctx_per_slot_is_default`` must say whether the window is
+    ``n_ctx_per_slot_default``, the pinned one. So a run made on a smaller window, or a
+    record edited in one field only, is found.
+    """
+    if not isinstance(record, Mapping):
+        return ["the run records no model server (provenance.model_server)"]
+    window, slots = record.get("n_ctx_per_slot"), record.get("parallel_slots")
+    if not (_positive_int(window) and _positive_int(slots)):
+        return [
+            "the model server does not record its window per slot and its slots as positive "
+            "integers (n_ctx_per_slot, parallel_slots)"
+        ]
+    found = server.problems(window, slots)
+    command = record.get("server_command")
+    if not (isinstance(command, list) and all(isinstance(word, str) for word in command)):
+        return [*found, "the model server records no command line (server_command)"]
+    if sha256_text(" ".join(command)) != record.get("server_command_sha256"):
+        found.append("the server command is not the one its SHA-256 (server_command_sha256) names")
+    engine = record.get("engine")
+    if engine == "llama.cpp":
+        expected = {"--ctx-size": str(window * slots), "--parallel": str(slots)}
+        size = window * slots
+    elif engine == "llama-cpp-python":
+        expected = {"--n_ctx": str(window)}
+        size = window
+        if slots != 1:
+            found.append(f"llama-cpp-python serves one slot, not the {slots} recorded")
+    else:
+        return [*found, f"the model server's engine {engine!r} is not one the runner starts"]
+    for name, value in expected.items():
+        if _flag(command, name) != value:
+            found.append(
+                f"the server command gives {name} {_flag(command, name)}, not the {value} that "
+                f"{window} tokens per slot on {slots} slot(s) take"
+            )
+    if record.get("ctx_size") != size:
+        found.append(f"ctx_size {record.get('ctx_size')!r} is not the {size} tokens it serves")
+    default = record.get("n_ctx_per_slot_default")
+    if not _positive_int(default):
+        found.append("the model server does not record the pinned window (n_ctx_per_slot_default)")
+    elif record.get("n_ctx_per_slot_is_default") is not (window == default):
+        found.append(
+            f"n_ctx_per_slot_is_default does not say whether {window} tokens per slot is the "
+            f"pinned window of {default}"
+        )
+    return found
+
+
+def run_record_problems(plan: Plan, record: Mapping[str, Any]) -> list[str]:
+    """How a banked run record (``run.json``) was not made as ``plan`` plans it; an empty
+    list when it was (DECISIONS D71).
+
+    The run is a planned run that no amendment replaced (an excluded run stays excluded
+    and is never banked); ``run.json`` records the planned task and arm and, in its
+    provenance, the planned run spec. A run an amendment added also records that
+    amendment (``provenance.plan_amendment``) and a model server that meets its
+    requirement (:func:`server_record_problems`).
+    """
+    run_id = record.get("run_id")
+    spec = next((run for run in plan.runs if run.run_id == run_id), None)
+    if spec is None:
+        return [f"{run_id!r} is not a planned run of the {plan.study} plan"]
+    if spec.run_id in plan.replaced():
+        return [f"{spec.run_id} was replaced by a plan amendment, so it stays excluded"]
+    found = []
+    if record.get("task_id") != spec.task_id:
+        found.append(f"run.json records task {record.get('task_id')!r}, not {spec.task_id}")
+    if record.get("config_id") != spec.config_id:
+        found.append(f"run.json records arm {record.get('config_id')!r}, not {spec.config_id}")
+    provenance = record.get("provenance")
+    if not isinstance(provenance, Mapping):
+        return [*found, "run.json has no provenance"]
+    if provenance.get("run_spec") != {**asdict(spec), "conditions": dict(spec.conditions)}:
+        found.append("run.json does not record the planned run spec (provenance.run_spec)")
+    amendment = plan.amendment(spec.run_id)
+    if amendment is not None:
+        if provenance.get("plan_amendment") != amendment.to_json():
+            found.append(
+                f"run.json does not record the plan amendment that added it "
+                f"({amendment.decision}, provenance.plan_amendment)"
+            )
+        found += server_record_problems(amendment.server, provenance.get("model_server"))
+    return found
 
 
 def smoke_plan(study: str, task_ids: Iterable[str], arm: Arm, seed: int = 0) -> Plan:

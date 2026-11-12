@@ -8,6 +8,16 @@
 
 smoke and pilot read the banked ``artifacts/studies/<study>/runs/*/run.json`` files.
 
+smoke also ties every banked run to the smoke plan (``artifacts/studies/smoke/plan.json``,
+DECISIONS D71) and refuses (exit 2, nothing written) a run that was not made as planned
+(:func:`receipts.study.plan.run_record_problems`): a run the plan does not hold, a run a
+plan amendment replaced (an excluded run stays excluded), a run that does not record
+its planned task, arm, and run spec, or a run an amendment added that does not record
+the amendment and a model server meeting its requirement. Each row of
+``artifacts/bench/smoke_runs.json`` is then a run gate G6 can tie to its plan. The
+smoke failure log is banked as e1's and e4's are (below), with its summary in
+``smoke_runs.json`` (``failures``), so the attempts that excluded a run stay on record.
+
 e1 and e4 follow DECISIONS D42 item 1: every banked run is rescored
 (:func:`receipts.study.rescore.rescore_run`): its final report is re-extracted and
 re-verified against its banked ledger with the task's requirements, using the
@@ -62,9 +72,12 @@ import receipts
 from receipts.bench.hashing import tree_sha256
 from receipts.evaluation.e0 import E0Error, uncommitted
 from receipts.study import aggregate, rescore
+from receipts.study.plan import check_amendments, load_plan, run_record_problems
 
 ROOT = Path(__file__).resolve().parents[1]
 STUDIES: tuple[str, ...] = ("smoke", "pilot", "e1", "e4")
+#: The plan every banked smoke run must be a run of (DECISIONS D71).
+SMOKE_PLAN = "artifacts/studies/smoke/plan.json"
 #: The held-out G5 evaluation whose valid types ``any_contradicted`` counts.
 SEEDED_EVAL = "artifacts/e0/seeded_eval.json"
 #: Code that turns banked runs into rows, besides the instrument: it must be committed
@@ -211,6 +224,25 @@ def banked_failures(study: str) -> tuple[Path, str, dict[str, Any]] | None:
 def _listed(items: Sequence[str]) -> str:
     """The first five of ``items``, comma separated, with ``...`` when there are more."""
     return ", ".join(items[:5]) + (", ..." if len(items) > 5 else "")
+
+
+def smoke_problems(records: Sequence[Mapping[str, Any]]) -> list[str]:
+    """Every way the banked smoke runs ``records`` were not made as the smoke plan plans
+    them (:func:`receipts.study.plan.run_record_problems`), each after its run id; a
+    missing plan, or one whose amendments do not hold, is a problem too."""
+    path = ROOT / SMOKE_PLAN
+    if not path.is_file():
+        return [f"{SMOKE_PLAN} is missing, so no smoke run can be tied to its plan"]
+    try:
+        plan = load_plan(path)
+        check_amendments(plan)
+    except (ValueError, KeyError, TypeError) as exc:
+        return [f"{SMOKE_PLAN}: {exc}"]
+    return [
+        f"{record.get('run_id')}: {problem}"
+        for record in records
+        for problem in run_record_problems(plan, record)
+    ]
 
 
 @dataclass(frozen=True)
@@ -461,11 +493,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     records = aggregate.load_records(runs)
     prov = provenance(args.study)
     if args.study == "smoke":
+        problems = smoke_problems(records)
+        try:
+            failures = None if problems else banked_failures("smoke")
+        except RefusalError as exc:
+            problems = [str(exc)]
+        if problems:
+            for problem in problems:
+                print(f"bank_study smoke: refused: {problem}", file=sys.stderr)
+            return 2
+        if failures is not None:
+            target, text, _ = failures
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
         # Claim-type counts (G5) come from blind labels, not the extractor (D34, D43):
         # tools/e0.py counts them from labeler subagents' labels of each smoke report.
-        write_json(
-            ROOT / "artifacts/bench/smoke_runs.json", aggregate.smoke_runs_artifact(records, prov)
-        )
+        artifact = aggregate.smoke_runs_artifact(records, prov)
+        artifact["failures"] = None if failures is None else failures[2]
+        write_json(ROOT / "artifacts/bench/smoke_runs.json", artifact)
     else:
         write_json(
             ROOT / "artifacts/studies/pilot/summary.json",
