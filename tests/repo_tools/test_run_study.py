@@ -31,7 +31,14 @@ import receipts
 import run_study
 from receipts.client.server import LocalModel, LocalServer
 from receipts.sandbox.bwrap import probe_bwrap
-from receipts.study.plan import Plan, local_arm, write_plan
+from receipts.study.plan import (
+    Plan,
+    ServerRequirement,
+    amend_plan,
+    local_arm,
+    smoke_plan,
+    write_plan,
+)
 from receipts.study.spec import RunSpec
 
 needs_bwrap = pytest.mark.skipif(not probe_bwrap().ok, reason="bubblewrap does not work here")
@@ -934,3 +941,220 @@ def test_code_state_verifies_the_snapshot_it_imports(
     (snapshot / "SNAPSHOT_OF").write_text("f" * 40 + "\n", encoding="utf-8")
     with pytest.raises(SystemExit, match="is not in"):
         run_study.code_state()
+
+
+# A run a plan amendment added, and the server it needs (DECISIONS D71) -------------------
+
+SMOKE_TASKS = ("py-one", "py-two", "py-three")
+REPLACED = "smoke-py-two-arm-a"
+ADDED = "smoke-py-two-arm-a-ctx32k"
+
+
+def amended_plan() -> Plan:
+    """A SYNTHETIC smoke plan of one arm whose second run an amendment replaced with a run
+    that needs at least 32768 tokens per slot on one slot."""
+    arm = local_arm("arm-a", SYNTHETIC_MODELS[0], "fam-a")
+    base = smoke_plan("smoke", SMOKE_TASKS, arm)
+    return amend_plan(
+        base,
+        REPLACED,
+        ServerRequirement(min_n_ctx_per_slot=32768, max_parallel_slots=1),
+        decision="D71",
+        reason="SYNTHETIC: the request outgrew the window",
+        date="2026-11-12",
+        plan_sha256_before="0" * 64,
+    )
+
+
+def bank(artifacts: Path, *run_ids: str) -> None:
+    """Mark SYNTHETIC runs as banked (a run.json in their directory)."""
+    for run_id in run_ids:
+        (artifacts / run_id).mkdir(parents=True)
+        (artifacts / run_id / "run.json").write_text("{}", encoding="utf-8")
+
+
+def test_a_replaced_run_is_excluded_whatever_the_failure_log_holds(tmp_path: Path) -> None:
+    plan = amended_plan()
+    artifacts = tmp_path / "runs"
+    bank(artifacts, "smoke-py-one-arm-a", "smoke-py-three-arm-a")
+    # An empty or reset failure log does not bring the excluded run back.
+    for counts in ({}, {REPLACED: 3}, {REPLACED: 1}):
+        assert run_study.pending(plan, artifacts, counts) == [ADDED]
+        assert run_study.excluded(plan, artifacts, counts) == [REPLACED]
+
+
+def test_the_runs_a_server_may_serve(no_setup: None) -> None:
+    plan = amended_plan()
+    specs = {run.run_id: run for run in plan.runs}
+    refusal = run_study.window_refusal
+    # The added run needs at least 32768 tokens per slot on one slot.
+    for n_ctx, slots in ((None, 1), (PINNED_N_CTX, 1), (32767, 1), (32768, 2)):
+        why = refusal(plan, specs[ADDED], n_ctx, slots)
+        assert why is not None and "D71" in why, (n_ctx, slots)
+    assert refusal(plan, specs[ADDED], 32768, 1) is None
+    assert refusal(plan, specs[ADDED], 65536, 1) is None
+    # Every other run is served only with the pinned window, so a raised window serves
+    # the run that needs it and no other.
+    other = specs["smoke-py-one-arm-a"]
+    assert refusal(plan, other, None, 4) is None
+    assert refusal(plan, other, PINNED_N_CTX, 4) is None
+    why = refusal(plan, other, 32768, 1)
+    assert why is not None and "no server requirement" in why
+
+
+def test_dry_run_shows_the_amendment_and_the_server_it_needs(
+    tmp_path: Path, no_models: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    plan = amended_plan()
+    path = plan_file(tmp_path, plan)
+    bank(path.parent / "runs", "smoke-py-one-arm-a", "smoke-py-three-arm-a")
+    write_log(
+        tmp_path / "state" / "smoke",
+        [{"run_id": REPLACED, "attempt": n, "time": "t", "error": "E"} for n in (1, 2, 3)],
+    )
+    assert run_study.main(["--plan", str(path), "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "1 of 4 runs pending; 1 excluded" in out
+    assert ADDED in out.splitlines()
+    assert f"in place of {REPLACED}" in out and "at least 32768 tokens per slot" in out
+    assert "refused on this session's server" in out
+    assert f"excluded: {REPLACED} (3 failed attempts; replaced by {ADDED}, D71)" in out
+    assert run_study.main(["--plan", str(path), "--dry-run", "--n-ctx", "32768"]) == 0
+    assert "refused on this session's server" not in capsys.readouterr().out
+
+
+def added_only(tmp_path: Path) -> Path:
+    """The SYNTHETIC amended plan with every run banked or excluded but the added one."""
+    path = plan_file(tmp_path, amended_plan())
+    bank(path.parent / "runs", "smoke-py-one-arm-a", "smoke-py-three-arm-a")
+    return path
+
+
+def record_attempts(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Patch one_run to bank each SYNTHETIC run it is given and return their ids."""
+    attempts: list[str] = []
+
+    def one_run(plan: Plan, spec: RunSpec, client: Any, artifacts: Path, *rest: Any) -> None:
+        attempts.append(spec.run_id)
+        bank(artifacts, spec.run_id)
+
+    monkeypatch.setattr(run_study, "one_run", one_run)
+    return attempts
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        pytest.param([], id="pinned-window"),
+        pytest.param(["--n-ctx", "16384"], id="pinned-window-named"),
+        pytest.param(["--n-ctx", "24576"], id="smaller-window"),
+        pytest.param(["--n-ctx", "32768", "--parallel", "2"], id="two-slots"),
+    ],
+)
+def test_main_refuses_the_added_run_on_a_server_it_does_not_fit(
+    tmp_path: Path,
+    no_models: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    options: list[str],
+) -> None:
+    path = added_only(tmp_path)
+    attempts = record_attempts(monkeypatch)
+    assert run_study.main(["--plan", str(path), *options]) == 2
+    err = capsys.readouterr().err
+    assert f"REFUSED: {ADDED}:" in err and "D71" in err
+    # No server started, nothing was attempted or logged, and no session began.
+    assert FakeServer.started == [] and attempts == []
+    state = tmp_path / "state" / "smoke"
+    assert run_study.failure_counts(state) == {} and not (state / "pid").exists()
+
+
+def test_main_runs_the_added_run_on_the_server_it_needs(
+    tmp_path: Path,
+    no_models: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    path = added_only(tmp_path)
+    attempts = record_attempts(monkeypatch)
+    argv = ["--plan", str(path), "--n-ctx", "32768", "--parallel", "1"]
+    assert run_study.main(argv) == 0
+    assert attempts == [ADDED]
+    assert FakeServer.served == [(SYNTHETIC_MODELS[0], 32768, 1)]
+    assert "1 run(s) banked this session" in capsys.readouterr().out
+
+
+def test_a_raised_window_serves_only_the_runs_that_need_it(
+    tmp_path: Path,
+    no_models: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    path = plan_file(tmp_path, amended_plan())  # two plain runs pending beside the added one
+    attempts = record_attempts(monkeypatch)
+    assert run_study.main(["--plan", str(path), "--n-ctx", "32768"]) == 0
+    assert attempts == [ADDED]
+    err = capsys.readouterr().err
+    assert "REFUSED: smoke-py-one-arm-a:" in err and "no server requirement" in err
+    # A session with the pinned window then makes the plain runs, never the added one again.
+    attempts.clear()
+    assert run_study.main(["--plan", str(path)]) == 0
+    assert attempts == ["smoke-py-one-arm-a", "smoke-py-three-arm-a"]
+    assert FakeServer.served[-1] == (SYNTHETIC_MODELS[0], PINNED_N_CTX, 1)
+    # With nothing it may serve, a session with a raised window refuses to start.
+    plain = plan_file(tmp_path / "plain", synthetic_plan(n_runs=1, study="smoke"))
+    assert run_study.main(["--plan", str(plain), "--n-ctx", "32768"]) == 2
+
+
+def test_one_run_refuses_a_server_that_does_not_serve_the_run(
+    no_setup: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[dict[str, Any]] = []
+
+    def execute(spec: RunSpec, task: Any, arm: Any, client: Any, **kwargs: Any) -> Any:
+        seen.append(kwargs)
+        return SimpleNamespace(stop_reason="finished", turns=1, false_success=False)
+
+    monkeypatch.setattr(run_study, "execute_run", execute)
+    plan = amended_plan()
+    specs = {run.run_id: run for run in plan.runs}
+    with pytest.raises(run_study.ServerMismatchError, match="at least 32768"):
+        call_one_run(specs[ADDED], plan)
+    with pytest.raises(run_study.ServerMismatchError, match="no server requirement"):
+        call_one_run(specs["smoke-py-one-arm-a"], plan, n_ctx=32768)
+    assert seen == []
+    # On the server it needs, the run records its amendment and the raised window.
+    call_one_run(specs[ADDED], plan, n_ctx=32768)
+    (kwargs,) = seen
+    assert kwargs["extra_provenance"]["plan_amendment"] == plan.amendments[0].to_json()
+    server = kwargs["server_provenance"]
+    assert server["n_ctx_per_slot"] == 32768 and server["n_ctx_per_slot_is_default"] is False
+    call_one_run(specs["smoke-py-one-arm-a"], plan)
+    assert "plan_amendment" not in seen[-1]["extra_provenance"]
+
+
+def test_a_server_mismatch_stops_the_session_and_logs_no_attempt(
+    tmp_path: Path,
+    no_models: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def mismatch(plan: Plan, spec: RunSpec, *rest: Any) -> None:
+        raise run_study.ServerMismatchError(f"SYNTHETIC: {spec.run_id} needs another server")
+
+    monkeypatch.setattr(run_study, "one_run", mismatch)
+    path = added_only(tmp_path)
+    assert run_study.main(["--plan", str(path), "--n-ctx", "32768"]) == 2
+    assert "REFUSED" in capsys.readouterr().err
+    assert run_study.failure_counts(tmp_path / "state" / "smoke") == {}
+
+
+def test_main_refuses_a_plan_whose_amendment_does_not_hold(
+    tmp_path: Path, no_models: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = plan_file(tmp_path, amended_plan())
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["runs"][-1]["seed"] = 7  # the added run is no longer the replaced run's spec
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert run_study.main(["--plan", str(path), "--dry-run"]) == 2
+    assert "not the planned run" in capsys.readouterr().err

@@ -24,6 +24,16 @@ window (``LocalModel.n_ctx``) unless ``--n-ctx`` asks for another one
 (:func:`served_model`). The run record's ``provenance.model_server`` holds the window per
 slot, the slots, and whether the window is the pinned one (:func:`server_record`).
 
+Plan amendments (DECISIONS D71, ``tools/amend_plan.py``): a run an amendment replaced is
+excluded, whatever the failure log holds, and never attempted again. The run it added
+needs the server its amendment names (at least so many tokens per slot on at most so
+many slots), and every other run is served only with the pinned window
+(:func:`window_refusal`). A session therefore attempts only the pending runs its server
+serves and refuses the others, which wait for a session started with the right
+``--n-ctx`` and ``--parallel``; when it can serve none of them it exits with status 2
+before any server starts. The added run's record carries its amendment
+(``provenance.plan_amendment``).
+
 Infrastructure failures (prereg/0001-e1-main-study.md section 10, prereg 0002 section
 6): an exception raised in ``execute_run`` (a model server, sandbox, or workspace error,
 never agent behavior) leaves the run unbanked, and the failed attempt is appended to
@@ -75,7 +85,7 @@ from receipts.sandbox.api import HidesPaths, Sandbox, SandboxPolicy, SandboxUnav
 from receipts.sandbox.bwrap import default_hidden_paths, project_root
 from receipts.sandbox.select import make_sandbox
 from receipts.sandbox.toolchain import Toolchain, python_toolchain, with_toolchain
-from receipts.study.plan import Plan, load_plan
+from receipts.study.plan import Plan, check_amendments, load_plan
 from receipts.study.runner import RunRecord, execute_run
 from receipts.study.spec import RunSpec
 from receipts.study.tasks import load_run_task
@@ -319,15 +329,20 @@ def _banked(artifacts: Path, run_id: str) -> bool:
     return (artifacts / run_id / "run.json").is_file()
 
 
+def _is_excluded(plan: Plan, run_id: str, counts: Mapping[str, int]) -> bool:
+    return counts.get(run_id, 0) >= MAX_ATTEMPTS or run_id in plan.replaced()
+
+
 def excluded(plan: Plan, artifacts: Path, counts: Mapping[str, int]) -> list[str]:
-    """Unbanked runs with ``MAX_ATTEMPTS`` logged failures, in execution order.
+    """Unbanked runs with ``MAX_ATTEMPTS`` logged failures, and unbanked runs a plan
+    amendment replaced (DECISIONS D71) whatever the failure log holds, in execution order.
 
     They are never attempted again; the analyses count them as excluded.
     """
     return [
         r.run_id
         for r in plan.ordered()
-        if not _banked(artifacts, r.run_id) and counts.get(r.run_id, 0) >= MAX_ATTEMPTS
+        if not _banked(artifacts, r.run_id) and _is_excluded(plan, r.run_id, counts)
     ]
 
 
@@ -336,8 +351,49 @@ def pending(plan: Plan, artifacts: Path, counts: Mapping[str, int]) -> list[str]
     return [
         r.run_id
         for r in plan.ordered()
-        if not _banked(artifacts, r.run_id) and counts.get(r.run_id, 0) < MAX_ATTEMPTS
+        if not _banked(artifacts, r.run_id) and not _is_excluded(plan, r.run_id, counts)
     ]
+
+
+class ServerMismatchError(RuntimeError):
+    """The model server does not serve what a planned run needs (DECISIONS D71).
+
+    Like :class:`CheckoutExposedError` it is a refusal, never an infrastructure
+    failure: the run does not start, the session stops, and no attempt is logged.
+    """
+
+
+def window_refusal(plan: Plan, spec: RunSpec, n_ctx: int | None, slots: int) -> str | None:
+    """Why a model server with ``n_ctx`` tokens of context per slot (None: the pinned
+    window of the run's model) on ``slots`` slots must not serve ``spec``; None when it
+    may.
+
+    A run that a plan amendment added needs the server the amendment names
+    (:class:`receipts.study.plan.ServerRequirement`). Every other run is served only
+    with the pinned window, so a raised window serves the runs that need it and no other.
+    """
+    amendment = plan.amendment(spec.run_id)
+    if amendment is None and n_ctx is None:
+        return None
+    model = plan.arm(spec.config_id).model
+    pinned = LOCAL_MODELS.get(model)
+    if pinned is None:
+        return f"{model} is not a pinned local model"
+    window = pinned.n_ctx if n_ctx is None else n_ctx
+    if amendment is None:
+        if window == pinned.n_ctx:
+            return None
+        return (
+            f"its plan sets no server requirement, so it is served only with the pinned "
+            f"window of {pinned.n_ctx} tokens per slot, not {window}"
+        )
+    problems = amendment.server.problems(window, slots)
+    if not problems:
+        return None
+    return (
+        f"{'; '.join(problems)} (plan amendment {amendment.decision} in place of "
+        f"{amendment.replaces}: {amendment.server.describe()})"
+    )
 
 
 #: Subject runs use only a backend that confines writes (bubblewrap, D33); the unconfined
@@ -504,17 +560,25 @@ def one_run(
 ) -> RunRecord:
     """Make one attempt at one planned run and bank it.
 
+    The server must serve the run (:func:`window_refusal`): a run a plan amendment added
+    gets the window and slots its amendment requires, any other run the pinned window.
     The run's sandbox hides the checkout (:func:`study_sandbox`) and is checked before
     the run starts (:func:`checkout_hiding`); its record is banked as
-    ``provenance["sandbox"]``.
+    ``provenance["sandbox"]``. The record of a run an amendment added carries the
+    amendment (``provenance["plan_amendment"]``).
 
     Raises:
         InfrastructureError: ``execute_run`` raised, so the run is left unbanked.
             Errors before it (the arm, the task files, the toolchain, the task tree hash)
             propagate unchanged: they would fail every attempt alike.
+        ServerMismatchError: The server does not serve the run; raised before anything
+            else, it stops the session and is never logged as an attempt.
         CheckoutExposedError: The run's sandbox shows the checkout; it propagates
             unchanged too, so it stops the session and is never logged as an attempt.
     """
+    refusal = window_refusal(plan, spec, server.model.n_ctx, server.parallel)
+    if refusal is not None:
+        raise ServerMismatchError(f"{spec.run_id}: {refusal}")
     task_dir = ROOT / "bench" / "tasks" / spec.task_id
     arm = plan.arm(spec.config_id)
     task = load_run_task(task_dir)
@@ -522,9 +586,11 @@ def one_run(
     policy = with_toolchain(
         SandboxPolicy(timeout_s=task.command_timeout_s, memory_mb=task.memory_mb), chain
     )
+    amendment = plan.amendment(spec.run_id)
     extra = {
         "toolchain_installed": list(chain.installed),
         "task_tree_sha256": tree_sha256(task_dir),
+        **({} if amendment is None else {"plan_amendment": amendment.to_json()}),
         **dict(code or {}),
     }
     try:
@@ -718,7 +784,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.n_ctx is not None and args.n_ctx < 1:
         parser.error(f"--n-ctx must be a positive number of tokens, not {args.n_ctx}")
-    plan = load_plan(args.plan)
+    try:
+        plan = load_plan(args.plan)
+        check_amendments(plan)
+    except ValueError as exc:
+        print(f"{args.plan}: {exc}", file=sys.stderr)
+        return 2
     artifacts = args.plan.parent / "runs"
     state = RUNS / plan.study
     try:
@@ -730,18 +801,47 @@ def main(argv: Sequence[str] | None = None) -> int:
     out = excluded(plan, artifacts, counts)
     listed = f": {', '.join(out)}" if out else ""
     print(
-        f"study {plan.study}: {len(todo)} of {len(plan.runs)} runs pending; "
-        f"{len(out)} excluded after {MAX_ATTEMPTS} failed attempts{listed}",
+        f"study {plan.study}: {len(todo)} of {len(plan.runs)} runs pending; {len(out)} excluded "
+        f"(after {MAX_ATTEMPTS} failed attempts, or replaced by a plan amendment){listed}",
         flush=True,
     )
+    specs = {r.run_id: r for r in plan.runs}
+    refused = {
+        run_id: why
+        for run_id in todo
+        if (why := window_refusal(plan, specs[run_id], args.n_ctx, args.parallel)) is not None
+    }
     if args.dry_run:
         for run_id in todo:
             print(run_id)
+            amendment = plan.amendment(run_id)
+            if amendment is not None:
+                print(
+                    f"  plan amendment {amendment.decision}: in place of {amendment.replaces}; "
+                    f"it needs {amendment.server.describe()}"
+                )
+            if run_id in refused:
+                print(f"  refused on this session's server: {refused[run_id]}")
+        replaced_by = {amendment.replaces: amendment for amendment in plan.amendments}
         for run_id in out:
-            print(f"excluded: {run_id} ({counts[run_id]} failed attempts)")
+            note = f"{counts.get(run_id, 0)} failed attempts"
+            if run_id in replaced_by:
+                by = replaced_by[run_id]
+                note += f"; replaced by {by.run_id}, {by.decision}"
+            print(f"excluded: {run_id} ({note})")
         return 0
     if args.parallel > 1 and args.engine != "llama.cpp":
         parser.error("--parallel above 1 needs --engine llama.cpp (continuous batching)")
+    for run_id, why in refused.items():
+        print(f"REFUSED: {run_id}: {why}; it waits for a session that serves it", file=sys.stderr)
+    todo = [run_id for run_id in todo if run_id not in refused]
+    if refused and not todo:
+        print(
+            f"REFUSED: no pending run of study {plan.study} can run on this session's server "
+            "(--n-ctx, --parallel); no server starts",
+            file=sys.stderr,
+        )
+        return 2
     state.mkdir(parents=True, exist_ok=True)
     (state / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
     if args.limit is not None:
@@ -756,7 +856,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         shown = ", ".join(hiding["shown_in_checkout"]) or "nothing"
         print(f"sandbox: {hiding['backend']} hides the checkout (shown in it: {shown})", flush=True)
-    specs = {r.run_id: r for r in plan.runs}
     by_model: dict[str, list[RunSpec]] = {}
     for run_id in todo:
         by_model.setdefault(plan.arm(specs[run_id].config_id).model, []).append(specs[run_id])
@@ -769,7 +868,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if result.stopped:
                 total.stopped = True
                 break
-    except CheckoutExposedError as exc:
+    except (CheckoutExposedError, ServerMismatchError) as exc:
         print(f"REFUSED: {exc}; study {plan.study} stops, no attempt logged", file=sys.stderr)
         return 2
     print(f"study {plan.study}: {len(total.banked)} run(s) banked this session", flush=True)
