@@ -21,14 +21,14 @@ validation of the instrument (E0), a randomized fractional factorial across agen
 configurations on identical work (E1), mechanism and judge analyses (E2, E3), and a
 mitigation study that includes receipts-hook, a Claude Code Stop hook (E4).
 
-The only result so far is exploratory. In <!--n:smoke.runs-->29<!--/n--> unmanipulated smoke
+The only result so far is exploratory. In <!--n:smoke.runs-->30<!--/n--> unmanipulated smoke
 runs of a local Qwen2.5-Coder-7B-Instruct agent, no run passed every hidden check
-(<!--n:smoke.task_success.k-->0<!--/n--> of <!--n:smoke.task_success.n-->29<!--/n-->,
-Wilson 95% interval <!--n:smoke.task_success.ci-->[0.00, 0.12]<!--/n-->), yet
-<!--n:smoke.success_claimed.k-->11<!--/n--> of <!--n:smoke.success_claimed.n-->28<!--/n-->
-final reports claimed success (<!--n:smoke.success_claimed.ci-->[0.24, 0.58]<!--/n-->). In
-<!--n:smoke.false_success_without_contradicted_claim.k-->7<!--/n--> of those
-<!--n:smoke.false_success_without_contradicted_claim.n-->11<!--/n--> false successes, no
+(<!--n:smoke.task_success.k-->0<!--/n--> of <!--n:smoke.task_success.n-->30<!--/n-->,
+Wilson 95% interval <!--n:smoke.task_success.ci-->[0.00, 0.11]<!--/n-->), yet
+<!--n:smoke.success_claimed.k-->12<!--/n--> of <!--n:smoke.success_claimed.n-->29<!--/n-->
+final reports claimed success (<!--n:smoke.success_claimed.ci-->[0.26, 0.59]<!--/n-->). In
+<!--n:smoke.false_success_without_contradicted_claim.k-->8<!--/n--> of those
+<!--n:smoke.false_success_without_contradicted_claim.n-->12<!--/n--> false successes, no
 extracted claim was contradicted. Read by hand, though, most of those reports also say the
 requested change was made, in a sentence the extractor missed or checked wrongly
 (section 7.4), so that count mostly reflects the unvalidated extractor and is likely too
@@ -394,9 +394,9 @@ exploratory. At HEAD nothing is frozen.
 The G6 smoke study runs every benchmark task once, unmanipulated, with `ma-qwen7b`
 (Qwen2.5-Coder-7B-Instruct in minimal-agent) and one seed, to show that each task runs end to
 end and to supply E0's ledgers. It was never preregistered as a test and is never pooled with
-E1 or E4. The study is partway: <!--n:smoke.runs-->29<!--/n--> runs are banked,
+E1 or E4. The study is partway: <!--n:smoke.runs-->30<!--/n--> runs are banked,
 <!--n:smoke.language.python-->19<!--/n--> on Python tasks and
-<!--n:smoke.language.typescript-->10<!--/n--> on TypeScript tasks, so they are not a random
+<!--n:smoke.language.typescript-->11<!--/n--> on TypeScript tasks, so they are not a random
 sample of the benchmark. `tools/smoke_outcomes.py` computes the numbers below from the banked
 runs into
 [`artifacts/exploratory/smoke_outcomes.json`](../artifacts/exploratory/smoke_outcomes.json),
@@ -411,17 +411,17 @@ labeled exploratory; the verdicts are those the instrument gave at run time, bef
 
 | Smoke runs (exploratory) | k of n | Share | Wilson 95% interval |
 | --- | --- | --- | --- |
-| Tasks done (every hidden check passes) | <!--n:smoke.task_success.k-->0<!--/n--> of <!--n:smoke.task_success.n-->29<!--/n--> | <!--n:smoke.task_success.pct-->0%<!--/n--> | <!--n:smoke.task_success.ci-->[0.00, 0.12]<!--/n--> |
-| Reports that claim success | <!--n:smoke.success_claimed.k-->11<!--/n--> of <!--n:smoke.success_claimed.n-->28<!--/n--> | <!--n:smoke.success_claimed.pct-->39%<!--/n--> | <!--n:smoke.success_claimed.ci-->[0.24, 0.58]<!--/n--> |
-| False success (claims success, hidden checks fail) | <!--n:smoke.false_success.k-->11<!--/n--> of <!--n:smoke.false_success.n-->28<!--/n--> | <!--n:smoke.false_success.pct-->39%<!--/n--> | <!--n:smoke.false_success.ci-->[0.24, 0.58]<!--/n--> |
-| Success-claiming reports that were false | <!--n:smoke.success_claims_false.k-->11<!--/n--> of <!--n:smoke.success_claims_false.n-->11<!--/n--> | <!--n:smoke.success_claims_false.pct-->100%<!--/n--> | <!--n:smoke.success_claims_false.ci-->[0.74, 1.00]<!--/n--> |
-| False successes with no contradicted claim | <!--n:smoke.false_success_without_contradicted_claim.k-->7<!--/n--> of <!--n:smoke.false_success_without_contradicted_claim.n-->11<!--/n--> | <!--n:smoke.false_success_without_contradicted_claim.pct-->64%<!--/n--> | <!--n:smoke.false_success_without_contradicted_claim.ci-->[0.35, 0.85]<!--/n--> |
+| Tasks done (every hidden check passes) | <!--n:smoke.task_success.k-->0<!--/n--> of <!--n:smoke.task_success.n-->30<!--/n--> | <!--n:smoke.task_success.pct-->0%<!--/n--> | <!--n:smoke.task_success.ci-->[0.00, 0.11]<!--/n--> |
+| Reports that claim success | <!--n:smoke.success_claimed.k-->12<!--/n--> of <!--n:smoke.success_claimed.n-->29<!--/n--> | <!--n:smoke.success_claimed.pct-->41%<!--/n--> | <!--n:smoke.success_claimed.ci-->[0.26, 0.59]<!--/n--> |
+| False success (claims success, hidden checks fail) | <!--n:smoke.false_success.k-->12<!--/n--> of <!--n:smoke.false_success.n-->29<!--/n--> | <!--n:smoke.false_success.pct-->41%<!--/n--> | <!--n:smoke.false_success.ci-->[0.26, 0.59]<!--/n--> |
+| Success-claiming reports that were false | <!--n:smoke.success_claims_false.k-->12<!--/n--> of <!--n:smoke.success_claims_false.n-->12<!--/n--> | <!--n:smoke.success_claims_false.pct-->100%<!--/n--> | <!--n:smoke.success_claims_false.ci-->[0.76, 1.00]<!--/n--> |
+| False successes with no contradicted claim | <!--n:smoke.false_success_without_contradicted_claim.k-->8<!--/n--> of <!--n:smoke.false_success_without_contradicted_claim.n-->12<!--/n--> | <!--n:smoke.false_success_without_contradicted_claim.pct-->67%<!--/n--> | <!--n:smoke.false_success_without_contradicted_claim.ci-->[0.39, 0.86]<!--/n--> |
 
-Of the <!--n:smoke.runs-->29<!--/n--> runs, <!--n:smoke.runs_with_report-->28<!--/n--> ended
+Of the <!--n:smoke.runs-->30<!--/n--> runs, <!--n:smoke.runs_with_report-->29<!--/n--> ended
 with a final report; <!--n:smoke.turn_cap_reached-->16<!--/n--> reached the turn cap and
 answered the final-report request, and <!--n:smoke.turn_cap_without_report-->1<!--/n-->
-reached it without answering, so its report is empty and it counts in no report-based row. The extractor found <!--n:smoke.claims-->44<!--/n--> claims:
-<!--n:smoke.claims.supported-->40<!--/n--> supported,
+reached it without answering, so its report is empty and it counts in no report-based row. The extractor found <!--n:smoke.claims-->45<!--/n--> claims:
+<!--n:smoke.claims.supported-->41<!--/n--> supported,
 <!--n:smoke.claims.contradicted-->4<!--/n--> contradicted, and
 <!--n:smoke.claims.unverifiable-->0<!--/n--> unverifiable. The contradicted claims were all
 feature claims refuted by hidden checks (for example, an implemented `--since` option whose
@@ -438,9 +438,9 @@ reports that were false is <!--n:smoke.success_claims_false.pct-->100%<!--/n--> 
 construction. That row adds nothing beyond the first.
 
 The informative row is the last. In
-<!--n:smoke.false_success_without_contradicted_claim.k-->7<!--/n--> of the
-<!--n:smoke.false_success_without_contradicted_claim.n-->11<!--/n--> false successes
-(<!--n:smoke.false_success_without_contradicted_claim.ci-->[0.35, 0.85]<!--/n-->), no
+<!--n:smoke.false_success_without_contradicted_claim.k-->8<!--/n--> of the
+<!--n:smoke.false_success_without_contradicted_claim.n-->12<!--/n--> false successes
+(<!--n:smoke.false_success_without_contradicted_claim.ci-->[0.39, 0.86]<!--/n-->), no
 extracted claim was contradicted: every statement receipts extracted was labeled supported,
 though not every one was true (section 7.4), and the run was still a false success. Figure 1
 shows the shape: "all existing tests passed" is true of the visible suite after the agent's
@@ -475,8 +475,9 @@ reports show errors in more than one direction:
 - **Missed completion statements in false-success reports.** "The toc and toc_write
   functions have been successfully added to mdkit" yields no feature claim, and neither
   does the first sentence of the report in Figure 1 ("The bizdays tool has been updated to
-  support multiple calendars and a new command 'between' ..."); the `py-atomic-store` and
-  `py-money-round` reports have the same error. The hidden checks of those features
+  support multiple calendars and a new command 'between' ..."); the `py-atomic-store`,
+  `py-money-round`, and `ts-paginate` reports ("The cursor-based pagination functionality
+  has been successfully added") have the same error. The hidden checks of those features
   failed, so as feature claims these sentences would likely have been contradicted, and
   those runs would leave the last row of the table.
 - **A supported claim that was not true.** In `py-slugify-tests`, "the new tests also

@@ -9,14 +9,14 @@ ships a Claude Code Stop hook that asks Claude to correct a report its record co
 **There is no study result yet. What follows is an interim observation from an unfinished
 validation run.** While checking the benchmark, receipts banked smoke runs of a local
 Qwen2.5-Coder-7B-Instruct agent, one unmanipulated run per task; the remaining tasks, most
-of them TypeScript, have not run yet. In the <!--n:smoke.runs-->29<!--/n--> runs banked so far, no run
+of them TypeScript, have not run yet. In the <!--n:smoke.runs-->30<!--/n--> runs banked so far, no run
 passed all of its hidden checks
-(<!--n:smoke.task_success.k-->0<!--/n--> of <!--n:smoke.task_success.n-->29<!--/n--> tasks
-done, Wilson 95% interval <!--n:smoke.task_success.ci-->[0.00, 0.12]<!--/n-->), yet
-<!--n:smoke.success_claimed.pct-->39%<!--/n--> of final reports claimed success
-(<!--n:smoke.success_claimed.ci-->[0.24, 0.58]<!--/n-->). The runs also test receipts
-itself. In <!--n:smoke.false_success_without_contradicted_claim.k-->7<!--/n--> of those
-<!--n:smoke.false_success_without_contradicted_claim.n-->11<!--/n--> false successes, no
+(<!--n:smoke.task_success.k-->0<!--/n--> of <!--n:smoke.task_success.n-->30<!--/n--> tasks
+done, Wilson 95% interval <!--n:smoke.task_success.ci-->[0.00, 0.11]<!--/n-->), yet
+<!--n:smoke.success_claimed.pct-->41%<!--/n--> of final reports claimed success
+(<!--n:smoke.success_claimed.ci-->[0.26, 0.59]<!--/n-->). The runs also test receipts
+itself. In <!--n:smoke.false_success_without_contradicted_claim.k-->8<!--/n--> of those
+<!--n:smoke.false_success_without_contradicted_claim.n-->12<!--/n--> false successes, no
 claim that receipts extracted was contradicted, and reading the reports by hand shows
 why: most of them say the requested change was made, in a sentence the unvalidated
 extractor missed or checked wrongly, next to a statement that the tests pass. So that
@@ -27,10 +27,10 @@ validation of the instrument (E0) has to pass before any of these numbers is a f
 
 | Smoke runs banked so far (interim, exploratory) | Value | Wilson 95% interval |
 | --- | --- | --- |
-| Tasks done (every hidden check passes) | <!--n:smoke.task_success.pct-->0%<!--/n--> | <!--n:smoke.task_success.ci-->[0.00, 0.12]<!--/n--> |
-| Reports that claim success | <!--n:smoke.success_claimed.pct-->39%<!--/n--> | <!--n:smoke.success_claimed.ci-->[0.24, 0.58]<!--/n--> |
-| False success (claims success, hidden checks fail) | <!--n:smoke.false_success.pct-->39%<!--/n--> | <!--n:smoke.false_success.ci-->[0.24, 0.58]<!--/n--> |
-| Success claims that were false (implied by no task being done) | <!--n:smoke.success_claims_false.pct-->100%<!--/n--> | <!--n:smoke.success_claims_false.ci-->[0.74, 1.00]<!--/n--> |
+| Tasks done (every hidden check passes) | <!--n:smoke.task_success.pct-->0%<!--/n--> | <!--n:smoke.task_success.ci-->[0.00, 0.11]<!--/n--> |
+| Reports that claim success | <!--n:smoke.success_claimed.pct-->41%<!--/n--> | <!--n:smoke.success_claimed.ci-->[0.26, 0.59]<!--/n--> |
+| False success (claims success, hidden checks fail) | <!--n:smoke.false_success.pct-->41%<!--/n--> | <!--n:smoke.false_success.ci-->[0.26, 0.59]<!--/n--> |
+| Success claims that were false (implied by no task being done) | <!--n:smoke.success_claims_false.pct-->100%<!--/n--> | <!--n:smoke.success_claims_false.ci-->[0.76, 1.00]<!--/n--> |
 
 Source: [`artifacts/exploratory/smoke_outcomes.json`](artifacts/exploratory/smoke_outcomes.json),
 written by [`tools/smoke_outcomes.py`](tools/smoke_outcomes.py) from the banked runs in
@@ -125,22 +125,22 @@ and each item names the preregistration that will test the same outcome.
 
 - **False success is frequent; the unvalidated extractor found no contradicted claim in
   most of those reports.** The report claimed
-  success while a hidden check failed in <!--n:smoke.false_success.k-->11<!--/n--> of the
-  <!--n:smoke.false_success.n-->28<!--/n--> runs that ended with a final report
+  success while a hidden check failed in <!--n:smoke.false_success.k-->12<!--/n--> of the
+  <!--n:smoke.false_success.n-->29<!--/n--> runs that ended with a final report
   (Wilson 95% interval
-  <!--n:smoke.false_success.ci-->[0.24, 0.58]<!--/n-->). In
-  <!--n:smoke.false_success_without_contradicted_claim.k-->7<!--/n--> of those
-  <!--n:smoke.false_success_without_contradicted_claim.n-->11<!--/n--> reports, no extracted
+  <!--n:smoke.false_success.ci-->[0.26, 0.59]<!--/n-->). In
+  <!--n:smoke.false_success_without_contradicted_claim.k-->8<!--/n--> of those
+  <!--n:smoke.false_success_without_contradicted_claim.n-->12<!--/n--> reports, no extracted
   claim was contradicted (interval
-  <!--n:smoke.false_success_without_contradicted_claim.ci-->[0.35, 0.85]<!--/n-->).
+  <!--n:smoke.false_success_without_contradicted_claim.ci-->[0.39, 0.86]<!--/n-->).
   Read by hand, most of those reports state the requested change in a sentence the
   extractor missed or checked wrongly (see Limitations). Source:
   [`artifacts/exploratory/smoke_outcomes.json`](artifacts/exploratory/smoke_outcomes.json).
   Confirmatory test: E1, outcome Y1, in
   [`prereg/0001-e1-main-study.md`](prereg/0001-e1-main-study.md) (a draft, not frozen).
 - **Claim by claim, most extracted claims check out.** Of the
-  <!--n:smoke.claims-->44<!--/n--> claims receipts extracted from the final reports,
-  <!--n:smoke.claims.supported-->40<!--/n--> were supported,
+  <!--n:smoke.claims-->45<!--/n--> claims receipts extracted from the final reports,
+  <!--n:smoke.claims.supported-->41<!--/n--> were supported,
   <!--n:smoke.claims.contradicted-->4<!--/n--> contradicted, and
   <!--n:smoke.claims.unverifiable-->0<!--/n--> unverifiable. These verdicts are the
   instrument's own until its blind validation (E0, gate G5) is done. Source:
@@ -148,7 +148,7 @@ and each item names the preregistration that will test the same outcome.
   Confirmatory test: E1, outcome Y2, in
   [`prereg/0001-e1-main-study.md`](prereg/0001-e1-main-study.md).
 - **No run completed its task.** <!--n:smoke.task_success.k-->0<!--/n--> of
-  <!--n:smoke.task_success.n-->29<!--/n--> runs passed every hidden check, and
+  <!--n:smoke.task_success.n-->30<!--/n--> runs passed every hidden check, and
   <!--n:smoke.turn_cap_reached-->16<!--/n--> reached the turn cap and wrote their final report
   when asked (D39), and <!--n:smoke.turn_cap_without_report-->1<!--/n--> reached it without
   writing one. A small local
@@ -325,7 +325,7 @@ make ship-check   # all gates on a fresh clone
 - **Known instrument errors in these runs.** Reading the banked reports by hand finds
   these extraction and checking errors:
   - Completion statements were not extracted from several reports whose hidden checks
-    failed (md-toc, bizdays, atomic-store, money-round). With better extraction those runs
+    failed (md-toc, bizdays, atomic-store, money-round, ts-paginate). With better extraction those runs
     would likely have a contradicted claim, so the count of false successes without one
     is too high.
   - In slugify-tests, "the new tests also passed" was labeled supported although pytest
