@@ -10,8 +10,11 @@ repositories. Rows are marked ``synthetic: false`` only so the gate treats them 
 runs, the arms' models are stand-in names, the instrument files are stand-ins whose only
 role is to have git trees, the hidden-check results are made up, and the "results" are
 recomputed from those rows; nothing here is a model result or a real-world result. The
-SYNTHETIC clones hold no project for ``tools/bank_study.py --check`` to run in, so g7 is
-given that step's outcome (:func:`context`), except in the test that runs a stand-in.
+SYNTHETIC clones hold no project for ``tools/bank_study.py --check`` or for the
+re-derivation of the results (``python -m receipts.report.derived``, DECISIONS D65) to run
+in, so g7 is given those steps' outcomes (:func:`context`), except in the tests that run a
+stand-in or the real re-derivation (on the SYNTHETIC study of tests/report/studies.py,
+whose results are what tools/analyze.py writes).
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from typing import Any
 
 import pytest
 
+import receipts
 import ship_check
 from receipts.analysis.rates import rate_with_ci
 from receipts.ledger.events import GENESIS, Event, Ledger, sha256_text
@@ -38,6 +42,8 @@ from receipts.verify.facts import LedgerFacts
 
 Commit = Callable[[Path, str], str]
 GateError = ship_check.GateError
+#: Where the receipts package that this test process runs comes from.
+SRC = Path(str(receipts.__file__)).resolve().parents[1]
 
 ARM_FAMILY = {
     "ma-qwen7b": "qwen",
@@ -410,18 +416,48 @@ def given(name: str, returncode: int = 0, stdout: str = "", stderr: str = "") ->
     return ship_check.CmdResult(name, returncode, stdout, stderr, 0.0)
 
 
+def derived_ok(rel: str, command: str) -> Any:
+    """The outcome of ``python -m receipts.report.derived <rel>`` (the gate step
+    ``derived-<rel>``) when ``rel`` equals a fresh derivation by ``command``."""
+    out = f"{rel}: re-derived by {command}; equals the committed artifact\nDERIVED: PASS\n"
+    return given(f"derived-{rel}", stdout=out)
+
+
+def derived_fails(rel: str, where: str, script: str) -> Any:
+    """The outcome of that step when ``rel`` differs from a fresh derivation by ``script``
+    at the dotted paths ``where`` (a value typed in by hand)."""
+    out = (
+        f"problem: {rel}: differs from a fresh derivation by {script} ({where}); derive it "
+        "again and commit it\nDERIVED: FAIL 1\n"
+    )
+    return given(f"derived-{rel}", 1, stdout=out)
+
+
+def run_for_real(ctx: ship_check.Context, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Let ``ctx`` run its python steps for real, with this interpreter and the receipts
+    package this test process imports: a SYNTHETIC clone has no environment of its own
+    for ``uv run``."""
+
+    def python(name: str, script_args: Sequence[str], timeout: float) -> ship_check.CmdResult:
+        return ctx.run(name, [sys.executable, *script_args], timeout, {"PYTHONPATH": str(SRC)})
+
+    monkeypatch.setattr(ctx, "python", python)
+
+
 def context(root: Path, sha: str) -> ship_check.Context:
     """A Context that treats ``root`` as the fresh clone at ``sha``.
 
-    The SYNTHETIC clone holds no project for ``make setup`` and ``tools/bank_study.py e1
-    --check`` to run in, so their outcomes are given (as a successful re-derivation);
-    a test replaces or removes them in ``ctx.results`` to exercise the step.
+    The SYNTHETIC clone holds no project for ``make setup``, ``tools/bank_study.py e1
+    --check``, and the re-derivation of the results to run in, so their outcomes are
+    given (as successful re-derivations); a test replaces or removes them in
+    ``ctx.results`` to exercise a step.
     """
     logs = root.parent / "logs"
     logs.mkdir(exist_ok=True)
     ctx = ship_check.Context(orig=root, clone=root, logs=logs, fast=False, sha=sha)
     ctx.results["make-setup"] = given("make-setup")
     ctx.results["bank-check-e1"] = given("bank-check-e1", stdout=REDERIVED)
+    ctx.results[f"derived-{RESULTS}"] = derived_ok(RESULTS, "python tools/analyze.py e1")
     return ctx
 
 
@@ -503,6 +539,7 @@ def test_a_study_run_as_preregistered_passes(git_repo: Path, commit: Commit) -> 
     assert "ma-granite2b=64" in evidence
     assert "evaluated instrument" in evidence
     assert "re-derived from the 256 banked runs" in evidence
+    assert f"{RESULTS} re-derived by tools/analyze.py e1" in evidence
 
 
 # ---------------------------------------------------------------- H13 (old code: PASS)
@@ -1339,6 +1376,83 @@ def test_rows_that_banking_does_not_write_fail(
     ctx.results[step] = outcome
     with pytest.raises(GateError, match=match):
         ship_check.g7(ctx)
+
+
+@pytest.mark.parametrize(
+    ("outcome", "match"),
+    [
+        pytest.param(
+            derived_fails(RESULTS, "tests.arm_tests.Y1.statistic", "tools/analyze.py"),
+            rf"{RESULTS} is not a fresh derivation in the clone .*exit 1\): {RESULTS}: differs "
+            r"from a fresh derivation by tools/analyze\.py \(tests\.arm_tests\.Y1\.statistic\)",
+            id="a-hand-set-test-statistic",
+        ),
+        pytest.param(
+            derived_fails(RESULTS, "tests.manipulation_tests.0.reject", "tools/analyze.py"),
+            r"\(tests\.manipulation_tests\.0\.reject\)",
+            id="a-hand-set-test-decision",
+        ),
+        pytest.param(
+            given(f"derived-{RESULTS}", stdout="DERIVED: PASS\n"),
+            "is not a fresh derivation in the clone",
+            id="a-step-that-derived-nothing",
+        ),
+        pytest.param(
+            given(f"derived-{RESULTS}", 124, stderr="[timeout after 3600s]"),
+            r"exit 124\): \[timeout after 3600s\]",
+            id="a-derivation-that-timed-out",
+        ),
+    ],
+)
+def test_results_that_are_not_a_fresh_derivation_fail(
+    git_repo: Path, commit: Commit, outcome: Any, match: str
+) -> None:
+    # A rate recomputes from the rows here, but a test statistic or decision needs the
+    # analysis, so g7 has python -m receipts.report.derived derive the results again in
+    # the clone (DECISIONS D65); its first problem is the evidence.
+    ctx = study(git_repo, commit)
+    ctx.results[f"derived-{RESULTS}"] = outcome
+    with pytest.raises(GateError, match=match):
+        ship_check.g7(ctx)
+
+
+def test_the_derivation_step_needs_make_setup(tmp_path: Path) -> None:
+    ctx = ship_check.Context(orig=tmp_path, clone=tmp_path, logs=tmp_path, fast=False, sha="0")
+    ctx.results["make-setup"] = given("make-setup", 2, stderr="make: *** SYNTHETIC\n")
+    with pytest.raises(GateError, match=rf"make setup failed .*so {RESULTS} was not derived"):
+        ship_check.check_derivation(ctx, RESULTS)
+
+
+@pytest.mark.slow  # the SYNTHETIC E1 analysis runs three times
+def test_the_gate_re_derives_the_e1_results_and_a_hand_set_test_result_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gate's step itself, on the SYNTHETIC study whose results tools/analyze.py
+    wrote (tests/report/studies.py): they pass, and a typed test statistic and decision
+    fail with the paths that differ."""
+    from tests.report import studies
+
+    root = studies.e1_study(tmp_path / "e1")
+
+    def gate_context() -> ship_check.Context:
+        ctx = ship_check.Context(orig=root, clone=root, logs=tmp_path, fast=False, sha="0")
+        ctx.results["make-setup"] = given("make-setup")
+        run_for_real(ctx, monkeypatch)
+        return ctx
+
+    first = gate_context()
+    ship_check.check_derivation(first, RESULTS)
+    assert "re-derived by python tools/analyze.py e1" in first.results[f"derived-{RESULTS}"].stdout
+
+    def hand_set(data: dict[str, Any]) -> None:
+        data["tests"]["arm_tests"]["Y1"]["statistic"] += 1.0
+        test = data["tests"]["manipulation_tests"][0]
+        test["reject"] = not test["reject"]
+
+    studies.edit(root, RESULTS, hand_set)
+    match = r"tests\.arm_tests\.Y1\.statistic, tests\.manipulation_tests\.0\.reject"
+    with pytest.raises(GateError, match=match):
+        ship_check.check_derivation(gate_context(), RESULTS)
 
 
 #: A SYNTHETIC stand-in for tools/bank_study.py that checks the arguments it is given.

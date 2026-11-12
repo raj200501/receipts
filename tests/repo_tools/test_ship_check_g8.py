@@ -1,10 +1,17 @@
-"""Gate G8 of tools/ship_check.py on synthetic E2 and E3 artifacts (H27, H30, and the
-pre-freeze item [24]: E3 judged its whole recorded sample).
+"""Gate G8 of tools/ship_check.py on synthetic E2 and E3 artifacts (H27, H30, the
+pre-freeze item [24]: E3 judged its whole recorded sample, and review B5 of the 02bc774
+review: each judge's counts are the tally of its labels, and both artifacts are what
+their scripts write, DECISIONS D65).
 
-Every run row, mechanism class, judge count, sample, call, and report here is SYNTHETIC,
+Every run row, mechanism class, judge label, sample, call, and report here is SYNTHETIC,
 made up only to exercise ``ship_check.g8``; nothing here is a model result or a
 real-world result. The E3 sample is drawn by the real ``receipts.evaluation.e3``
-sampler, so the gate's recount must agree with it.
+sampler, so the gate's recount must agree with it, and each judge's counts are tallied
+from its SYNTHETIC labels by the real ``receipts.evaluation.judges.score_detection``.
+The E2 classes have no ledger behind them, so the re-derivation of both artifacts
+(``python -m receipts.report.derived`` in the clone) is given its outcome
+(:func:`artifacts`), except in the tests that run it on the SYNTHETIC studies of
+tests/report/studies.py, whose artifacts the real tools wrote.
 """
 
 from __future__ import annotations
@@ -20,6 +27,8 @@ import pytest
 
 import ship_check
 from receipts.evaluation.e3 import draw_sample
+from receipts.evaluation.judges import score_detection
+from tests.repo_tools.test_ship_check_g7 import derived_fails, derived_ok, given, run_for_real
 
 GateError = ship_check.GateError
 PROV = {
@@ -32,6 +41,8 @@ ARMS = ("ma-qwen7b", "ma-qwen1.5b", "ma-granite8b", "ma-granite2b")
 FAMILY = {"ma-qwen7b": "qwen", "ma-qwen1.5b": "qwen", "ma-granite8b": "granite"}
 JUDGES = ("judge-a", "judge-b")
 RUNS = "artifacts/e1/runs.jsonl"
+E2 = "artifacts/e2/mechanism.json"
+E3 = "artifacts/e3/judges.json"
 K, SEED = 8, 20261108  # two runs from each of the four SYNTHETIC arms
 REPORT = """\
 # Report (SYNTHETIC)
@@ -64,19 +75,50 @@ def put(root: Path, rel: str, data: Any) -> None:
     path.write_text(data if isinstance(data, str) else json.dumps(data, indent=2) + "\n", "utf-8")
 
 
-def judge(judge_id: str, tp: object = 3, fp: object = 1, fn: object = 0) -> dict[str, Any]:
-    """A SYNTHETIC E3 judge entry."""
+def judge(judge_id: str, tp: object = 1, fp: object = 0, fn: object = 0) -> dict[str, Any]:
+    """A SYNTHETIC E3 judge entry with the given counts, for the degenerate results the
+    gate refuses before it tallies any label."""
     return {"judge_id": judge_id, "per_type": {"tests_pass": {"tp": tp, "fp": fp, "fn": fn}}}
 
 
-def e1_rows() -> list[dict[str, Any]]:
+#: How each SYNTHETIC judge labels a scored claim, given its ledger verdict: judge-a flags
+#: exactly the contradicted claims, and judge-b labels every claim supported (it flags
+#: nothing: a null result).
+LABELS: dict[str, Callable[[str], str]] = {
+    "judge-a": lambda truth: truth,
+    "judge-b": lambda truth: "supported",
+}
+
+
+def judge_entries(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each judge's entry as receipts.evaluation.e3 writes it from the scored items: its
+    per-type counts tallied from its labels (``score_detection``)."""
+    return [
+        {
+            "judge_id": j,
+            "per_type": {
+                ctype: counts.to_dict()
+                for ctype, counts in score_detection(
+                    (i["claim_type"], i["truth"], i["labels"].get(j)) for i in items
+                ).items()
+            },
+        }
+        for j in JUDGES
+    ]
+
+
+def contradicted_every_other(n: int) -> str:
+    """The SYNTHETIC verdict of run ``n`` of an arm: contradicted in every other run."""
+    return "contradicted" if n % 2 == 0 else "supported"
+
+
+def e1_rows(verdict: Callable[[int], str] = contradicted_every_other) -> list[dict[str, Any]]:
     """SYNTHETIC E1 rows: five runs per arm, the last of each without a report, every
-    report with one claim (contradicted in every other run)."""
+    report with one claim (its verdict ``verdict(n)``)."""
     rows = []
     for arm in ARMS:
         for n in range(5):
             included = n < 4
-            verdict = "contradicted" if n % 2 == 0 else "supported"
             rows.append(
                 {
                     "run_id": f"e1-{arm}-{n:03d}",
@@ -92,7 +134,7 @@ def e1_rows() -> list[dict[str, Any]]:
                             "claim_id": "c0",
                             "claim_type": "tests_pass",
                             "text": "all tests pass",
-                            "verdict": verdict,
+                            "verdict": verdict(n),
                         }
                     ]
                     if included
@@ -116,7 +158,7 @@ def judges_artifact(rows: list[dict[str, Any]], runs_sha: str) -> dict[str, Any]
             "claim_id": claim["claim_id"],
             "claim_type": claim["claim_type"],
             "truth": claim["verdict"],
-            "labels": dict.fromkeys(JUDGES, "supported"),
+            "labels": {j: LABELS[j](claim["verdict"]) for j in JUDGES},
         }
         for run_id in judged
         for claim in by_id[run_id]["claims"]
@@ -138,7 +180,7 @@ def judges_artifact(rows: list[dict[str, Any]], runs_sha: str) -> dict[str, Any]
             "judges": list(JUDGES),
             "complete": True,
         },
-        "judges": [judge(j) for j in JUDGES],
+        "judges": judge_entries(items),
         "items": items,
         "calls": calls,
         "provenance": {**PROV, "inputs": {RUNS: runs_sha}},
@@ -152,10 +194,14 @@ def artifacts(
     report: str = REPORT,
     mechanism: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None = None,
     e3: Edit | None = None,
+    verdict: Callable[[int], str] = contradicted_every_other,
 ) -> ship_check.Context:
-    """SYNTHETIC E1 rows with contradicted claims, their E2 classes, an E3 artifact of two
-    judges over the sample (``e3`` edits it), and a report."""
-    rows = e1_rows()
+    """SYNTHETIC E1 rows with contradicted claims (``verdict``), their E2 classes, an E3
+    artifact of two judges over the sample (``e3`` edits it), and a report. The clone
+    holds no project for ``make setup`` and the re-derivations to run in, so their
+    outcomes are given (each artifact equals a fresh derivation); a test replaces them in
+    ``ctx.results``."""
+    rows = e1_rows(verdict)
     put(root, RUNS, "".join(json.dumps(r) + "\n" for r in rows))
     claims = [
         {"run_id": r["run_id"], "claim_id": "c0", "class": CLASSES[n % 3]}
@@ -174,13 +220,19 @@ def artifacts(
     put(root, "docs/REPORT.md", report)
     numbers = {key: {"value": "0", "source": src} for key, src in SOURCES.items()}
     put(root, "artifacts/report/numbers.json", {"numbers": numbers})
-    return ship_check.Context(orig=root, clone=root, logs=root, fast=False, sha="0" * 40)
+    ctx = ship_check.Context(orig=root, clone=root, logs=root, fast=False, sha="0" * 40)
+    ctx.results["make-setup"] = given("make-setup")
+    ctx.results[f"derived-{E2}"] = derived_ok(E2, "python tools/analyze.py e2")
+    ctx.results[f"derived-{E3}"] = derived_ok(E3, "python tools/run_judges.py --rescore")
+    return ctx
 
 
 def test_e2_and_e3_reported_pass(tmp_path: Path) -> None:
     evidence = ship_check.g8(artifacts(tmp_path))
     assert "E2 classified 8 claims" in evidence and "E3 2 judges" in evidence
     assert "sample of 8 runs, 8 judged by every judge, 0 excluded" in evidence
+    assert f"{E2} re-derived by tools/analyze.py e2" in evidence
+    assert f"{E3} re-derived by tools/run_judges.py --rescore from the banked replies" in evidence
 
 
 def test_the_gate_draws_the_sample_the_e3_sampler_draws() -> None:
@@ -214,9 +266,160 @@ def test_degenerate_judge_results_fail(tmp_path: Path, judges: list[dict[str, An
 
 
 def test_a_judge_with_only_true_negatives_is_a_reported_null_result(tmp_path: Path) -> None:
-    quiet = judge("judge-b", 0, 0, 0)
-    quiet["per_type"]["tests_pass"]["tn"] = 5
-    assert "E3 2 judges" in ship_check.g8(artifacts(tmp_path, judges=[judge("judge-a"), quiet]))
+    # Every SYNTHETIC claim is supported, so each judge's counts are true negatives only.
+    ctx = artifacts(tmp_path, verdict=lambda n: "supported")
+    judges = json.loads((tmp_path / E3).read_text(encoding="utf-8"))["judges"]
+    assert {j["judge_id"]: j["per_type"]["tests_pass"] for j in judges} == {
+        "judge-a": {"tp": 0, "fp": 0, "fn": 0, "tn": 8},
+        "judge-b": {"tp": 0, "fp": 0, "fn": 0, "tn": 8},
+    }
+    assert "E2 classified 0 claims" in ship_check.g8(ctx)
+
+
+def test_the_fixture_judges_flag_and_miss_as_their_labels_say(tmp_path: Path) -> None:
+    ship_check.g8(artifacts(tmp_path))
+    judges = json.loads((tmp_path / E3).read_text(encoding="utf-8"))["judges"]
+    counts = {j["judge_id"]: j["per_type"]["tests_pass"] for j in judges}
+    contradicted = counts["judge-a"]["tp"]
+    assert contradicted > 0 and counts["judge-a"]["fp"] == counts["judge-a"]["fn"] == 0
+    assert counts["judge-b"] == {"tp": 0, "fp": 0, "fn": contradicted, "tn": 8 - contradicted}
+
+
+# ---------------------------------------------------------------- the counts (review B5)
+
+
+def typed_counts(**counts: int) -> Edit:
+    """Type ``counts`` into every judge's ``tests_pass`` counts, as a hand edit would."""
+
+    def apply(data: dict[str, Any]) -> None:
+        for entry in data["judges"]:
+            entry["per_type"]["tests_pass"].update(counts)
+
+    return apply
+
+
+@pytest.mark.parametrize(
+    ("edit", "match"),
+    [
+        pytest.param(typed_counts(tp=999), "judge judge-a's per-type counts", id="tp-999"),
+        pytest.param(typed_counts(fp=1), "judge judge-a's per-type counts", id="a-false-positive"),
+        pytest.param(
+            lambda d: d["judges"][1]["per_type"]["tests_pass"].update(fn=0, tn=8),
+            "judge judge-b's per-type counts .* tests_pass",
+            id="misses-moved-to-true-negatives",
+        ),
+        pytest.param(
+            lambda d: d["judges"][0]["per_type"]["tests_pass"].pop("tn"),
+            "judge judge-a's per-type counts",
+            id="no-true-negatives",
+        ),
+        pytest.param(
+            lambda d: d["judges"][1]["per_type"].update(
+                file_modified={"tp": 0, "fp": 0, "fn": 0, "tn": 1}
+            ),
+            "judge judge-b's per-type counts .* file_modified",
+            id="a-type-no-item-has",
+        ),
+    ],
+)
+def test_counts_that_the_labels_do_not_give_fail(tmp_path: Path, edit: Edit, match: str) -> None:
+    # The review's probe typed tp=999 for both judges: a count is the tally of the
+    # artifact's own items, contradicted the positive class, before any re-derivation.
+    with pytest.raises(GateError, match=match):
+        ship_check.g8(artifacts(tmp_path, e3=edit))
+
+
+@pytest.mark.parametrize(
+    ("rel", "outcome", "match"),
+    [
+        pytest.param(
+            E2,
+            derived_fails(E2, "claims.0.class, claims.3.class", "tools/analyze.py"),
+            rf"{E2} is not a fresh derivation in the clone .*\(claims\.0\.class, claims\.3",
+            id="hand-set-e2-classes",
+        ),
+        pytest.param(
+            E3,
+            derived_fails(E3, "judges.0.per_type.tests_pass.precision", "tools/run_judges.py"),
+            rf"{E3} is not a fresh derivation .*judges\.0\.per_type\.tests_pass\.precision",
+            id="a-hand-set-e3-score",
+        ),
+        pytest.param(
+            E3,
+            given(
+                f"derived-{E3}",
+                1,
+                stdout=f"problem: {E3}: tools/run_judges.py failed: E3: artifacts/e3/replies"
+                ".jsonl has no banked reply of judge judge-a to request SYNTHETIC; a re-score "
+                "never calls a model\nDERIVED: FAIL 1\n",
+            ),
+            "has no banked reply of judge judge-a",
+            id="a-reply-the-replies-lack",
+        ),
+    ],
+)
+def test_artifacts_that_are_not_a_fresh_derivation_fail(
+    tmp_path: Path, rel: str, outcome: Any, match: str
+) -> None:
+    # The review's probe set every E2 class to never_saw: the classes need the ledgers and
+    # the E2 code, and an E3 score needs the analysis, so g8 has python -m
+    # receipts.report.derived derive both again in the clone (DECISIONS D65).
+    ctx = artifacts(tmp_path)
+    ctx.results[f"derived-{rel}"] = outcome
+    with pytest.raises(GateError, match=match):
+        ship_check.g8(ctx)
+
+
+def gate_context(root: Path, logs: Path, monkeypatch: pytest.MonkeyPatch) -> ship_check.Context:
+    """A Context whose clone is ``root`` and whose python steps run for real."""
+    ctx = ship_check.Context(orig=root, clone=root, logs=logs, fast=False, sha="0" * 40)
+    ctx.results["make-setup"] = given("make-setup")
+    run_for_real(ctx, monkeypatch)
+    return ctx
+
+
+def test_the_gate_re_scores_e3_and_a_hand_set_count_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gate's step itself, on the SYNTHETIC study whose E3 artifact tools/run_judges.py
+    wrote with SYNTHETIC judges: it re-scores from the banked replies with no model, and
+    a typed count fails with the path that differs."""
+    from tests.report import studies
+
+    root = studies.e3_study(tmp_path / "e3", monkeypatch)
+    first = gate_context(root, tmp_path, monkeypatch)
+    ship_check.check_derivation(first, E3)
+    step = first.results[f"derived-{E3}"].stdout
+    assert "re-derived by python tools/run_judges.py --rescore" in step
+
+    def add_a_true_positive(data: dict[str, Any]) -> None:
+        per_type = data["judges"][0]["per_type"]
+        per_type[sorted(per_type)[0]]["tp"] += 1
+
+    studies.edit(root, E3, add_a_true_positive)
+    with pytest.raises(GateError, match=r"differs from a fresh derivation .*judges\.0\.per_type"):
+        ship_check.check_derivation(gate_context(root, tmp_path, monkeypatch), E3)
+
+
+@pytest.mark.slow  # the SYNTHETIC E1 study is analyzed first
+def test_the_gate_re_derives_e2_and_hand_set_classes_fail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review's probe on a real E2 artifact: every class set to never_saw."""
+    from tests.report import studies
+
+    root = studies.e1_study(tmp_path / "e1")
+    ship_check.check_derivation(gate_context(root, tmp_path, monkeypatch), E2)
+
+    def never_saw(data: dict[str, Any]) -> None:
+        for claim in data["claims"]:
+            claim["class"] = "never_saw"
+
+    classes = json.loads((root / E2).read_text(encoding="utf-8"))["claims"]
+    assert {c["class"] for c in classes} != {"never_saw"}
+    studies.edit(root, E2, never_saw)
+    with pytest.raises(GateError, match=r"differs from a fresh derivation .*claims\.\d+\.class"):
+        ship_check.check_derivation(gate_context(root, tmp_path, monkeypatch), E2)
 
 
 # ---------------------------------------------------------------- the whole sample [24]
@@ -351,6 +554,7 @@ def exclude_first(data: dict[str, Any]) -> None:
     for call in data["calls"]:
         if call["run_id"] == first:
             call.update(served=False, status="excluded")
+    data["judges"] = judge_entries(data["items"])  # the scored items only, as e3 counts
     errors = [{"attempt": n, "time": "SYNTHETIC", "error": "SYNTHETIC dropped"} for n in (1, 2, 3)]
     data["exclusions"] = [
         {
