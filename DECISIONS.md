@@ -870,3 +870,15 @@ evaluation must be the log's last attempt with the same instrument commit and pe
 results, and when it is not the first attempt, every earlier attempt must have scored the
 same instrument trees. A held-out half scored again after the instrument changed is no
 longer untouched, so G5 fails rather than reporting it as a deviation.
+
+**D67. Study runs hide the checkout from the agent's sandbox whatever code they import
+(review N18).** Recorded 2026-11-12, before the change. The bubblewrap sandbox hides this
+project's checkout (hidden checks, reference solutions, the instrument, `private/`) only
+when `project_root()` finds `pyproject.toml` beside `src/`, which a run made from a code
+snapshot (`runs/code/<sha>/src`, every banked smoke run) does not, so for those runs the
+checkout was readable under the read-only host root. The review found that no banked run
+read outside its workspace. `tools/run_study.py` now passes the checkout to the sandbox as
+a hidden path explicitly, a run refuses to start when the checkout is not hidden, and the
+run record says that it was. Smoke runs still running from the e4230cc snapshot keep the
+old sandbox; each is audited before banking for commands or file paths outside its
+workspace, and one that left it is excluded and reported, not banked.
