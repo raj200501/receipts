@@ -9,7 +9,7 @@ History is in docs/LOG.md.
 
 ## Gates
 
-`python tools/ship_check.py --fast` at 8692254 (fresh clone): **7/14** (FAST, does not count).
+`python tools/ship_check.py --fast` at bf06630 (fresh clone): **7/14** (FAST, does not count).
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
@@ -22,16 +22,16 @@ History is in docs/LOG.md.
 | G7 Main study | FAIL | artifacts/e1/results.json missing |
 | G8 Mechanisms, judges | FAIL | artifacts/e1/runs.jsonl missing |
 | G9 Mitigation | FAIL | artifacts/e4/results.json missing |
-| G10 Claim integrity | PASS | make claimcheck and make freshness pass on README.md and docs/REPORT.md |
+| G10 Claim integrity | PASS | make claimcheck and make freshness pass on README.md and docs/REPORT.md; each derived artifact present agrees with a fresh derivation from the banked inputs |
 | G11 Prereg integrity | FAIL | no confirmatory artifacts cite a preregistration |
 | G12 Review | FAIL | latest review is not a valid SHIP for HEAD: REVIEW: BLOCK |
-| G13 Documentation | PASS | README follows section 11; REPORT.md 7063 words; figures reproduce; every reference verified |
+| G13 Documentation | PASS | README follows section 11; REPORT.md 7788 words; figures reproduce; every reference verified |
 | G14 Hygiene | PASS | secrets clean; cash_usd = 0, caps respected; private/ untracked; files present; clean |
 
-G1 to G4, G10, G13, and G14 pass. G5 and G6 wait on the smoke study, whose banked runs
-give `smoke_runs.json`, and then on E0; G7 to G9 and G11 wait on the studies; G12 waits on
-an independent review that approves the current code (the review of e4230cc blocked, B1 to
-B4).
+G1 to G4, G10, G13, and G14 pass. G6 waits on the last two smoke runs and
+`smoke_runs.json`; G5 also waits on E0; G7 to G9 and G11 wait on the studies; G12 waits on
+an independent review of the code with B5 and B6 fixed (the review of 02bc774 blocked on
+them).
 
 ## Now
 
