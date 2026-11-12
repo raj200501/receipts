@@ -19,6 +19,30 @@ record says how it was hidden (``provenance.sandbox``). A session that imports a
 snapshot (``runs/code/<sha>/src``) starts only when the snapshot's files are ``src/`` of
 the commit it names (:func:`snapshot_differences`).
 
+Each model server gives every one of its ``--parallel`` slots (at least one) the pinned
+model's context window (``LocalModel.n_ctx``) unless ``--n-ctx`` asks for another one
+(:func:`served_model`). A server starts only on a port nothing answers on, and before
+each run the session confirms that the server is its own process serving what it was
+started with (:meth:`LocalServer.confirm_serving`: for llama.cpp, the window per slot,
+the slots, and the model file of ``GET /props``); a server that fails is a refusal
+(:class:`ServerMismatchError`). The run record's ``provenance.model_server`` holds the
+window per slot, the slots, whether the window is the pinned one, and what the live
+server reported (:func:`server_record`). A SIGTERM stops the session as an exception
+would: no new attempt starts, the attempts already running end, and the model server is
+stopped.
+
+Plan amendments (DECISIONS D71, ``tools/amend_plan.py``): a run an amendment replaced is
+excluded, whatever the failure log holds, and never attempted again. The run it added
+needs the server its amendment names (at least so many tokens per slot, above the
+pinned window, on one slot, from llama.cpp), and every other run is served only with the
+pinned window (:func:`window_refusal`). A session therefore attempts only the pending
+runs its server serves and refuses the others, which wait for a session started with the
+right ``--n-ctx`` and ``--parallel``; when it can serve none of them it exits with status
+2 before any server starts. The added run's replies are cached in a directory of its own
+(:func:`response_cache`), never served from the cache that holds the replies other runs
+got on the pinned window, and its record carries its amendment and that cache
+(``provenance.plan_amendment``, ``provenance.response_cache``).
+
 Infrastructure failures (prereg/0001-e1-main-study.md section 10, prereg 0002 section
 6): an exception raised in ``execute_run`` (a model server, sandbox, or workspace error,
 never agent behavior) leaves the run unbanked, and the failed attempt is appended to
@@ -48,15 +72,17 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
 import tempfile
 import threading
 import traceback
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from dataclasses import dataclass, field
+from contextlib import contextmanager
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -64,13 +90,13 @@ from receipts.bench.hashing import tree_sha256
 from receipts.bench.spec import TOOLCHAIN_PACKAGES, TOOLCHAIN_PYTHON
 from receipts.client.backends import LocalOpenAIBackend
 from receipts.client.models import LOCAL_MODELS
-from receipts.client.server import LocalServer
+from receipts.client.server import LocalModel, LocalServer, ServerStateError
 from receipts.client.wrapper import ModelClient
 from receipts.sandbox.api import HidesPaths, Sandbox, SandboxPolicy, SandboxUnavailableError
 from receipts.sandbox.bwrap import default_hidden_paths, project_root
 from receipts.sandbox.select import make_sandbox
 from receipts.sandbox.toolchain import Toolchain, python_toolchain, with_toolchain
-from receipts.study.plan import Plan, load_plan
+from receipts.study.plan import Plan, amendment_cache, check_amendments, load_plan
 from receipts.study.runner import RunRecord, execute_run
 from receipts.study.spec import RunSpec
 from receipts.study.tasks import load_run_task
@@ -314,15 +340,20 @@ def _banked(artifacts: Path, run_id: str) -> bool:
     return (artifacts / run_id / "run.json").is_file()
 
 
+def _is_excluded(plan: Plan, run_id: str, counts: Mapping[str, int]) -> bool:
+    return counts.get(run_id, 0) >= MAX_ATTEMPTS or run_id in plan.replaced()
+
+
 def excluded(plan: Plan, artifacts: Path, counts: Mapping[str, int]) -> list[str]:
-    """Unbanked runs with ``MAX_ATTEMPTS`` logged failures, in execution order.
+    """Unbanked runs with ``MAX_ATTEMPTS`` logged failures, and unbanked runs a plan
+    amendment replaced (DECISIONS D71) whatever the failure log holds, in execution order.
 
     They are never attempted again; the analyses count them as excluded.
     """
     return [
         r.run_id
         for r in plan.ordered()
-        if not _banked(artifacts, r.run_id) and counts.get(r.run_id, 0) >= MAX_ATTEMPTS
+        if not _banked(artifacts, r.run_id) and _is_excluded(plan, r.run_id, counts)
     ]
 
 
@@ -331,8 +362,83 @@ def pending(plan: Plan, artifacts: Path, counts: Mapping[str, int]) -> list[str]
     return [
         r.run_id
         for r in plan.ordered()
-        if not _banked(artifacts, r.run_id) and counts.get(r.run_id, 0) < MAX_ATTEMPTS
+        if not _banked(artifacts, r.run_id) and not _is_excluded(plan, r.run_id, counts)
     ]
+
+
+class ServerMismatchError(RuntimeError):
+    """The model server does not serve what a planned run needs (DECISIONS D71): another
+    window per slot or slot count, a server that is not this session's own, or, for a
+    run a plan amendment added, a response cache shared with other runs.
+
+    Like :class:`CheckoutExposedError` it is a refusal, never an infrastructure
+    failure: the run does not start, the session stops, and no attempt is logged.
+    """
+
+
+def pinned_windows() -> dict[str, int]:
+    """The pinned window per slot of every pinned local model, by model name."""
+    return {name: model.n_ctx for name, model in LOCAL_MODELS.items()}
+
+
+def window_refusal(
+    plan: Plan, spec: RunSpec, n_ctx: int | None, slots: int, *, engine: str = "llama.cpp"
+) -> str | None:
+    """Why a model server with ``n_ctx`` tokens of context per slot (None: the pinned
+    window of the run's model) on ``slots`` slots, run by ``engine``, must not serve
+    ``spec``; None when it may.
+
+    A run that a plan amendment added needs the server the amendment names
+    (:class:`receipts.study.plan.ServerRequirement`): llama.cpp, whose server reports
+    the window per slot and the slots it serves, with a window raised from the pinned
+    window of the run's model. Every other run is served only with the pinned window, so
+    a raised window serves the runs that need it and no other.
+    """
+    amendment = plan.amendment(spec.run_id)
+    if amendment is None and n_ctx is None:
+        return None
+    model = plan.arm(spec.config_id).model
+    pinned = LOCAL_MODELS.get(model)
+    if pinned is None:
+        return f"{model} is not a pinned local model"
+    window = pinned.n_ctx if n_ctx is None else n_ctx
+    if amendment is None:
+        if window == pinned.n_ctx:
+            return None
+        return (
+            f"its plan sets no server requirement, so it is served only with the pinned "
+            f"window of {pinned.n_ctx} tokens per slot, not {window}"
+        )
+    problems = amendment.server.problems(window, slots)
+    if amendment.server.pinned_n_ctx_per_slot != pinned.n_ctx:
+        problems.append(
+            f"its amendment raises a pinned window of {amendment.server.pinned_n_ctx_per_slot} "
+            f"tokens per slot, and {model} has the pinned window {pinned.n_ctx}"
+        )
+    if engine != "llama.cpp":
+        problems.append(
+            f"it needs the llama.cpp engine, whose server reports the window per slot and the "
+            f"slots it serves, not {engine}"
+        )
+    if not problems:
+        return None
+    return (
+        f"{'; '.join(problems)} (plan amendment {amendment.decision} in place of "
+        f"{amendment.replaces}: {amendment.server.describe()})"
+    )
+
+
+def response_cache(plan: Plan, spec: RunSpec) -> Path:
+    """Where the model responses of ``spec`` are cached: the shared ``runs/cache`` for a
+    run planned from the start, and a directory of its own,
+    ``runs/<study>/cache/<run id>`` (:func:`receipts.study.plan.amendment_cache`), for a
+    run a plan amendment added. The shared cache holds the replies that other runs got
+    on the server with the pinned window, the excluded run's among them, and its keys do
+    not cover the server's window, so the added run would otherwise replay the replies it
+    was planned to make again on a larger window (DECISIONS D71)."""
+    if plan.amendment(spec.run_id) is None:
+        return RUNS / "cache"
+    return RUNS / plan.study / "cache" / spec.run_id
 
 
 #: Subject runs use only a backend that confines writes (bubblewrap, D33); the unconfined
@@ -459,6 +565,39 @@ def preflight(study: str) -> dict[str, Any]:
         shutil.rmtree(probe, ignore_errors=True)
 
 
+def served_model(pinned: LocalModel, n_ctx: int | None) -> LocalModel:
+    """The model a session serves: ``pinned`` itself, or a copy whose context window per
+    slot is ``n_ctx`` tokens (``--n-ctx``; DECISIONS D71). ``pinned`` is unchanged.
+
+    Raises:
+        ValueError: ``n_ctx`` is not a positive number of tokens.
+    """
+    if n_ctx is None or n_ctx == pinned.n_ctx:
+        return pinned
+    if n_ctx < 1:
+        raise ValueError(f"a context window must be a positive number of tokens, not {n_ctx}")
+    return replace(pinned, n_ctx=n_ctx)
+
+
+def server_record(server: LocalServer, reported: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """The model server's provenance for a run record (``provenance.model_server``).
+
+    It is :meth:`LocalServer.provenance` (with the window per slot and the slots) plus
+    the pinned window per slot of the served model (``n_ctx_per_slot_default``, from
+    :data:`LOCAL_MODELS`) and whether the server served it
+    (``n_ctx_per_slot_is_default``), so a run made with another window says so, and
+    ``reported``, what the live server reported serving before the run
+    (:meth:`LocalServer.confirm_serving`), when it reported anything.
+    """
+    record = dict(server.provenance())
+    pinned = LOCAL_MODELS[server.model.name].n_ctx
+    record["n_ctx_per_slot_default"] = pinned
+    record["n_ctx_per_slot_is_default"] = server.model.n_ctx == pinned
+    if reported is not None:
+        record["reported"] = dict(reported)
+    return record
+
+
 def one_run(
     plan: Plan,
     spec: RunSpec,
@@ -470,17 +609,49 @@ def one_run(
 ) -> RunRecord:
     """Make one attempt at one planned run and bank it.
 
-    The run's sandbox hides the checkout (:func:`study_sandbox`) and is checked before
-    the run starts (:func:`checkout_hiding`); its record is banked as
-    ``provenance["sandbox"]``.
+    The server must serve the run (:func:`window_refusal`): a run a plan amendment added
+    gets the window and slots its amendment requires, any other run the pinned window.
+    The live server must then confirm that it is this session's own and serves that
+    window and those slots (:meth:`LocalServer.confirm_serving`); what it reports is
+    banked in ``provenance["model_server"]["reported"]``. A run an amendment added must
+    get its replies through ``client`` from its own response cache
+    (:func:`response_cache`), and its record carries the amendment and that cache
+    (``provenance["plan_amendment"]``, ``provenance["response_cache"]``). The run's
+    sandbox hides the checkout (:func:`study_sandbox`) and is checked before the run
+    starts (:func:`checkout_hiding`); its record is banked as ``provenance["sandbox"]``.
 
     Raises:
         InfrastructureError: ``execute_run`` raised, so the run is left unbanked.
             Errors before it (the arm, the task files, the toolchain, the task tree hash)
             propagate unchanged: they would fail every attempt alike.
+        ServerMismatchError: The server does not serve the run, is not confirmed, or the
+            run would be served from a shared cache; raised before anything else, it
+            stops the session and is never logged as an attempt.
         CheckoutExposedError: The run's sandbox shows the checkout; it propagates
             unchanged too, so it stops the session and is never logged as an attempt.
     """
+    refusal = window_refusal(
+        plan, spec, server.model.n_ctx, server.parallel, engine=str(server.engine)
+    )
+    if refusal is not None:
+        raise ServerMismatchError(f"{spec.run_id}: {refusal}")
+    try:
+        reported = server.confirm_serving()
+    except ServerStateError as exc:
+        raise ServerMismatchError(f"{spec.run_id}: {exc}") from exc
+    amendment = plan.amendment(spec.run_id)
+    if amendment is not None:
+        if reported is None:
+            raise ServerMismatchError(
+                f"{spec.run_id}: its server does not report the window per slot and the "
+                "slots it serves"
+            )
+        own = response_cache(plan, spec)
+        if Path(client.cache_dir) != own:
+            raise ServerMismatchError(
+                f"{spec.run_id}: its replies would come from the response cache "
+                f"{client.cache_dir}, not its own {own}"
+            )
     task_dir = ROOT / "bench" / "tasks" / spec.task_id
     arm = plan.arm(spec.config_id)
     task = load_run_task(task_dir)
@@ -488,9 +659,18 @@ def one_run(
     policy = with_toolchain(
         SandboxPolicy(timeout_s=task.command_timeout_s, memory_mb=task.memory_mb), chain
     )
+    added: dict[str, Any] = (
+        {}
+        if amendment is None
+        else {
+            "plan_amendment": amendment.to_json(),
+            "response_cache": amendment_cache(plan.study, spec.run_id),
+        }
+    )
     extra = {
         "toolchain_installed": list(chain.installed),
         "task_tree_sha256": tree_sha256(task_dir),
+        **added,
         **dict(code or {}),
     }
     try:
@@ -505,7 +685,7 @@ def one_run(
             sandbox_factory=lambda work: study_sandbox(work, policy),
             sandbox_check=checkout_hiding,
             git_sha=sha,
-            server_provenance=server.provenance(),
+            server_provenance=server_record(server, reported),
             extra_provenance=extra,
         )
     except CheckoutExposedError:
@@ -636,9 +816,12 @@ def run_model(
     sha: str,
     code: Mapping[str, Any],
 ) -> SessionResult:
-    """Serve one model and run its share of the plan (:func:`run_session`)."""
+    """Serve one model, with the window per slot that ``--n-ctx`` asks for (the pinned
+    one by default, :func:`served_model`), and run its share of the plan
+    (:func:`run_session`). Each run's replies are cached where :func:`response_cache`
+    says: a run a plan amendment added gets a cache of its own."""
     server = LocalServer(
-        LOCAL_MODELS[model_name],
+        served_model(LOCAL_MODELS[model_name], args.n_ctx),
         port=args.port,
         threads=args.threads,
         log_path=state / f"server-{model_name}.log",
@@ -646,13 +829,35 @@ def run_model(
         parallel=args.parallel,
     )
     backend = LocalOpenAIBackend(server.base_url, timeout_s=args.request_timeout)
-    client = ModelClient(ROOT, {"local": backend}, RUNS / "cache")
+    clients = {
+        cache: ModelClient(ROOT, {"local": backend}, cache)
+        for cache in dict.fromkeys(response_cache(plan, spec) for spec in runs)
+    }
 
     def attempt(spec: RunSpec) -> RunRecord:
+        client = clients[response_cache(plan, spec)]
         return one_run(plan, spec, client, artifacts, sha, server, code)
 
     with server:
         return run_session(runs, attempt, state, parallel=args.parallel)
+
+
+@contextmanager
+def sigterm_stops_session() -> Iterator[None]:
+    """While the block runs, a SIGTERM raises ``SystemExit(143)`` in the main thread, so
+    the session stops as it does on an exception: no new attempt starts, the attempts
+    already running end, and every model server's context exits, which stops the
+    server (review F3: a plain SIGTERM left the llama-server running). The handler that
+    was there before is put back afterwards."""
+
+    def stop(signum: int, frame: object) -> None:
+        raise SystemExit(128 + signum)
+
+    previous = signal.signal(signal.SIGTERM, stop)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -664,7 +869,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--threads", type=int, default=os.cpu_count() or 4)
     parser.add_argument("--dry-run", action="store_true", help="list pending runs and exit")
     parser.add_argument("--engine", choices=("llama.cpp", "llama-cpp-python"), default="llama.cpp")
-    parser.add_argument("--parallel", type=int, default=1, help="concurrent runs per model")
+    parser.add_argument(
+        "--parallel", type=int, default=1, help="concurrent runs per model (at least 1)"
+    )
+    parser.add_argument(
+        "--n-ctx",
+        type=int,
+        default=None,
+        metavar="TOKENS",
+        help="context window per server slot (default: the pinned model's); another window "
+        "serves only runs whose plan amendment requires it (DECISIONS D71)",
+    )
     parser.add_argument(
         "--request-timeout",
         type=float,
@@ -672,7 +887,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="seconds one model call may take (a cold prompt on a shared CPU can take minutes)",
     )
     args = parser.parse_args(argv)
-    plan = load_plan(args.plan)
+    if args.n_ctx is not None and args.n_ctx < 1:
+        parser.error(f"--n-ctx must be a positive number of tokens, not {args.n_ctx}")
+    if args.parallel < 1:
+        parser.error(f"--parallel must be at least 1 slot, not {args.parallel}")
+    try:
+        plan = load_plan(args.plan)
+        check_amendments(plan, pinned_windows())
+    except ValueError as exc:
+        print(f"{args.plan}: {exc}", file=sys.stderr)
+        return 2
     artifacts = args.plan.parent / "runs"
     state = RUNS / plan.study
     try:
@@ -684,18 +908,52 @@ def main(argv: Sequence[str] | None = None) -> int:
     out = excluded(plan, artifacts, counts)
     listed = f": {', '.join(out)}" if out else ""
     print(
-        f"study {plan.study}: {len(todo)} of {len(plan.runs)} runs pending; "
-        f"{len(out)} excluded after {MAX_ATTEMPTS} failed attempts{listed}",
+        f"study {plan.study}: {len(todo)} of {len(plan.runs)} runs pending; {len(out)} excluded "
+        f"(after {MAX_ATTEMPTS} failed attempts, or replaced by a plan amendment){listed}",
         flush=True,
     )
+    specs = {r.run_id: r for r in plan.runs}
+    refused = {
+        run_id: why
+        for run_id in todo
+        if (
+            why := window_refusal(
+                plan, specs[run_id], args.n_ctx, args.parallel, engine=args.engine
+            )
+        )
+        is not None
+    }
     if args.dry_run:
         for run_id in todo:
             print(run_id)
+            amendment = plan.amendment(run_id)
+            if amendment is not None:
+                print(
+                    f"  plan amendment {amendment.decision}: in place of {amendment.replaces}; "
+                    f"it needs {amendment.server.describe()}"
+                )
+            if run_id in refused:
+                print(f"  refused on this session's server: {refused[run_id]}")
+        replaced_by = {amendment.replaces: amendment for amendment in plan.amendments}
         for run_id in out:
-            print(f"excluded: {run_id} ({counts[run_id]} failed attempts)")
+            note = f"{counts.get(run_id, 0)} failed attempts"
+            if run_id in replaced_by:
+                by = replaced_by[run_id]
+                note += f"; replaced by {by.run_id}, {by.decision}"
+            print(f"excluded: {run_id} ({note})")
         return 0
     if args.parallel > 1 and args.engine != "llama.cpp":
         parser.error("--parallel above 1 needs --engine llama.cpp (continuous batching)")
+    for run_id, why in refused.items():
+        print(f"REFUSED: {run_id}: {why}; it waits for a session that serves it", file=sys.stderr)
+    todo = [run_id for run_id in todo if run_id not in refused]
+    if refused and not todo:
+        print(
+            f"REFUSED: no pending run of study {plan.study} can run on this session's server "
+            "(--n-ctx, --parallel); no server starts",
+            file=sys.stderr,
+        )
+        return 2
     state.mkdir(parents=True, exist_ok=True)
     (state / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
     if args.limit is not None:
@@ -710,20 +968,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         shown = ", ".join(hiding["shown_in_checkout"]) or "nothing"
         print(f"sandbox: {hiding['backend']} hides the checkout (shown in it: {shown})", flush=True)
-    specs = {r.run_id: r for r in plan.runs}
     by_model: dict[str, list[RunSpec]] = {}
     for run_id in todo:
         by_model.setdefault(plan.arm(specs[run_id].config_id).model, []).append(specs[run_id])
     total = SessionResult()
     try:
-        for model_name, runs in by_model.items():
-            result = run_model(plan, model_name, runs, args, artifacts, state, sha, code)
-            total.banked += result.banked
-            total.excluded += result.excluded
-            if result.stopped:
-                total.stopped = True
-                break
-    except CheckoutExposedError as exc:
+        with sigterm_stops_session():
+            for model_name, runs in by_model.items():
+                result = run_model(plan, model_name, runs, args, artifacts, state, sha, code)
+                total.banked += result.banked
+                total.excluded += result.excluded
+                if result.stopped:
+                    total.stopped = True
+                    break
+    except (CheckoutExposedError, ServerMismatchError, ServerStateError) as exc:
         print(f"REFUSED: {exc}; study {plan.study} stops, no attempt logged", file=sys.stderr)
         return 2
     print(f"study {plan.study}: {len(total.banked)} run(s) banked this session", flush=True)

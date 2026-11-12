@@ -380,27 +380,182 @@ def test_wrapper_module_exports() -> None:
     assert wrapper.ClientRefusedError is ClientRefusedError
 
 
-def test_llama_cpp_engine_command_and_lifecycle(tmp_path: Path) -> None:
+#: A SYNTHETIC stand-in for llama.cpp's llama-server: it answers on its --port and reports
+#: in GET /props the window per slot, the slots, and the model file of its own command
+#: line, as llama-server does, unless SYNTHETIC_PROPS (JSON) overrides fields of the
+#: report. It writes its pid to SYNTHETIC_PIDFILE when that is set. No model is served.
+FAKE_LLAMA_SERVER = """#!/usr/bin/env python3
+import json, os, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+args = sys.argv
+def flag(name):
+    return args[args.index(name) + 1]
+port, slots = int(flag("--port")), int(flag("--parallel"))
+props = {
+    "default_generation_settings": {"n_ctx": int(flag("--ctx-size")) // slots},
+    "total_slots": slots,
+    "model_path": flag("--model"),
+}
+props.update(json.loads(os.environ.get("SYNTHETIC_PROPS", "{}")))
+if os.environ.get("SYNTHETIC_PIDFILE"):
+    open(os.environ["SYNTHETIC_PIDFILE"], "a").write(str(os.getpid()) + "\\n")
+class H(BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = json.dumps(props if self.path == "/props" else {"data": []}).encode()
+        self.send_response(200); self.end_headers(); self.wfile.write(body)
+    def log_message(self, *a): pass
+HTTPServer(("127.0.0.1", port), H).serve_forever()
+"""
+
+
+def fake_llama(tmp_path: Path, n_ctx: int = 4096, parallel: int = 2) -> server.LocalServer:
+    """A LocalServer of a SYNTHETIC model file served by :data:`FAKE_LLAMA_SERVER`."""
     fake = tmp_path / "llama-server"
-    fake.write_text(FAKE_SERVER)
+    fake.write_text(FAKE_LLAMA_SERVER)
     fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
     gguf = tmp_path / "m.gguf"
     gguf.write_bytes(b"weights")
-    model = server.LocalModel("m", "fam", gguf, server.file_sha256(gguf), "test", n_ctx=4096)
-    cmd = server.llama_server_command(model, 1234, 4, 3, fake)
-    assert cmd[cmd.index("--ctx-size") + 1] == "12288" and cmd[cmd.index("--parallel") + 1] == "3"
-    srv = server.LocalServer(
+    model = server.LocalModel("m", "fam", gguf, server.file_sha256(gguf), "test", n_ctx=n_ctx)
+    return server.LocalServer(
         model,
         port=free_port(),
         engine="llama.cpp",
-        parallel=2,
+        parallel=parallel,
         llama_server=fake,
         log_path=tmp_path / "log.txt",
     )
+
+
+def test_llama_cpp_engine_command_and_lifecycle(tmp_path: Path) -> None:
+    srv = fake_llama(tmp_path)
+    cmd = server.llama_server_command(srv.model, 1234, 4, 3, srv.llama_server)
+    assert cmd[cmd.index("--ctx-size") + 1] == "12288" and cmd[cmd.index("--parallel") + 1] == "3"
     with srv:
         assert server.server_ready(srv.base_url)
+        # The live server reports what it serves (DECISIONS D71): the window per slot,
+        # the slots, and the model file this session started it with.
+        assert srv.confirm_serving() == {
+            "source": "GET /props",
+            "n_ctx_per_slot": 4096,
+            "total_slots": 2,
+            "model_path": str(srv.model.path),
+        }
     prov = srv.provenance()
     assert prov["engine"] == "llama.cpp" and prov["parallel_slots"] == 2
+    with pytest.raises(server.ServerStateError, match="not running"):
+        srv.confirm_serving()
+
+
+class _ModelsOnly(BaseHTTPRequestHandler):
+    """A SYNTHETIC server that answers like a model server already on the port."""
+
+    def do_GET(self) -> None:
+        props = {
+            "default_generation_settings": {"n_ctx": 4096},
+            "total_slots": 2,
+            "model_path": "SYNTHETIC",
+        }
+        body = json.dumps(props if self.path == "/props" else {"data": []}).encode()
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args: Any) -> None:
+        return None
+
+
+@pytest.fixture
+def squatter() -> Iterator[HTTPServer]:
+    """A SYNTHETIC server left on a port by an earlier session (its own thread)."""
+    srv = HTTPServer(("127.0.0.1", 0), _ModelsOnly)
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    yield srv
+    srv.shutdown()
+    srv.server_close()
+
+
+def test_start_refuses_a_port_another_server_answers_on(
+    tmp_path: Path, squatter: HTTPServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review F3: a server an earlier session left running would answer this session's
+    # requests while the run record named the window this session asked for.
+    srv = fake_llama(tmp_path)
+    srv.port = squatter.server_address[1]
+    pids = tmp_path / "pids"
+    monkeypatch.setenv("SYNTHETIC_PIDFILE", str(pids))
+    with pytest.raises(server.ServerStateError, match="already answers on port"):
+        srv.start()
+    assert not pids.exists()  # no server was started
+    with pytest.raises(server.ServerStateError, match="not running"):
+        srv.confirm_serving()
+
+
+@pytest.mark.parametrize(
+    ("props", "message"),
+    [
+        pytest.param({"default_generation_settings": {"n_ctx": 16384}}, "n_ctx_per_slot 16384"),
+        pytest.param({"total_slots": 4}, "total_slots 4"),
+        pytest.param({"total_slots": True}, "does not report"),
+        pytest.param({"model_path": "/other/model.gguf"}, "model_path"),
+        pytest.param({"default_generation_settings": None}, "does not report"),
+        pytest.param({"total_slots": "2"}, "does not report"),
+    ],
+)
+def test_start_refuses_a_server_that_reports_serving_something_else(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, props: dict[str, Any], message: str
+) -> None:
+    # llama-server reports the window per slot it serves, which may differ from the one
+    # asked for (it caps the window at the model's trained context, for example).
+    monkeypatch.setenv("SYNTHETIC_PROPS", json.dumps(props))
+    srv = fake_llama(tmp_path)
+    with pytest.raises(server.ServerStateError, match=message):
+        srv.start()
+    assert not server.server_ready(srv.base_url)  # the server it started was stopped
+
+
+def test_a_server_whose_process_exited_is_not_confirmed(tmp_path: Path) -> None:
+    srv = fake_llama(tmp_path)
+    with srv:
+        assert srv._proc is not None
+        srv._proc.kill()
+        srv._proc.wait(timeout=30)
+        with pytest.raises(server.ServerStateError, match="not running"):
+            srv.confirm_serving()
+
+
+def test_llama_cpp_python_reports_nothing_but_must_be_running(tmp_path: Path) -> None:
+    fake_python = tmp_path / "python"
+    fake_python.write_text(FAKE_SERVER)
+    fake_python.chmod(fake_python.stat().st_mode | stat.S_IEXEC)
+    gguf = tmp_path / "m.gguf"
+    gguf.write_bytes(b"weights")
+    model = server.LocalModel("m", "fam", gguf, server.file_sha256(gguf), "test")
+    srv = server.LocalServer(
+        model, port=free_port(), python=fake_python, log_path=tmp_path / "log.txt"
+    )
+    with srv:
+        assert srv.confirm_serving() is None
+    with pytest.raises(server.ServerStateError, match="not running"):
+        srv.confirm_serving()
+
+
+def test_server_provenance_records_the_window_per_slot_and_the_slots(tmp_path: Path) -> None:
+    # DECISIONS D71: a run record says which context window each slot had, not only the
+    # command line it can be read from. The model file is a SYNTHETIC stand-in.
+    gguf = tmp_path / "m.gguf"
+    gguf.write_bytes(b"weights")
+    model = server.LocalModel("m", "fam", gguf, server.file_sha256(gguf), "test", n_ctx=4096)
+    keys = ("n_ctx_per_slot", "parallel_slots", "ctx_size")
+    batched = server.LocalServer(model, engine="llama.cpp", parallel=3).provenance()
+    assert [batched[key] for key in keys] == [4096, 3, 12288]
+    command = batched["server_command"]
+    assert isinstance(command, list)
+    assert command[command.index("--ctx-size") + 1] == "12288"
+    assert command[command.index("--parallel") + 1] == "3"
+    single = server.LocalServer(model).provenance()
+    assert [single[key] for key in keys] == [4096, 1, 4096]
+    assert isinstance(single["server_command"], list) and "4096" in single["server_command"]
 
 
 def test_completion_function_routes_through_client(tmp_path: Path) -> None:

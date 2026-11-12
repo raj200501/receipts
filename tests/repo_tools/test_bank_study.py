@@ -10,6 +10,7 @@ results, and nothing here touches the real artifacts.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import shutil
@@ -22,15 +23,33 @@ import pytest
 import bank_study
 from receipts.bench.canary import remove_canary
 from receipts.bench.hashing import tree_sha256
+from receipts.client.models import QWEN_CODER_7B
+from receipts.client.server import LocalServer
 from receipts.evaluation import e0
 from receipts.study import aggregate, rescore
+from receipts.study.plan import (
+    Plan,
+    ServerRequirement,
+    amend_plan,
+    amendment_cache,
+    load_plan,
+    write_plan,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 TASK = "py-api-docs"
 RUN_ID = f"smoke-{TASK}-ma-qwen7b"
 REAL_RUN = ROOT / "artifacts" / "studies" / "smoke" / "runs" / RUN_ID
+SMOKE_PLAN = "artifacts/studies/smoke/plan.json"
 STUDIES = ("smoke", "pilot", "e1", "e4")
 Commit = Callable[[Path, str], str]
+
+
+def unamended(plan: Plan) -> Plan:
+    """``plan`` without its amendments and the runs they added: the plan as it was."""
+    added = {amendment.run_id for amendment in plan.amendments}
+    runs = [run for run in plan.runs if run.run_id not in added]
+    return dataclasses.replace(plan, runs=runs, amendments=())
 
 
 @pytest.fixture
@@ -47,6 +66,10 @@ def checkout(git_repo: Path, commit: Commit, monkeypatch: pytest.MonkeyPatch) ->
     assert tree_sha256(task) == record["provenance"]["task_tree_sha256"]
     for study in STUDIES:
         shutil.copytree(REAL_RUN, git_repo / "artifacts" / "studies" / study / "runs" / RUN_ID)
+    # The REAL smoke plan as it was before any amendment (read only), which plans the
+    # REAL run copied above; the tests amend their own copy, whether or not the real
+    # plan has been amended since.
+    write_plan(git_repo / SMOKE_PLAN, unamended(load_plan(ROOT / SMOKE_PLAN)))
     (git_repo / "README.md").write_text("SYNTHETIC scratch checkout for bank_study tests\n")
     commit(git_repo, "SYNTHETIC scratch checkout")
     monkeypatch.setattr(bank_study, "ROOT", git_repo)
@@ -365,6 +388,239 @@ def test_smoke_and_pilot_keep_their_outputs(checkout: Path) -> None:
     assert not (checkout / "artifacts" / "smoke").exists()
     with pytest.raises(SystemExit):
         bank_study.main(["smoke", "--allow-dirty"])
+
+
+# ---------------------------------------------------------------- smoke and the plan (D71)
+
+EXCLUDED = "smoke-py-units-refactor-ma-qwen7b"
+ADDED = f"{EXCLUDED}-ctx32k"
+
+
+def amend_smoke_plan(root: Path) -> None:
+    """Amend the scratch copy of the smoke plan as D71 does (a SYNTHETIC amendment here)."""
+    path = root / SMOKE_PLAN
+    amended = amend_plan(
+        load_plan(path),
+        EXCLUDED,
+        ServerRequirement(
+            min_n_ctx_per_slot=32768,
+            max_parallel_slots=1,
+            pinned_n_ctx_per_slot=QWEN_CODER_7B.n_ctx,
+        ),
+        decision="D71",
+        reason="SYNTHETIC test amendment",
+        date="2026-11-12",
+    )
+    write_plan(path, amended)
+
+
+def model_server(n_ctx: int, slots: int) -> dict[str, Any]:
+    """The model server record tools/run_study.py writes for a server of the pinned 7B
+    model with ``n_ctx`` tokens per slot on ``slots`` slots, with what the live server
+    reported serving (nothing is served here)."""
+    model = dataclasses.replace(QWEN_CODER_7B, n_ctx=n_ctx)
+    record = dict(LocalServer(model, engine="llama.cpp", parallel=slots).provenance())
+    record["n_ctx_per_slot_default"] = QWEN_CODER_7B.n_ctx
+    record["n_ctx_per_slot_is_default"] = n_ctx == QWEN_CODER_7B.n_ctx
+    record["reported"] = {
+        "source": "GET /props",
+        "n_ctx_per_slot": n_ctx,
+        "total_slots": slots,
+        "model_path": str(QWEN_CODER_7B.path),
+    }
+    return record
+
+
+def stand_in(root: Path, run_id: str = ADDED, **provenance: Any) -> Path:
+    """Bank a SYNTHETIC stand-in for the run the amendment added: only the run.json
+    fields smoke banking reads, made as the amended plan plans it (no model ran). With
+    the plan not amended, it stands in for a run that plan does not hold."""
+    plan = load_plan(root / SMOKE_PLAN)
+    planned = {run.run_id: run for run in plan.runs}
+    spec = planned.get(run_id) or dataclasses.replace(planned[EXCLUDED], run_id=run_id)
+    amendment = plan.amendment(run_id)
+    prov: dict[str, Any] = {
+        "run_spec": {**dataclasses.asdict(spec), "conditions": dict(spec.conditions)},
+        "model_server": model_server(32768, 1),
+        **(
+            {}
+            if amendment is None
+            else {
+                "plan_amendment": amendment.to_json(),
+                "response_cache": amendment_cache("smoke", run_id),
+                "git_sha": "a" * 40,
+                "code": "snapshot",
+                "snapshot_of": "a" * 40,
+                "snapshot_verified": True,
+                "sandbox": {"backend": "bwrap", "checkout_hidden": True},
+            }
+        ),
+        **provenance,
+    }
+    record = {
+        "run_id": run_id,
+        "task_id": spec.task_id,
+        "config_id": spec.config_id,
+        "model": QWEN_CODER_7B.name,
+        "stop_reason": "finished",
+        "turns": 3,
+        "provenance": prov,
+    }
+    run = root / "artifacts" / "studies" / "smoke" / "runs" / run_id
+    run.mkdir(parents=True)
+    (run / "run.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    return run
+
+
+def log_failures(root: Path, run_id: str = EXCLUDED, attempts: int = 3) -> Path:
+    """A SYNTHETIC runner failure log with ``attempts`` failed attempts of ``run_id``."""
+    log = root / "runs" / "smoke" / "failures.jsonl"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    entries = [
+        {"run_id": run_id, "attempt": n, "started": "s", "time": "t", "error": "SYNTHETIC"}
+        for n in range(1, attempts + 1)
+    ]
+    log.write_text("".join(json.dumps(e) + "\n" for e in entries), encoding="utf-8")
+    return log
+
+
+def test_smoke_banking_includes_the_run_a_plan_amendment_added(checkout: Path) -> None:
+    amend_smoke_plan(checkout)
+    stand_in(checkout)
+    log_failures(checkout)
+    assert bank_study.main(["smoke"]) == 0
+    smoke = json.loads((checkout / "artifacts" / "bench" / "smoke_runs.json").read_text())
+    rows = {row["run_id"]: row for row in smoke["runs"]}
+    assert sorted(rows) == sorted([RUN_ID, ADDED])
+    assert rows[ADDED]["task_id"] == "py-units-refactor"
+    assert rows[ADDED]["agent"] == f"minimal-agent/{QWEN_CODER_7B.name}"
+    assert rows[ADDED]["synthetic"] is False  # the shape a real run would have; test-only
+    plan_bytes = (checkout / SMOKE_PLAN).read_bytes()
+    assert smoke["provenance"]["plan_sha256"] == hashlib.sha256(plan_bytes).hexdigest()
+    # The failure log that excluded the replaced run is banked with its summary.
+    banked = (checkout / "artifacts" / "studies" / "smoke" / "failures.jsonl").read_bytes()
+    assert smoke["failures"]["entries"] == 3
+    assert smoke["failures"]["sha256"] == hashlib.sha256(banked).hexdigest()
+
+
+def test_the_attempt_cap_is_the_runners() -> None:
+    import run_study
+
+    assert bank_study.SMOKE_MAX_ATTEMPTS == run_study.MAX_ATTEMPTS
+
+
+def amend_for_another_pinned_window(root: Path) -> None:
+    """Amend the scratch smoke plan as if the 7B model's pinned window were 8192."""
+    path = root / SMOKE_PLAN
+    server = ServerRequirement(
+        min_n_ctx_per_slot=32768, max_parallel_slots=1, pinned_n_ctx_per_slot=8192
+    )
+    amended = amend_plan(
+        load_plan(path), EXCLUDED, server, decision="D71", reason="SYNTHETIC", date="2026-11-12"
+    )
+    write_plan(path, amended)
+
+
+def bank_excluded_run(root: Path) -> None:
+    """A SYNTHETIC run banked under the id the amendment replaced."""
+    stand_in(root, EXCLUDED, model_server=model_server(16384, 4))
+
+
+@pytest.mark.parametrize(
+    ("setup", "message"),
+    [
+        pytest.param(lambda root: stand_in(root), "not a planned run", id="unamended-plan"),
+        pytest.param(
+            lambda root: (
+                amend_smoke_plan(root),
+                stand_in(root, model_server=model_server(16384, 4)),
+            ),
+            "at least 32768 tokens per slot",
+            id="smaller-window",
+        ),
+        pytest.param(
+            lambda root: (amend_smoke_plan(root), stand_in(root, plan_amendment=None)),
+            "plan amendment",
+            id="no-amendment-record",
+        ),
+        pytest.param(
+            lambda root: (amend_smoke_plan(root), bank_excluded_run(root)),
+            "stays excluded",
+            id="excluded-run-banked",
+        ),
+        pytest.param(
+            lambda root: (root / SMOKE_PLAN).unlink(), "smoke/plan.json is missing", id="no-plan"
+        ),
+        pytest.param(
+            lambda root: (amend_smoke_plan(root), stand_in(root), log_failures(root, attempts=2)),
+            "2 failed attempt(s) of it, fewer than the 3",
+            id="replaced-run-not-excluded",
+        ),
+        pytest.param(
+            lambda root: (amend_smoke_plan(root), stand_in(root)),
+            "0 failed attempt(s) of it, fewer than the 3",
+            id="no-failure-log",
+        ),
+        pytest.param(
+            lambda root: (
+                amend_smoke_plan(root),
+                stand_in(root),
+                log_failures(root),
+                log_failures(root, RUN_ID),
+            ),
+            "the runner excluded it",
+            id="excluded-run-banked-under-its-id",
+        ),
+        pytest.param(
+            lambda root: (amend_for_another_pinned_window(root), stand_in(root)),
+            "pinned window of 16384",
+            id="another-pinned-window",
+        ),
+    ],
+)
+def test_smoke_banking_refuses_a_run_not_made_as_planned(
+    checkout: Path, capsys: pytest.CaptureFixture[str], setup: Any, message: str
+) -> None:
+    setup(checkout)
+    assert bank_study.main(["smoke"]) == 2
+    err = capsys.readouterr().err
+    assert "bank_study smoke: refused:" in err and message in err
+    assert not (checkout / "artifacts" / "bench" / "smoke_runs.json").exists()
+    assert not (checkout / "artifacts" / "studies" / "smoke" / "failures.jsonl").exists()
+
+
+def test_smoke_banking_refuses_a_failure_log_it_cannot_read(
+    checkout: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log = checkout / "runs" / "smoke" / "failures.jsonl"
+    log.parent.mkdir(parents=True)
+    log.write_text('{"run_id": \n', encoding="utf-8")
+    assert bank_study.main(["smoke"]) == 2
+    err = capsys.readouterr().err
+    assert "bank_study smoke: refused:" in err and "runs/smoke/failures.jsonl:1" in err
+    assert not (checkout / "artifacts" / "bench" / "smoke_runs.json").exists()
+    assert not (checkout / "artifacts" / "studies" / "smoke" / "failures.jsonl").exists()
+
+
+def test_smoke_banking_banks_the_failure_log_without_traces(checkout: Path) -> None:
+    log = checkout / "runs" / "smoke" / "failures.jsonl"
+    log.parent.mkdir(parents=True)
+    entries = [
+        {"run_id": EXCLUDED, "attempt": n, "started": "s", "time": "t", "error": "E", "trace": "T"}
+        for n in (1, 2, 3)
+    ]
+    log.write_text("".join(json.dumps(e) + "\n" for e in entries), encoding="utf-8")
+    source = log.read_bytes()
+    for _ in range(2):  # banking again adds nothing it holds already
+        assert bank_study.main(["smoke"]) == 0
+    banked = (checkout / "artifacts" / "studies" / "smoke" / "failures.jsonl").read_text()
+    assert [json.loads(line) for line in banked.splitlines()] == [
+        {k: v for k, v in e.items() if k != "trace"} for e in entries
+    ]
+    smoke = json.loads((checkout / "artifacts" / "bench" / "smoke_runs.json").read_text())
+    assert smoke["failures"]["entries"] == 3 and smoke["failures"]["added"] == 0
+    assert smoke["failures"]["sha256"] == hashlib.sha256(banked.encode()).hexdigest()
+    assert log.read_bytes() == source  # the log itself is only read
 
 
 # ---------------------------------------------------------------- --check (DECISIONS D57)
