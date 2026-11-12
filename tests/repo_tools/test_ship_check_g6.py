@@ -1265,3 +1265,30 @@ def test_an_amendment_record_is_never_rewritten(tmp_path: Path) -> None:
 
     with pytest.raises(GateError, match="never changed or removed"):
         ship_check.g6(benchmark(tmp_path / "repo", tamper=rewritten, amend=True))
+
+
+def test_the_gate_reads_amendments_as_the_plan_library_writes_them() -> None:
+    # ship_check is stdlib-only and keeps its own copies of these terms; they must be
+    # the plan library's and the runner's.
+    import run_study
+    from receipts.study import plan as library
+
+    assert ship_check.SAME_AS_REPLACED == library.SAME_AS_REPLACED
+    assert ship_check.AMENDMENT_DECISION == library.AMENDMENT_DECISION
+    assert ship_check.AMENDMENT_SLOTS == library.AMENDMENT_SLOTS
+    assert ship_check.AMENDMENT_SERVER_FIELDS == library.SERVER_FIELDS
+    assert ship_check.MAX_ATTEMPTS == run_study.MAX_ATTEMPTS
+    assert library.amendment_cache("smoke", ADDED) == f"runs/smoke/cache/{ADDED}"
+    once = amended(base_plan())
+    twice = amend_plan(
+        once,
+        f"smoke-py-synthetic-08-{CONFIG}",
+        once.amendments[0].server,
+        decision="D71",
+        reason="SYNTHETIC",
+        date="2026-11-12",
+    )
+    data = json.loads(library.plan_text(twice))
+    assert ship_check.plan_file_text(data) == library.plan_text(twice)
+    for count in (0, 1, 2):
+        assert ship_check.plan_before(data, count) == library.plan_before(twice, count).to_json()
