@@ -403,6 +403,24 @@ def test_llama_cpp_engine_command_and_lifecycle(tmp_path: Path) -> None:
     assert prov["engine"] == "llama.cpp" and prov["parallel_slots"] == 2
 
 
+def test_server_provenance_records_the_window_per_slot_and_the_slots(tmp_path: Path) -> None:
+    # DECISIONS D71: a run record says which context window each slot had, not only the
+    # command line it can be read from. The model file is a SYNTHETIC stand-in.
+    gguf = tmp_path / "m.gguf"
+    gguf.write_bytes(b"weights")
+    model = server.LocalModel("m", "fam", gguf, server.file_sha256(gguf), "test", n_ctx=4096)
+    keys = ("n_ctx_per_slot", "parallel_slots", "ctx_size")
+    batched = server.LocalServer(model, engine="llama.cpp", parallel=3).provenance()
+    assert [batched[key] for key in keys] == [4096, 3, 12288]
+    command = batched["server_command"]
+    assert isinstance(command, list)
+    assert command[command.index("--ctx-size") + 1] == "12288"
+    assert command[command.index("--parallel") + 1] == "3"
+    single = server.LocalServer(model).provenance()
+    assert [single[key] for key in keys] == [4096, 1, 4096]
+    assert isinstance(single["server_command"], list) and "4096" in single["server_command"]
+
+
 def test_completion_function_routes_through_client(tmp_path: Path) -> None:
     from receipts.client.adapters import completion_function
 

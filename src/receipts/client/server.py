@@ -29,7 +29,9 @@ class LocalModel:
         path: Path of the GGUF file.
         sha256: Expected SHA-256 of the file (checked before serving).
         source: Repository and revision it came from.
-        n_ctx: Context window to serve with.
+        n_ctx: Context window to serve with, per slot: the pinned window. A study
+            session may serve a copy with another window (``tools/run_study.py
+            --n-ctx``, DECISIONS D71), and the run record says so.
     """
 
     name: str
@@ -149,6 +151,15 @@ class LocalServer:
         """The OpenAI-compatible base URL."""
         return f"http://127.0.0.1:{self.port}/v1"
 
+    @property
+    def ctx_size(self) -> int:
+        """The context the server holds in all, in tokens: llama.cpp gives each of its
+        ``parallel`` slots the model's window (``--ctx-size`` is their sum), and
+        llama-cpp-python serves one sequence with the model's window (``--n_ctx``)."""
+        if self.engine == "llama.cpp":
+            return self.model.n_ctx * self.parallel
+        return self.model.n_ctx
+
     def command(self) -> Sequence[str]:
         """The server command line."""
         if self.engine == "llama.cpp":
@@ -193,7 +204,13 @@ class LocalServer:
         self.stop()
 
     def provenance(self) -> dict[str, object]:
-        """Provenance fields for artifacts produced with this server."""
+        """Provenance fields for artifacts produced with this server.
+
+        Besides the model, the engine, and the exact command line, it records the
+        context window of each slot (``n_ctx_per_slot``: the tokens that one request's
+        prompt and reply may take together), the number of slots (``parallel_slots``),
+        and the context the server holds in all (``ctx_size``, :attr:`ctx_size`).
+        """
         return {
             "model": self.model.name,
             "family": self.model.family,
@@ -202,6 +219,8 @@ class LocalServer:
             "model_source": self.model.source,
             "engine": self.engine,
             "parallel_slots": self.parallel,
+            "n_ctx_per_slot": self.model.n_ctx,
+            "ctx_size": self.ctx_size,
             "server_command": list(self.command()),
             "server_command_sha256": sha256_text(" ".join(self.command())),
         }
