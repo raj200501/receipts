@@ -72,7 +72,6 @@ import receipts
 from receipts.bench.hashing import tree_sha256
 from receipts.evaluation.e0 import E0Error, uncommitted
 from receipts.study import aggregate, rescore
-from receipts.study.plan import check_amendments, load_plan, run_record_problems
 
 ROOT = Path(__file__).resolve().parents[1]
 STUDIES: tuple[str, ...] = ("smoke", "pilot", "e1", "e4")
@@ -230,6 +229,11 @@ def smoke_problems(records: Sequence[Mapping[str, Any]]) -> list[str]:
     """Every way the banked smoke runs ``records`` were not made as the smoke plan plans
     them (:func:`receipts.study.plan.run_record_problems`), each after its run id; a
     missing plan, or one whose amendments do not hold, is a problem too."""
+    # Imported here, not with the module: these checks never compute an e1 or e4 row, so
+    # the plan module stays out of the code that banks them (BANKING_CODE in
+    # tools/analyze.py lists what a row depends on).
+    from receipts.study.plan import check_amendments, load_plan, run_record_problems
+
     path = ROOT / SMOKE_PLAN
     if not path.is_file():
         return [f"{SMOKE_PLAN} is missing, so no smoke run can be tied to its plan"]
