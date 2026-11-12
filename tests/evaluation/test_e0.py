@@ -2557,7 +2557,16 @@ def test_recheck_names_every_differing_field(git_repo: Path, commit: Commit) -> 
 
 
 @pytest.mark.parametrize(
-    "problem", ["missing", "not-an-object", "dev", "dirty", "changed-report", "changed-ledger"]
+    "problem",
+    [
+        "missing",
+        "not-an-object",
+        "dev",
+        "dirty",
+        "dirty-task-loader",
+        "changed-report",
+        "changed-ledger",
+    ],
 )
 def test_recheck_refuses_what_it_cannot_score_again(
     git_repo: Path, commit: Commit, problem: str
@@ -2577,6 +2586,11 @@ def test_recheck_refuses_what_it_cannot_score_again(
         (git_repo / "src/receipts/verify").mkdir(parents=True)
         (git_repo / "src/receipts/verify/wip.py").write_text("x = 1\n", "utf-8")
         expected = "the instrument has uncommitted changes (src/receipts/verify/wip.py)"
+    elif problem == "dirty-task-loader":
+        # Every scoring path counts, not only the extractor and the verifier (D54).
+        (git_repo / "src/receipts/bench").mkdir(parents=True)
+        (git_repo / "src/receipts/bench/spec.py").write_text("x = 1\n", "utf-8")
+        expected = "the instrument has uncommitted changes (src/receipts/bench/spec.py)"
     elif problem == "changed-report":
         report = git_repo / e0.SEEDED / "heldout" / "rep-3.json"
         text = report.read_text("utf-8")

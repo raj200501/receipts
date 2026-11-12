@@ -1314,6 +1314,12 @@ MISMATCH = (
             "e0 recheck: the instrument has uncommitted changes (x.py)",
             id="refused",
         ),
+        pytest.param(
+            2,
+            "e0 recheck: the instrument has uncommitted changes (x.py)\nSYNTHETIC warning\n",
+            "e0 recheck: the instrument has uncommitted changes (x.py)",
+            id="reason-before-a-warning",
+        ),
         pytest.param(1, "Traceback\nValueError: boom\n", "ValueError: boom", id="crashed"),
         pytest.param(124, "[timeout after 1800s]", "[timeout after 1800s]", id="timeout"),
     ],
@@ -1402,9 +1408,12 @@ def _drop_first(key: str) -> Callable[[str], str]:
         pytest.param(_set_first(attempt=True), id="attempt-bool"),
         pytest.param(_set_first(attempt=0), id="attempt-0"),
         pytest.param(_set_first(trees={}), id="no-trees"),
+        pytest.param(_set_first(trees=list(CHECKED_PATHS)), id="trees-not-an-object"),
         pytest.param(_set_first(trees={"src/receipts/claims": 5}), id="tree-not-text"),
+        pytest.param(_set_first(passes=[True]), id="passes-not-an-object"),
         pytest.param(_set_first(passes={"tests_pass": 1}), id="pass-not-bool"),
         pytest.param(_set_first(all_top5_pass=None), id="all-pass-null"),
+        pytest.param(_set_first(per_type=list(TYPES)), id="per-type-not-an-object"),
         pytest.param(_set_first(per_type={"tests_pass": {"correct": 1}}), id="counts-missing"),
         pytest.param(_set_first(commit=""), id="no-commit"),
     ],
@@ -1463,7 +1472,9 @@ def test_the_last_attempt_must_log_the_evaluation(
     elif field == "passes":
         data["passes"]["tests_pass"] = False
     else:
-        data["all_top5_pass"] = 0  # the logged false, as a JSON 0
+        # The logged true as a JSON 1, which Python's == takes as equal to it.
+        assert data["all_top5_pass"] is True
+        data["all_top5_pass"] = 1
     put(git_repo, EVAL, data)
     sha = commit(git_repo, f"edit the evaluation's {field}")
     pattern = (
@@ -1486,6 +1497,20 @@ def test_recorded_trees_must_be_the_git_trees_of_their_commit(
         rf"not hold at its commit {evaluated[:12]}",
     ):
         ship_check.g5(ctx)
+
+
+def test_an_attempt_must_name_its_commit_by_id(git_repo: Path, commit: Commit) -> None:
+    # A git name such as HEAD resolves to trees equal to the logged ones, but it says
+    # nothing about the commit the attempt scored.
+    _, evaluated = project(git_repo, commit, log=_set_first(commit="HEAD"))
+    put_evaluation(git_repo, perfect_items(DOCS), evaluated)
+    sha = commit(git_repo, "score the held-out half again on the same instrument")
+    with pytest.raises(
+        GateError,
+        match=rf"attempt 1 of {re.escape(ATTEMPTS)} records instrument trees that git does "
+        r"not hold at its commit HEAD$",
+    ):
+        ship_check.g5(context(git_repo, sha))
 
 
 def evaluate_with_trees(
