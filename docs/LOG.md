@@ -144,3 +144,21 @@ The offline demo replays the banked pipeline-check run; pilot runs with reports 
   new study runs carry the canary in the files that name hidden checks (N8, D59,
   2e84e90). B2 and N6 (G7 and G9 row coverage and re-derivation, D57) and the
   extractor's recall on completion statements (D60) are being fixed in worktrees.
+
+### 2026-11-12 final sprint, moved from STATUS.md
+
+- Three adversarial workflows (gate bypass, false rejection, documentation, code, and the
+  real banking path) checked every change of 2026-11-11. Their confirmed findings led to: a
+  revert of the D60 extractor change, whose new rules turned admissions of failure into
+  success claims (D61); immutable banked runs (D62); unforgeable `bank_study --check` and
+  run-record inputs (D63); G5, G8, and G13 reading only committed directories and visible
+  prose (D64); and document corrections, among them a wrong statement of mine that the
+  ts-cli-docs run created no script.
+- Fresh-clone `make ci` caught a regression before any push: a contract test still banked
+  ledgers without the hidden-check results that the new G7 re-derives. Fixed in f3430d9.
+  A second check showed the two Python legs of one prepush had cloned different commits,
+  so both legs now run from a worktree pinned to the commit under test.
+- Smoke runs banked through 02bc774: 31 of 40 (the counts in README.md are bound to the
+  summary). The remaining runs, nearly all TypeScript, keep running from the e4230cc
+  snapshot.
+- 02bc774 is the commit given to the independent review of 2026-11-12.
