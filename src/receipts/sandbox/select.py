@@ -19,7 +19,12 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
-from receipts.sandbox.api import CommandOutcome, SandboxPolicy, SandboxUnavailableError
+from receipts.sandbox.api import (
+    CommandOutcome,
+    HidesPaths,
+    SandboxPolicy,
+    SandboxUnavailableError,
+)
 from receipts.sandbox.base import (
     BackendProbe,
     ProcessSandbox,
@@ -94,6 +99,18 @@ def available_backends(
         ValueError: ``prefer`` is empty or names an unknown backend.
     """
     return tuple(p.name for p in probe_backends(prefer, image=image) if p.ok)
+
+
+def exposed(box: object, paths: Iterable[str | Path]) -> list[Path]:
+    """The ``paths`` (resolved, in order) that commands in ``box`` can reach.
+
+    Every one of them when ``box`` cannot say what it hides: an ``unshare`` sandbox and
+    the test sandboxes see the whole host and are not :class:`HidesPaths`.
+    """
+    resolved = [Path(path).resolve() for path in paths]
+    if not isinstance(box, HidesPaths):
+        return resolved
+    return [path for path in resolved if not box.hides(path)]
 
 
 def _describe(outcome: CommandOutcome) -> str:

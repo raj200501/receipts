@@ -9,7 +9,13 @@ read-only tools commands may use. :class:`PidsCgroup` enforces ``max_procs`` whe
 kernel's process rlimit does not bind (the host's root user).
 """
 
-from receipts.sandbox.api import CommandOutcome, Sandbox, SandboxPolicy, SandboxUnavailableError
+from receipts.sandbox.api import (
+    CommandOutcome,
+    HidesPaths,
+    Sandbox,
+    SandboxPolicy,
+    SandboxUnavailableError,
+)
 from receipts.sandbox.base import (
     MAX_COMMAND_BYTES,
     BackendProbe,
@@ -17,7 +23,12 @@ from receipts.sandbox.base import (
     ProcessSandbox,
     command_problem,
 )
-from receipts.sandbox.bwrap import BwrapSandbox, default_hidden_paths, home_directories
+from receipts.sandbox.bwrap import (
+    BwrapSandbox,
+    default_hidden_paths,
+    home_directories,
+    project_root,
+)
 from receipts.sandbox.cgroup import PidsCgroup, pids_cgroup_parent
 from receipts.sandbox.docker import DEFAULT_IMAGE, DockerSandbox
 from receipts.sandbox.env import DEFAULT_PATH, clean_env, is_credential_name
@@ -27,6 +38,7 @@ from receipts.sandbox.select import (
     DEFAULT_CHECK_CMD,
     DEFAULT_PREFERENCE,
     available_backends,
+    exposed,
     make_sandbox,
     probe_backends,
 )
@@ -54,6 +66,7 @@ __all__ = [
     "CommandOutcome",
     "CwdError",
     "DockerSandbox",
+    "HidesPaths",
     "LocalTestSandbox",
     "PidsCgroup",
     "ProcessSandbox",
@@ -70,11 +83,13 @@ __all__ = [
     "command_problem",
     "create_workspace",
     "default_hidden_paths",
+    "exposed",
     "home_directories",
     "is_credential_name",
     "make_sandbox",
     "pids_cgroup_parent",
     "probe_backends",
+    "project_root",
     "python_toolchain",
     "remove_all_workspaces",
     "remove_workspace",

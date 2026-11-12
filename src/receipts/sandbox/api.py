@@ -105,5 +105,27 @@ class Sandbox(Protocol):
         ...
 
 
+@runtime_checkable
+class HidesPaths(Protocol):
+    """A sandbox that can say which host paths its commands cannot reach.
+
+    :class:`~receipts.sandbox.bwrap.BwrapSandbox` and
+    :class:`~receipts.sandbox.docker.DockerSandbox` implement it. ``unshare`` and the
+    test-only sandboxes see the whole host and do not, so a caller that must keep a
+    path out of reach refuses them.
+    """
+
+    def hides(self, path: str | Path) -> bool:
+        """True when no command can reach the host's ``path``.
+
+        Paths inside it that :meth:`shown_within` lists stay reachable.
+        """
+        ...
+
+    def shown_within(self, path: str | Path) -> tuple[Path, ...]:
+        """The host paths strictly inside ``path`` that commands can still reach."""
+        ...
+
+
 class SandboxUnavailableError(RuntimeError):
     """Raised when a backend cannot run on this machine."""

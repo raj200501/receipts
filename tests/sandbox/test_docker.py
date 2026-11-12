@@ -15,7 +15,13 @@ from pathlib import Path
 
 import pytest
 
-from receipts.sandbox.api import CommandOutcome, Sandbox, SandboxPolicy, SandboxUnavailableError
+from receipts.sandbox.api import (
+    CommandOutcome,
+    HidesPaths,
+    Sandbox,
+    SandboxPolicy,
+    SandboxUnavailableError,
+)
 from receipts.sandbox.base import LAUNCHER_ARG0, MAX_COMMAND_BYTES, STARTED
 from receipts.sandbox.docker import (
     CLIENT_ENV_NAMES,
@@ -174,6 +180,26 @@ def test_constructor_checks(workspace: Path, tmp_path: Path, fake_docker: FakeDo
         DockerSandbox(odd, docker=fake_docker.path)
     with pytest.raises(SandboxUnavailableError, match="docker"):
         DockerSandbox(workspace, docker="receipts-no-such-docker")
+
+
+def test_a_container_reaches_only_its_mounts(tmp_path: Path, fake_docker: FakeDocker) -> None:
+    # A container sees the workspace and the read-only paths and no other host path, so
+    # a checkout is hidden unless one of those mounts is the checkout or lies above it.
+    checkout = (tmp_path / "checkout").resolve()
+    toolchain = checkout / "runs" / "toolchains" / "bench-py311"
+    ws = checkout / "runs" / "work" / "smoke" / "run-1"
+    for directory in (toolchain, ws, checkout / "bench"):
+        directory.mkdir(parents=True, exist_ok=True)
+    policy = SandboxPolicy(readonly_paths=(toolchain,))
+    box = DockerSandbox(ws, policy, docker=fake_docker.path)
+    assert isinstance(box, HidesPaths)
+    assert box.hides(checkout) and box.hides(checkout / "bench") and box.hides("/etc")
+    assert not box.hides(toolchain / "bin") and not box.hides(ws)
+    assert box.shown_within(checkout) == (toolchain, ws)
+    assert box.shown_within(ws) == ()
+    exposed = DockerSandbox(ws, SandboxPolicy(readonly_paths=(checkout,)), docker=fake_docker.path)
+    assert not exposed.hides(checkout / "bench")
+    assert not DockerSandbox(checkout, docker=fake_docker.path).hides(checkout / "bench")
 
 
 @pytest.mark.parametrize("image", ["", "-x", "a b", "img\n"])

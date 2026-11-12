@@ -173,6 +173,23 @@ class DockerSandbox(ProcessSandbox):
         """``"docker"``: ``max_procs`` is the container's ``--pids-limit``."""
         return "docker"
 
+    def hides(self, path: str | Path) -> bool:
+        """True unless the workspace or a read-only path is ``path`` or lies above it.
+
+        A container sees the image's own files and no host path besides those mounts, so
+        the host's ``path`` is out of reach unless a mount shows it; mounts strictly
+        inside it (:meth:`shown_within`) stay reachable.
+        """
+        target = Path(path).resolve()
+        mounts = (self._workspace, *self._readonly)
+        return not any(mount == target or mount in target.parents for mount in mounts)
+
+    def shown_within(self, path: str | Path) -> tuple[Path, ...]:
+        """The read-only paths and the workspace strictly inside ``path``, sorted."""
+        target = Path(path).resolve()
+        mounts = {self._workspace, *self._readonly}
+        return tuple(sorted(mount for mount in mounts if target in mount.parents))
+
     def command(self, cmd: str, cwd: Path, name: str, *, interactive: bool = False) -> list[str]:
         """The ``docker run`` command line for ``cmd`` in container ``name``."""
         policy = self._policy

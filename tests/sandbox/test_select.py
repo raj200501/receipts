@@ -19,6 +19,7 @@ from receipts.sandbox.select import (
     DEFAULT_CHECK_CMD,
     DEFAULT_PREFERENCE,
     available_backends,
+    exposed,
     make_sandbox,
     probe_backends,
 )
@@ -297,3 +298,30 @@ def test_a_real_docker_constructor_refusal_falls_back_to_bwrap(
     )
     box = make_sandbox(odd, prefer=("docker", "bwrap"))
     assert isinstance(box, BwrapSandbox) and box.run("echo ok").stdout == "ok\n"
+
+
+class SyntheticHiding:
+    """A SYNTHETIC sandbox that hides exactly the paths it is given (test data only)."""
+
+    backend = "synthetic"
+
+    def __init__(self, hidden: Iterable[Path]) -> None:
+        self.hidden = {p.resolve() for p in hidden}
+
+    def hides(self, path: str | Path) -> bool:
+        target = Path(path).resolve()
+        return any(h == target or h in target.parents for h in self.hidden)
+
+    def shown_within(self, path: str | Path) -> tuple[Path, ...]:
+        return ()
+
+
+def test_exposed_lists_the_paths_a_sandbox_does_not_hide(tmp_path: Path) -> None:
+    hidden, shown = tmp_path / "hidden", tmp_path / "shown"
+    for directory in (hidden, shown):
+        directory.mkdir()
+    box = SyntheticHiding([hidden])
+    assert exposed(box, [hidden / "x", shown, str(hidden)]) == [shown]
+    # A sandbox that cannot say what it hides (unshare, the test sandboxes) shows all.
+    local = LocalTestSandbox(tmp_path, allow_unsandboxed_for_tests=True)
+    assert exposed(local, [hidden, shown]) == [hidden.resolve(), shown.resolve()]

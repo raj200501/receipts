@@ -7,14 +7,25 @@ by path depth so a nested mount always wins over its parent):
 - private, empty, writable ``/tmp`` and ``/run`` (so host sockets under ``/run``, such
   as the Docker daemon's, are out of reach: a read-only mount does not stop
   ``connect()`` on a Unix socket);
-- hidden paths: known credential locations under every home directory (each entry of
-  ``/home``, every home in the password database, ``/root``, and the current user's),
-  system credential files, and this project's own checkout (benchmark hidden checks,
-  private data) are covered by an empty tmpfs (directories) or ``/dev/null`` (files);
+- hidden paths, each covered by an empty tmpfs (directories) or ``/dev/null`` (files).
+  Without ``hide_paths`` they are the known credential locations under every home
+  directory (each entry of ``/home``, every home in the password database, ``/root``,
+  and the current user's), the system credential files, and the receipts checkout this
+  package lies in (:func:`project_root`: the checkout itself, or the one that holds a
+  code snapshot under ``runs/code/<sha>/src``), with the benchmark's hidden checks and
+  reference solutions, the instrument, ``private/``, and other runs' files. A caller
+  that passes ``hide_paths`` hides exactly those: ``tools/run_study.py`` passes these
+  defaults with its checkout named explicitly, and refuses a sandbox that would still
+  show the checkout (:meth:`BwrapSandbox.hides`);
 - ``policy.readonly_paths`` bind-mounted read-only at the same path (a tool under a
-  hidden or private path, such as this checkout's ``.venv`` or a toolchain under
+  hidden or private path, such as a toolchain under the checkout's ``runs/`` or under
   ``/tmp``, is visible only when listed there);
 - the workspace bind-mounted read-write at the same path, the only writable host path.
+
+A read-only path or the workspace inside a hidden directory (a study run's toolchain and
+workspace under the checkout's ``runs/``) is mounted after the tmpfs that covers the
+directory, so a command sees it and nothing else there: the tmpfs holds only the empty
+directories bubblewrap makes as mount points, and writes to it never reach the host.
 
 All namespaces are unshared (``--unshare-all``: no network unless ``policy.network``),
 all capabilities are dropped (``--cap-drop ALL``; without it a sandbox started by root
@@ -49,8 +60,9 @@ import contextlib
 import pwd
 import tempfile
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from receipts.sandbox.api import SandboxPolicy, SandboxUnavailableError
 from receipts.sandbox.base import (
@@ -122,11 +134,24 @@ PRIVATE_DIRS: tuple[str, ...] = ("/tmp", "/run")
 
 
 def project_root() -> Path | None:
-    """The receipts checkout this package runs from, or None when installed elsewhere."""
-    root = Path(__file__).resolve().parents[3]
-    if (root / "pyproject.toml").is_file() and (root / "src" / "receipts").is_dir():
-        return root
-    return None
+    """The receipts checkout this package lies in, or None when it lies in none.
+
+    A checkout is a directory that holds ``pyproject.toml`` and ``src/receipts``. The
+    package lies in one when it is that checkout's own ``src/receipts``, a code snapshot
+    under it (``runs/code/<sha>/src/receipts``, extracted by ``tools/snapshot_code.sh``
+    without a ``pyproject.toml``), or another copy inside it, such as a git worktree or
+    an install in the checkout's virtualenv. Every directory above the package (the
+    filesystem root excepted) is checked, and the outermost checkout is returned: hiding
+    it also hides a checkout nested in it.
+    """
+    package = Path(__file__).resolve().parents[1]
+    found: Path | None = None
+    for parent in package.parents:
+        if parent == Path(parent.anchor):
+            break
+        if (parent / "pyproject.toml").is_file() and (parent / "src" / "receipts").is_dir():
+            found = parent
+    return found
 
 
 def home_directories(
@@ -188,27 +213,83 @@ def _depth(path: Path) -> int:
     return len(path.parts)
 
 
+#: What a mount puts at its path: the host's files (``root``, ``readonly``,
+#: ``workspace``) or something else (``device`` and ``proc`` for ``/dev`` and ``/proc``,
+#: ``private`` and ``hidden`` for an empty tmpfs or ``/dev/null``).
+MountKind = Literal["root", "device", "proc", "private", "hidden", "readonly", "workspace"]
+
+#: The kinds of mount that show host files at their path.
+HOST_KINDS: frozenset[str] = frozenset({"root", "readonly", "workspace"})
+
+
+@dataclass(frozen=True)
+class Mount:
+    """One bubblewrap mount: its path inside (the same as on the host), its kind, and
+    the options that make it."""
+
+    path: Path
+    kind: MountKind
+    args: tuple[str, ...]
+
+
+#: The mounts every sandbox starts with, before the variable part.
+BASE_MOUNTS: tuple[Mount, ...] = (
+    Mount(Path("/"), "root", ("--ro-bind", "/", "/")),
+    Mount(Path("/dev"), "device", ("--dev", "/dev")),
+    Mount(Path("/proc"), "proc", ("--proc", "/proc")),
+)
+
+
+def mount_plan(
+    workspace: Path, readonly: Sequence[Path] = (), hidden: Sequence[Path] = ()
+) -> list[Mount]:
+    """Every mount of one sandbox, in the order bubblewrap makes them.
+
+    :data:`BASE_MOUNTS` first, then the private directories, the hidden paths that
+    exist, the read-only paths, and the workspace, sorted by path depth (then in that
+    order, then by path), so a mount always comes after every mount above it. Later
+    mounts cover earlier ones (see the module docstring).
+    """
+    ops: list[tuple[int, int, str, Mount]] = []
+    for private in PRIVATE_DIRS:
+        path = Path(private)
+        if path.is_dir():
+            ops.append((_depth(path), 0, private, Mount(path, "private", ("--tmpfs", private))))
+    for path in hidden:
+        if path.is_dir():
+            ops.append((_depth(path), 0, str(path), Mount(path, "hidden", ("--tmpfs", str(path)))))
+        elif path.exists():
+            null = ("--ro-bind", "/dev/null", str(path))
+            ops.append((_depth(path), 0, str(path), Mount(path, "hidden", null)))
+    for path in readonly:
+        bind = ("--ro-bind", str(path), str(path))
+        ops.append((_depth(path), 1, str(path), Mount(path, "readonly", bind)))
+    bind = ("--bind", str(workspace), str(workspace))
+    ops.append((_depth(workspace), 2, str(workspace), Mount(workspace, "workspace", bind)))
+    ops.sort(key=lambda op: (op[0], op[1], op[2]))
+    return [*BASE_MOUNTS, *(op[3] for op in ops)]
+
+
 def mount_args(
     workspace: Path, readonly: Sequence[Path] = (), hidden: Sequence[Path] = ()
 ) -> list[str]:
     """The bubblewrap mount options for one sandbox (see the module docstring)."""
-    ops: list[tuple[int, int, str, list[str]]] = []
-    for private in PRIVATE_DIRS:
-        if Path(private).is_dir():
-            ops.append((_depth(Path(private)), 0, private, ["--tmpfs", private]))
-    for path in hidden:
-        if path.is_dir():
-            ops.append((_depth(path), 0, str(path), ["--tmpfs", str(path)]))
-        elif path.exists():
-            ops.append((_depth(path), 0, str(path), ["--ro-bind", "/dev/null", str(path)]))
-    for path in readonly:
-        ops.append((_depth(path), 1, str(path), ["--ro-bind", str(path), str(path)]))
-    ops.append((_depth(workspace), 2, str(workspace), ["--bind", str(workspace), str(workspace)]))
-    ops.sort(key=lambda op: (op[0], op[1], op[2]))
-    args = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
-    for op in ops:
-        args.extend(op[3])
-    return args
+    return [arg for mount in mount_plan(workspace, readonly, hidden) for arg in mount.args]
+
+
+def reaches(path: Path, plan: Sequence[Mount]) -> bool:
+    """Whether a command in a sandbox with these mounts can reach the host's ``path``.
+
+    The last mount at or above the absolute ``path`` in ``plan`` decides: the host root,
+    a read-only path, or the workspace shows the host's files there; a private
+    directory, a hidden path, ``/dev``, or ``/proc`` shows something else. A read-only
+    path or the workspace deeper inside ``path`` stays reachable either way.
+    """
+    shown = False
+    for mount in plan:
+        if mount.path == path or mount.path in path.parents:
+            shown = mount.kind in HOST_KINDS
+    return shown
 
 
 class BwrapSandbox(ProcessSandbox):
@@ -265,6 +346,27 @@ class BwrapSandbox(ProcessSandbox):
         """The host paths this sandbox hides (besides the private ``/tmp`` and ``/run``)."""
         return self._hidden
 
+    def mounts(self) -> list[Mount]:
+        """The mounts the next command gets, as :meth:`launch` computes them now (hidden
+        paths that no longer exist are skipped)."""
+        hidden = [path for path in self._hidden if path.exists()]
+        return mount_plan(self._workspace, self._readonly, hidden)
+
+    def hides(self, path: str | Path) -> bool:
+        """True when no command can reach the host's ``path`` (see :func:`reaches`).
+
+        The read-only paths and the workspace inside it, which :meth:`shown_within`
+        lists, stay reachable.
+        """
+        return not reaches(Path(path).resolve(), self.mounts())
+
+    def shown_within(self, path: str | Path) -> tuple[Path, ...]:
+        """The read-only paths and the workspace strictly inside ``path``, sorted: they
+        are mounted after any cover on ``path`` and stay reachable."""
+        target = Path(path).resolve()
+        shown = {m.path for m in self.mounts() if m.kind != "root" and m.kind in HOST_KINDS}
+        return tuple(sorted(p for p in shown if target in p.parents))
+
     def launch(
         self, cmd: str, cwd: Path, *, interactive: bool = False, status_fd: int | None = None
     ) -> Launch:
@@ -277,8 +379,7 @@ class BwrapSandbox(ProcessSandbox):
             SandboxUnavailableError: A read-only path no longer exists.
         """
         require_paths(self._readonly, "read-only paths")
-        hidden = [path for path in self._hidden if path.exists()]
-        argv = [self._bwrap, *mount_args(self._workspace, self._readonly, hidden)]
+        argv = [self._bwrap, *(arg for mount in self.mounts() for arg in mount.args)]
         argv.append("--unshare-all")
         if self._policy.network:
             argv.append("--share-net")

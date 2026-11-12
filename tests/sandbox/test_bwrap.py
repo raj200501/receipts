@@ -3,16 +3,27 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import pwd
 import shutil
+import subprocess
+import sys
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 
+import receipts
 from receipts.sandbox import bwrap as bwrap_module
-from receipts.sandbox.api import CommandOutcome, Sandbox, SandboxPolicy, SandboxUnavailableError
+from receipts.sandbox.api import (
+    CommandOutcome,
+    HidesPaths,
+    Sandbox,
+    SandboxPolicy,
+    SandboxUnavailableError,
+)
 from receipts.sandbox.base import LAUNCHER_ARG0, MAX_COMMAND_BYTES, CwdError, rlimit_values
 from receipts.sandbox.bwrap import (
     SYSTEM_CREDENTIAL_PATHS,
@@ -20,8 +31,10 @@ from receipts.sandbox.bwrap import (
     default_hidden_paths,
     home_directories,
     mount_args,
+    mount_plan,
     probe_bwrap,
     project_root,
+    reaches,
 )
 from receipts.sandbox.cgroup import pids_cgroup_parent
 from receipts.sandbox.env import DEFAULT_PATH
@@ -158,6 +171,101 @@ def test_system_credential_locations_are_hidden_when_present(
 def test_project_root_is_this_checkout() -> None:
     root = project_root()
     assert root is not None and (root / "src" / "receipts" / "sandbox").is_dir()
+
+
+SYNTHETIC_SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
+def place_module(monkeypatch: pytest.MonkeyPatch, src: Path) -> None:
+    """Make bwrap.py look as if it were imported from the package under ``src``."""
+    module = src / "receipts" / "sandbox" / "bwrap.py"
+    module.parent.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(bwrap_module, "__file__", str(module))
+
+
+def test_project_root_finds_the_checkout_above_a_code_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_checkout: Callable[[Path], Path]
+) -> None:
+    # tools/snapshot_code.sh extracts only src/ under runs/code/<sha>/ (review N18).
+    checkout = make_checkout(tmp_path / "checkout")
+    snapshot = checkout / "runs" / "code" / SYNTHETIC_SHA
+    place_module(monkeypatch, snapshot / "src")
+    (snapshot / "SNAPSHOT_OF").write_text(SYNTHETIC_SHA + "\n", encoding="utf-8")
+    assert project_root() == checkout.resolve()
+    assert checkout.resolve() in default_hidden_paths([])
+
+
+def test_project_root_returns_the_outermost_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_checkout: Callable[[Path], Path]
+) -> None:
+    outer = make_checkout(tmp_path / "checkout")
+    worktree = make_checkout(outer / ".claude" / "worktrees" / "synthetic")
+    place_module(monkeypatch, worktree / "src")
+    assert project_root() == outer.resolve()
+
+
+def test_project_root_is_none_for_a_snapshot_outside_any_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    place_module(monkeypatch, tmp_path / "loose" / "code" / SYNTHETIC_SHA / "src")
+    assert project_root() is None
+
+
+def test_a_hidden_checkout_is_mounted_before_the_toolchain_and_workspace_in_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_checkout: Callable[[Path], Path]
+) -> None:
+    # tmp_path is under /tmp, which every sandbox makes private; without that tmpfs the
+    # checkout itself must be what hides these paths.
+    monkeypatch.setattr(bwrap_module, "PRIVATE_DIRS", ())
+    checkout = make_checkout(tmp_path / "checkout").resolve()
+    toolchain = checkout / "runs" / "toolchains" / "bench-py311"
+    ws = checkout / "runs" / "work" / "smoke" / "run-1"
+    other = checkout / "runs" / "work" / "smoke" / "run-2"
+    for directory in (toolchain, ws, other):
+        directory.mkdir(parents=True)
+    order = pairs(mount_args(ws, [toolchain], [checkout]))
+    cover = order.index(("--tmpfs", str(checkout)))
+    assert cover < order.index(("--ro-bind", str(toolchain))) < order.index(("--bind", str(ws)))
+    plan = mount_plan(ws, [toolchain], [checkout])
+    for hidden in (checkout, checkout / "bench" / "tasks", checkout / "private", other):
+        assert not reaches(hidden, plan), hidden
+    assert reaches(toolchain / "bin", plan) and reaches(ws / "src", plan)
+    assert reaches(checkout / "bench", mount_plan(ws, [toolchain], []))
+
+
+def test_a_mount_at_or_above_the_checkout_decides_whether_it_is_reached(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_checkout: Callable[[Path], Path]
+) -> None:
+    monkeypatch.setattr(bwrap_module, "PRIVATE_DIRS", ())
+    checkout = make_checkout(tmp_path / "checkout").resolve()
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    # A read-only path or the workspace at the checkout itself is mounted after its
+    # tmpfs and shows it again; one above it is mounted before and stays covered.
+    assert reaches(checkout, mount_plan(ws, [checkout], [checkout]))
+    assert reaches(checkout / "bench", mount_plan(checkout, [], [checkout]))
+    assert not reaches(checkout / "bench", mount_plan(ws, [tmp_path], [checkout]))
+    assert not reaches(checkout / "bench", mount_plan(tmp_path, [], [checkout]))
+    assert reaches(checkout / "bench", mount_plan(ws, [], [checkout / "private"]))
+
+
+def test_hides_and_shown_within_follow_the_sandbox_layout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_checkout: Callable[[Path], Path]
+) -> None:
+    monkeypatch.setattr(bwrap_module, "PRIVATE_DIRS", ())
+    checkout = make_checkout(tmp_path / "checkout").resolve()
+    toolchain = checkout / "runs" / "toolchains" / "bench-py311"
+    ws = checkout / "runs" / "work" / "smoke" / "run-1"
+    for directory in (toolchain, ws):
+        directory.mkdir(parents=True)
+    policy = SandboxPolicy(readonly_paths=(toolchain,))
+    box = BwrapSandbox(ws, policy, bwrap="true", hide_paths=[checkout])
+    assert isinstance(box, HidesPaths)
+    assert box.hides(checkout) and box.hides(checkout / "bench" / "tasks")
+    assert not box.hides(toolchain) and not box.hides(ws / "src")
+    assert box.shown_within(checkout) == (toolchain, ws)
+    assert box.shown_within(toolchain) == ()
+    assert not BwrapSandbox(ws, policy, bwrap="true", hide_paths=[]).hides(checkout)
 
 
 def test_default_hidden_paths_include_the_checkout() -> None:
@@ -343,6 +451,62 @@ def test_the_project_checkout_is_hidden_by_default(workspace: Path) -> None:
     assert root is not None
     outcome = BwrapSandbox(workspace).run(f"test -e {root / 'pyproject.toml'}")
     assert outcome.exit_code == 1
+
+
+#: Run in a child Python that imports receipts from a code snapshot: build a sandbox with
+#: the default hidden paths on a workspace inside the checkout and look around in it.
+SNAPSHOT_PROBE = """
+import json, sys
+from pathlib import Path
+import receipts
+from receipts.sandbox.bwrap import BwrapSandbox, project_root
+checkout, ws = Path(sys.argv[1]), Path(sys.argv[2])
+box = BwrapSandbox(ws)
+def run(cmd):
+    outcome = box.run(cmd)
+    return [outcome.exit_code, outcome.stdout]
+print(json.dumps({
+    "imported_from": receipts.__file__,
+    "project_root": str(project_root()),
+    "bench": run(f"ls -A {checkout}/bench"),
+    "hidden_check": run(f"cat {checkout}/bench/tasks/py-synthetic/hidden/check.py"),
+    "checkout": run(f"ls -A {checkout}"),
+    "workspace": run("echo synthetic > made.txt && cat made.txt"),
+}))
+"""
+
+
+@needs_bwrap
+def test_a_run_from_a_code_snapshot_cannot_list_the_checkouts_bench(
+    outside_tmp: Path, make_checkout: Callable[[Path], Path]
+) -> None:
+    # The checkout lies outside /tmp, so only the sandbox's own hiding can keep it out.
+    checkout = make_checkout(outside_tmp / "checkout")
+    snapshot = checkout / "runs" / "code" / SYNTHETIC_SHA
+    package = Path(receipts.__file__).resolve().parent
+    shutil.copytree(
+        package, snapshot / "src" / "receipts", ignore=shutil.ignore_patterns("__pycache__")
+    )
+    (snapshot / "SNAPSHOT_OF").write_text(SYNTHETIC_SHA + "\n", encoding="utf-8")
+    ws = checkout / "runs" / "work" / "smoke" / "run-1"
+    ws.mkdir(parents=True)
+    env = {**os.environ, "PYTHONPATH": str(snapshot / "src"), "PYTHONDONTWRITEBYTECODE": "1"}
+    child = subprocess.run(
+        [sys.executable, "-c", SNAPSHOT_PROBE, str(checkout), str(ws)],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
+        timeout=120,
+    )
+    seen = json.loads(child.stdout)
+    assert Path(seen["imported_from"]).is_relative_to(snapshot / "src")
+    assert seen["project_root"] == str(checkout)
+    assert seen["bench"][0] != 0 and seen["bench"][1] == ""
+    assert seen["hidden_check"][0] != 0 and seen["hidden_check"][1] == ""
+    assert seen["checkout"] == [0, "runs\n"]
+    assert seen["workspace"] == [0, "synthetic\n"]
+    assert (ws / "made.txt").read_text(encoding="utf-8") == "synthetic\n"
 
 
 @needs_bwrap
