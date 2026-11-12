@@ -3,7 +3,7 @@ STATE: ACTIVE
 
 # Status
 
-Updated 2026-11-11, goal_turn 6 (crunch time: the repository is public; Raj is away and
+Updated 2026-11-12, goal_turn 6 (crunch time: the repository is public; Raj is away and
 authorized updating `main` at each RELEASE-READY point, D49).
 History is in docs/LOG.md.
 
@@ -44,8 +44,8 @@ review. CAP_SHARE stays 0.2.
   skips the synthetic task content under `bench/tasks/`, D51 and D55; the gate passed by
   that narrowing), G3 on Python 3.11 and 3.12, and the canary string (D52) in every task
   definition and every answer-key file with a comment syntax (JSON answer-key files carry
-  none; no file the agent sees does). RELEASE-READY 01f40e9; `main` and the branch then
-  moved to e4230cc.
+  none; no file the agent sees does). RELEASE-READY points since: 01f40e9, b3f48b2, and
+  7d1d0f0, each with `main` updated (D49).
 - **Review of e4230cc: REVIEW: BLOCK** (banked in 2cf2cef). Its documentation findings (B4,
   N1, N3, N7, N9 to N16) are fixed in e8ee5de, with CORRECTIONS entries. B1 and N4 are
   fixed next (D56): `make freshness` and `make reproduce` re-derive the smoke summary from
@@ -54,8 +54,19 @@ review. CAP_SHARE stays 0.2.
   counts E2 and E3 as reported only when their REPORT.md sections bind numbers from their
   artifacts and name every judge; G5 re-derives every ledger-completeness row on the
   clone; G13 requires each README key result to link its artifact and preregistration.
-  Still open: B2 and N6 (G7 and G9 must require a row for every banked run and re-derive
-  row outcomes from the ledgers), being fixed in a separate worktree (D57).
+  B2 and N6 are fixed in 6eddbef (D57, merged in 310bd95): G7 and G9 require one row per
+  banked run, re-derive ground truth from each ledger, and run `tools/bank_study.py
+  <study> --check` on the clone; G9 checks each E4 run's code. N8 (D59): new study runs
+  carry the canary. Every review finding is now addressed; three adversarial workflows
+  are checking these fixes before the next push.
+- **Extractor (D60)**, merged in 6fde5bd: the pattern extractor reads the completion
+  statements found in the smoke reports (for example "has been successfully added",
+  "now uses"), with precision guards, before any E0 material exists. The smoke numbers
+  keep the run-time verdicts; the demo report card now shows the bizdays completion
+  sentence contradicted.
+- **Fresh-clone `make ci` caught a regression** in 8094d0a: the analyze-to-G7 contract
+  test banked ledgers without hidden-check results, which the new G7 requires. Fixed in
+  f3430d9; nothing after 7d1d0f0 is pushed until `make ci` passes on both Pythons.
 - **E0 verifier mode (D54)**, merged in 8692254: the held-out scoring verifies each seeded
   report with its task's requirement texts and records `verifier_mode`; `valid_types`,
   G5, and the G7/G9 instrument check refuse any other evaluation.
