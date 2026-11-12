@@ -2880,8 +2880,33 @@ def check_coverage(root: Path, study: str, rel: str, ids: Iterable[str]) -> int:
     committed file is a banked run, and each has a row. With the checks that no run id
     repeats and that every row is a banked run, the rows are one row per banked run
     (prereg 0001 section 11), so a run banked without a row never counts as a missing
-    run. Returns the number of banked runs."""
+    run. No committed file of a banked run may have been modified or deleted in any later
+    commit (D62), so a run cannot leave the analysis by being removed or replaced after it
+    was banked. Returns the number of banked runs."""
     base = f"artifacts/studies/{study}/runs/"
+    # A banked run is never changed or removed afterwards: a run banked after the freeze
+    # and then deleted, rewritten, or replaced by another attempt would otherwise vanish
+    # from both the rows and the missing-run count.
+    changed = [
+        line.split("\t", 1)[1]
+        for line in git(
+            root,
+            "log",
+            "--format=",
+            "--name-status",
+            "--no-renames",
+            "--diff-filter=MD",
+            "--",
+            base,
+        ).splitlines()
+        if "\t" in line
+    ]
+    require(
+        not changed,
+        f"{len(changed)} committed file(s) of runs banked under {base} were later changed or "
+        "deleted, and a banked run is never changed or removed: "
+        + ", ".join(sorted(set(changed))[:3]),
+    )
     banked = {path[len(base) :].split("/", 1)[0] for path in tracked(root, base)}
     unrowed = sorted(banked - set(ids))
     require(

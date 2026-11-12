@@ -1213,6 +1213,31 @@ def test_a_run_banked_after_the_rows_and_results_fails(git_repo: Path, commit: C
         ship_check.g7(context(git_repo, sha))
 
 
+@pytest.mark.parametrize("change", ["delete", "rewrite"])
+def test_a_banked_run_changed_or_removed_later_fails(
+    git_repo: Path, commit: Commit, change: str
+) -> None:
+    # A run banked and then deleted with its row, or rewritten as another attempt, in a
+    # later commit would leave both the rows and the missing-run count; banked runs are
+    # immutable (D62). The SYNTHETIC history: two banked runs, then the change.
+    runs = git_repo / "artifacts" / "studies" / "e1" / "runs"
+    for rid in ("r1", "r2"):
+        (runs / rid).mkdir(parents=True)
+        (runs / rid / "run.json").write_text(f'{{"run_id": "{rid}"}}\n', encoding="utf-8")
+    commit(git_repo, "SYNTHETIC banked runs")
+    assert ship_check.check_coverage(git_repo, "e1", RUNS, ["r1", "r2"]) == 2
+    if change == "delete":
+        (runs / "r2" / "run.json").unlink()
+        (runs / "r2").rmdir()
+        ids = ["r1"]
+    else:
+        (runs / "r2" / "run.json").write_text('{"run_id": "r2", "attempt": 2}\n', "utf-8")
+        ids = ["r1", "r2"]
+    commit(git_repo, f"SYNTHETIC {change} of a banked run")
+    with pytest.raises(GateError, match=r"were later changed or deleted.*runs/r2/run\.json"):
+        ship_check.check_coverage(git_repo, "e1", RUNS, ids)
+
+
 def banked_truth(index: int, truth: bool | None) -> Ledgers:
     """Bank the hidden checks of the ``index``-th planned run as giving ``truth``."""
     run_id = planned_run(index)

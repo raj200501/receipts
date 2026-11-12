@@ -817,3 +817,11 @@ is the more harmful error; a missed completion statement lowers that rate. The e
 extractor is restored with its known recall gaps (README.md Limitations), and the D60
 phrasing families wait for a revision that carries these precision guards and passes the
 same adversarial check. The D60 entry stays as the record of what was tried.
+
+**D62. Banked study runs are immutable.** Recorded 2026-11-12, before the change is
+committed (adversarial check of D57). G7 and G9 counted only the runs present at HEAD, so a
+run banked after the freeze and then deleted together with its row, or rewritten as another
+attempt, in a later commit would leave both the rows and the missing-run count. The gates
+now refuse any committed file under `artifacts/studies/<study>/runs/` that a later commit
+modified or deleted (git log with renames off, so a rename is a deletion). A run is banked
+once and never changed; a run that must be redone is banked as a new run, with its own id.
