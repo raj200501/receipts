@@ -2705,6 +2705,38 @@ def heldout_attempt(root: Path, seeded: Mapping[str, Any]) -> int:
     return n
 
 
+def rescored_heldout(ctx: Context) -> None:
+    """The held-out evaluation is what the instrument at HEAD scores now (review B6,
+    DECISIONS D66). ``tools/e0.py recheck``, run in the clone after ``make setup``,
+    scores every report of the frozen held-out manifest again with the code
+    ``tools/e0.py evaluate`` runs (``receipts.evaluation.e0.score_split``): no model
+    call, no attempt logged, no file written. It exits non-zero unless the evaluation's
+    items, requirement digests (``report_requirements``, D54), per-type results, top
+    five, passes, ``all_top5_pass``, verifier mode, and report count are the new ones, so
+    a prediction or a per-type value typed into the file, or a requirement text edited
+    after the scoring, fails. Scoring needs the extractor and the verifier, which this
+    stdlib-only file cannot run and must not copy; :func:`evaluated_instrument` holds the
+    clone's instrument files to the evaluated ones. The FAIL line quotes the tool's own
+    reason from stderr (D64)."""
+    setup = ctx.make("setup", 900)
+    require(
+        setup.ok,
+        f"make setup failed in the clone (exit {setup.returncode}), so the held-out scoring "
+        "was not re-run",
+    )
+    check = ctx.python("e0-recheck", ["tools/e0.py", "recheck"], 1800)
+    said = [line.strip() for line in check.stderr.splitlines() if line.strip()]
+    detail = next(
+        (line for line in said if line.startswith("e0 recheck: ")),
+        said[-1] if said else check.last_line(),
+    )
+    require(
+        check.ok,
+        "the held-out scoring was not reproduced in the clone (tools/e0.py recheck, exit "
+        f"{check.returncode}): {detail}",
+    )
+
+
 # A runs directory the completeness re-derivation may read: a study's banked runs.
 STUDY_RUNS_DIR = re.compile(r"artifacts/studies/[A-Za-z0-9][A-Za-z0-9._-]*/runs")
 
@@ -2836,8 +2868,9 @@ def ledger_completeness(
 
 def g5(ctx: Context) -> str:
     """Instrument validity on the held-out seeded set, plus ledger completeness. The
-    evaluation is checked against the attempt log (:func:`heldout_attempt`), so the
-    attempt history is not taken on trust (review B6, DECISIONS D66)."""
+    recorded scoring is checked against the attempt log (:func:`heldout_attempt`) and
+    re-run in the clone (:func:`rescored_heldout`), so neither the predictions nor the
+    attempt history is taken on trust (review B6, DECISIONS D66)."""
     root = ctx.clone
     banked = {
         str(r.row["run_id"]): r for r in verified_smoke_runs(root, load_json(root, SMOKE_RUNS))
@@ -2857,6 +2890,7 @@ def g5(ctx: Context) -> str:
     gold, ignorable = heldout_claims(root, reports)
     items = scored_items(seeded, reports, gold, ignorable)
     attempt = heldout_attempt(root, seeded)
+    rescored_heldout(ctx)
     parts: list[str] = []
     failing: list[str] = []
     for ctype in top5:
@@ -2882,7 +2916,8 @@ def g5(ctx: Context) -> str:
     )
     return (
         "; ".join(parts)
-        + f"; held-out attempt {attempt}{earlier}"
+        + f"; held-out attempt {attempt}{earlier}, its scoring re-run in the clone with the "
+        "same results"
         + f"; instrument at {instrument[:12]} unchanged at HEAD"
         + f"; ledger completeness 100% on {runs} runs ({compared} commands, re-derived; "
         f"{unparsed} unparsed actions)"

@@ -5,7 +5,12 @@ Every artifact here is SYNTHETIC, made up only to exercise ``ship_check.g5`` in 
 git repositories: smoke-run rows, blind labels, seeded reports and their gold claims,
 scoring items, held-out attempt logs, and ledger completeness rows. Smoke rows are
 marked ``synthetic: false`` only so the gate treats them as real runs. The "instrument"
-is a small stand-in package of one-line modules. Nothing here is a model result or a
+is a small stand-in package of one-line modules, which cannot score a report, so the
+gate's re-run of the held-out scoring (``tools/e0.py recheck`` in the clone, D66) is
+replaced by a stand-in that agrees (``rescoring_agrees``), as the completeness
+re-derivation is (``rederivation_agrees``). The tests of the real gate step run it with a
+stand-in tool; tests/evaluation/test_e0.py and tests/repo_tools/test_e0_cli.py run the
+real re-scoring on small genuine fixtures. Nothing here is a model result or a
 real-world result.
 """
 
@@ -30,6 +35,7 @@ from receipts.ledger.events import GENESIS, Event
 Commit = Callable[[Path, str], str]
 GateError = ship_check.GateError
 ORIGINAL_REDERIVE = ship_check.rederived_completeness
+ORIGINAL_RESCORE = ship_check.rescored_heldout
 
 AGENT = "minimal-agent/qwen2.5-coder-7b-instruct-q4km"
 TYPES = ("tests_pass", "file_modified", "ran_command", "test_count", "task_complete")
@@ -336,6 +342,21 @@ def rederivation_agrees(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ship_check, "rederived_completeness", agree)
 
 
+@pytest.fixture(autouse=True)
+def rescoring_agrees(monkeypatch: pytest.MonkeyPatch) -> list[ship_check.Context]:
+    """By default the re-run of the held-out scoring (``tools/e0.py recheck`` on the clone,
+    which the stand-in instrument of one-line modules cannot run) finds the committed
+    evaluation unchanged. It records the context of each call; the tests of the real step
+    use ORIGINAL_RESCORE, and tests/evaluation/test_e0.py runs the real re-scoring."""
+    calls: list[ship_check.Context] = []
+
+    def agree(ctx: ship_check.Context) -> None:
+        calls.append(ctx)
+
+    monkeypatch.setattr(ship_check, "rescored_heldout", agree)
+    return calls
+
+
 def write_ledger(path: Path, events: Sequence[tuple[str, Mapping[str, Any]]]) -> None:
     """A hash-chained ledger written with receipts.ledger's own event hashing."""
     prev, lines = GENESIS, []
@@ -443,7 +464,7 @@ def test_valid_e0_artifacts_pass(git_repo: Path, commit: Commit) -> None:
     ctx, _ = project(git_repo, commit)
     evidence = ship_check.g5(ctx)
     assert "tests_pass P=1.000" in evidence
-    assert "held-out attempt 1;" in evidence
+    assert "held-out attempt 1, its scoring re-run in the clone with the same results" in evidence
     assert "ledger completeness 100% on 5 runs" in evidence
 
 
@@ -1215,6 +1236,107 @@ def test_runs_dirs_must_be_committed_study_runs_in_the_clone(
     assert ctx.calls == []  # refused before tools/e0.py reads anything
 
 
+# ---------------------------------------------------------------- review B6: re-scoring (D66)
+
+
+def test_g5_reruns_the_heldout_scoring(
+    git_repo: Path, commit: Commit, rescoring_agrees: list[ship_check.Context]
+) -> None:
+    ctx, _ = project(git_repo, commit)
+    assert "scoring re-run in the clone" in ship_check.g5(ctx)
+    assert rescoring_agrees == [ctx]
+
+
+def test_a_rescoring_that_differs_fails(
+    git_repo: Path, commit: Commit, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # perfect_items copies each gold verdict into pred_verdict, which no instrument of
+    # one-line modules produces: only re-running the scoring shows it.
+    ctx, _ = project(git_repo, commit)
+
+    def differs(ctx: ship_check.Context) -> None:
+        raise GateError("SYNTHETIC: the held-out scoring was not reproduced in the clone")
+
+    monkeypatch.setattr(ship_check, "rescored_heldout", differs)
+    with pytest.raises(GateError, match="SYNTHETIC: the held-out scoring was not reproduced"):
+        ship_check.g5(ctx)
+
+
+class RecheckContext(ship_check.Context):
+    """A Context whose make and python calls are SYNTHETIC stand-ins for the clone's:
+    ``make setup`` exits ``setup_code``, and ``tools/e0.py`` exits ``code`` with
+    ``stderr``."""
+
+    calls: list[list[str]]
+    setup_code: int
+    code: int
+    stderr: str
+
+    def make(self, target: str, timeout: float, *args: str, **kw: Any) -> ship_check.CmdResult:
+        self.calls.append(["make", target])
+        return ship_check.CmdResult(f"make-{target}", self.setup_code, "", "", 0.0)
+
+    def python(self, name: str, script_args: Sequence[str], timeout: float) -> ship_check.CmdResult:
+        self.calls.append(list(script_args))
+        return ship_check.CmdResult(name, self.code, "", self.stderr, 0.0)
+
+
+def recheck_context(
+    root: Path, *, setup_code: int = 0, code: int = 0, stderr: str = ""
+) -> RecheckContext:
+    """A :class:`RecheckContext` on ``root`` with the given exit codes and stderr."""
+    ctx = RecheckContext(orig=root, clone=root, logs=root, fast=True, sha="0" * 40)
+    ctx.calls, ctx.setup_code, ctx.code, ctx.stderr = [], setup_code, code, stderr
+    return ctx
+
+
+def test_the_rescoring_runs_the_recheck_tool_in_the_clone(tmp_path: Path) -> None:
+    # ORIGINAL_RESCORE is the real function, taken before the autouse stand-in.
+    ctx = recheck_context(tmp_path)
+    ORIGINAL_RESCORE(ctx)
+    assert ctx.calls == [["make", "setup"], ["tools/e0.py", "recheck"]]
+
+
+MISMATCH = (
+    "e0 recheck: artifacts/e0/seeded_eval.json differs from a new scoring of the held-out "
+    "reports in items; first differing item: items[0] (report r1, tests_pass): pred_verdict "
+    '"supported" in the file, "contradicted" scored again'
+)
+
+
+@pytest.mark.parametrize(
+    ("code", "stderr", "quoted"),
+    [
+        pytest.param(1, MISMATCH + "\n", MISMATCH, id="differs"),
+        pytest.param(
+            2,
+            "SYNTHETIC warning\ne0 recheck: the instrument has uncommitted changes (x.py)\n",
+            "e0 recheck: the instrument has uncommitted changes (x.py)",
+            id="refused",
+        ),
+        pytest.param(1, "Traceback\nValueError: boom\n", "ValueError: boom", id="crashed"),
+        pytest.param(124, "[timeout after 1800s]", "[timeout after 1800s]", id="timeout"),
+    ],
+)
+def test_the_rescoring_quotes_the_tools_reason(
+    tmp_path: Path, code: int, stderr: str, quoted: str
+) -> None:
+    ctx = recheck_context(tmp_path, code=code, stderr=stderr)
+    pattern = (
+        r"^the held-out scoring was not reproduced in the clone \(tools/e0\.py recheck, "
+        rf"exit {code}\): {re.escape(quoted)}$"
+    )
+    with pytest.raises(GateError, match=pattern):
+        ORIGINAL_RESCORE(ctx)
+
+
+def test_the_rescoring_needs_make_setup(tmp_path: Path) -> None:
+    ctx = recheck_context(tmp_path, setup_code=2)
+    with pytest.raises(GateError, match=r"make setup failed in the clone \(exit 2\)"):
+        ORIGINAL_RESCORE(ctx)
+    assert ctx.calls == [["make", "setup"]]
+
+
 # ---------------------------------------------------------------- review B6: attempt log (D66)
 
 
@@ -1465,7 +1587,10 @@ def test_a_rescore_on_the_same_instrument_trees_passes(git_repo: Path, commit: C
     put_evaluation(git_repo, perfect_items(DOCS), later)
     sha = commit(git_repo, "score the held-out half again on the same instrument")
     evidence = ship_check.g5(context(git_repo, sha))
-    assert "held-out attempt 2 (1 earlier attempt on the same instrument trees);" in evidence
+    assert (
+        "held-out attempt 2 (1 earlier attempt on the same instrument trees), its scoring "
+        "re-run in the clone" in evidence
+    )
 
 
 def test_an_attempt_removed_from_the_log_later_fails(git_repo: Path, commit: Commit) -> None:

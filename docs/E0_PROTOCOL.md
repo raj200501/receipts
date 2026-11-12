@@ -35,9 +35,11 @@ held-out half. The development half may be used to improve the extractor. The he
 half is hashed into `artifacts/e0/heldout_manifest.json` and that file is committed before
 the held-out reports are ever scored; tools/ship_check.py verifies the manifest's first
 commit strictly precedes the evaluation's first commit and that no held-out report
-changed. It also reads `artifacts/e0/heldout_attempts.jsonl`: the evaluation must be
-the last scoring of the held-out half, and an earlier scoring on other instrument trees
-fails the gate (DECISIONS D66; see Recheck).
+changed. It also scores every held-out report again in its clone (`tools/e0.py
+recheck`), so the predictions in the evaluation are never taken on trust, and reads
+`artifacts/e0/heldout_attempts.jsonl`: the evaluation must be the last scoring of the
+held-out half, and an earlier scoring on other instrument trees fails the gate (DECISIONS
+D66; see Recheck).
 
 **Scoring.** `receipts.evaluation.seeded`: a predicted claim matches a gold claim of the
 same type when their spans overlap (one to one, largest overlap first). Per claim type,
@@ -397,8 +399,9 @@ attempt. The evaluation's `verifier_mode`, `reports`, `report_requirements`, `it
 `provenance`) are not compared. So a prediction typed into the file, a typed per-type
 value, or a requirement text edited after the scoring (its digest in
 `report_requirements` changes) exits 1, with one stderr line that names the differing
-fields (and the first differing keys of each) and the first differing item. Gate G5
-reads `heldout_attempts.jsonl`, which must be committed and never cut or rewritten
+fields (and the first differing keys of each) and the first differing item. Gate G5 runs
+`recheck` in its fresh clone after `make setup` and quotes that line when it fails. G5
+also reads `heldout_attempts.jsonl`, which must be committed and never cut or rewritten
 (every committed version is the start of the one at HEAD), with one well-formed attempt
 per line, numbered 1 to n in order; the evaluation must be attempt n, and attempt n must
 have logged its instrument commit and trees, the per-type counts of its top five, its

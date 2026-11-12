@@ -11,11 +11,13 @@ tree (tools/ship_check.py) on what this tool writes.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import itertools
 import json
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +29,7 @@ from receipts.evaluation import e0
 from receipts.evaluation.seeded import VERDICTS
 from tests.evaluation.test_e0 import (
     LABEL_TOP5,
+    REQUIREMENTS,
     SMOKE_AGENT,
     label_output,
     make_world,
@@ -609,6 +612,82 @@ def test_recheck_through_the_command_line(
     (git_repo / "src/receipts/claims/wip.py").write_text("x = 1\n", "utf-8")
     assert run(git_repo, "recheck") == 2
     assert "the instrument has uncommitted changes" in capsys.readouterr().err
+
+
+class CliContext(ship_check.Context):
+    """A gate Context on a SYNTHETIC repository: ``make`` succeeds, and a repository script
+    is this working tree's ``tools/e0.py``, run in process on the repository ``clone``."""
+
+    def make(self, target: str, timeout: float, *args: str, **kw: Any) -> ship_check.CmdResult:
+        return ship_check.CmdResult(f"make-{target}", 0, "", "", 0.0)
+
+    def python(self, name: str, script_args: Sequence[str], timeout: float) -> ship_check.CmdResult:
+        assert script_args[0] == "tools/e0.py"
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main(list(script_args[1:]), root=self.clone)
+        return ship_check.CmdResult(name, code, out.getvalue(), err.getvalue(), 0.0)
+
+
+def cli_context(root: Path, sha: str) -> CliContext:
+    """A fresh :class:`CliContext` (its results cache empty) on ``root`` at ``sha``."""
+    return CliContext(orig=root, clone=root, logs=root, fast=True, sha=sha)
+
+
+def retype_per_type(root: Path) -> None:
+    """Hand-edit a per-type count of the committed evaluation (SYNTHETIC tampering): one
+    fewer correct file_modified claim, its pass left as it was."""
+    data = json.loads((root / e0.EVAL).read_text("utf-8"))
+    data["per_type"]["file_modified"]["correct"] -= 1
+    e0.write_json(root / e0.EVAL, data)
+
+
+def edit_requirement(root: Path) -> None:
+    """Edit a requirement text of the task the held-out reports' ledgers name, after the
+    scoring (SYNTHETIC task files): the digests the evaluation recorded (D54) go stale."""
+    task = root / "bench" / "tasks" / "py-alpha" / "task.toml"
+    text = task.read_text("utf-8")
+    assert REQUIREMENTS["R2"] in text
+    task.write_text(text.replace(REQUIREMENTS["R2"], "The parser rejects bad rows fast."), "utf-8")
+
+
+@pytest.mark.parametrize(
+    ("tamper", "named"),
+    [
+        pytest.param(
+            retype_first_prediction,
+            r"in items; first differing item: items\[0\] \(report rep-3, \w+\): pred_verdict ",
+            id="typed-prediction",
+        ),
+        pytest.param(retype_per_type, r"in per_type \(file_modified\)$", id="typed-per-type"),
+        pytest.param(
+            edit_requirement, r"in report_requirements \(rep-3, rep-9\)", id="edited-requirement"
+        ),
+    ],
+)
+def test_g5_reruns_the_scoring_this_tool_records(
+    git_repo: Path,
+    commit: Commit,
+    capsys: pytest.CaptureFixture[str],
+    tamper: Callable[[Path], None],
+    named: str,
+) -> None:
+    """The G5 code of this working tree (ship_check.rescored_heldout) runs ``tools/e0.py
+    recheck`` on the evaluation this tool writes, with the real extractor and verifier: it
+    passes, and a prediction or a per-type count typed into the file, or a requirement
+    text edited after the scoring, fails with the tool's reason, so the producer and the
+    gate cannot drift (review B6, D66)."""
+    sha = evaluated(git_repo, commit, capsys)
+    ship_check.rescored_heldout(cli_context(git_repo, sha))
+    tamper(git_repo)
+    sha = commit(git_repo, "change the evaluation or its inputs after the held-out scoring")
+    with pytest.raises(
+        ship_check.GateError,
+        match=r"^the held-out scoring was not reproduced in the clone \(tools/e0\.py recheck, "
+        r"exit 1\): e0 recheck: artifacts/e0/seeded_eval\.json differs from a new scoring of "
+        r"the held-out reports " + named,
+    ):
+        ship_check.rescored_heldout(cli_context(git_repo, sha))
 
 
 def test_g5_reads_the_attempt_log_this_tool_writes(
