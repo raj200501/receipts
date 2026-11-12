@@ -892,3 +892,17 @@ not exclude the run. The first such run, smoke-ts-query-string, wrote imports of
 `../../utils` and deeper into `src/stringify.ts`; none of the paths they name exists, and
 every `npm test` after them failed with `ERR_MODULE_NOT_FOUND`, so nothing outside the
 workspace was read. It is banked, and the finding is reported with it.
+
+**D69. G5 compares held-out attempts by the instrument each one scored (review B6, a
+verifier's finding on D66).** Recorded 2026-11-12, before the change is merged. The
+attempt log records whole directory trees, which also hold code that D36 leaves out of the
+instrument (the E2 and E3 code, the completeness code, the ledger recorder and parsers, the
+rest of the benchmark code), so comparing them would fail G5 for good after any edit to
+such code between two attempts, even a re-score with byte-identical scoring code. D66's
+"same instrument trees" is therefore read as D36's instrument: every file of the scoring
+step's import closure, computed at each attempt's commit, must be the same git blob at both
+commits, so a module that only one of the two attempts loaded counts too. Each earlier
+attempt's trees must still name the same paths as the last one's, and every attempt's trees
+must be git's trees at its commit. Still open: a requirement text edited between two
+held-out attempts is not compared, because the attempt log records no requirement digests;
+it is to be logged per attempt before any held-out scoring.
