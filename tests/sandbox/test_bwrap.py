@@ -132,6 +132,25 @@ def test_every_home_directory_is_scanned_by_default(
         assert path.resolve() in hidden
 
 
+def test_paths_this_process_cannot_look_up_are_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A CI runner's user cannot stat /root/.ssh: Path.exists raises PermissionError.
+    home, locked = tmp_path / "home", tmp_path / "locked"
+    (home / ".ssh").mkdir(parents=True)
+    real_exists = Path.exists
+
+    def exists(path: Path, *args: object, **kwargs: object) -> bool:
+        if path.is_relative_to(locked):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_exists(path)
+
+    monkeypatch.setattr(Path, "exists", exists)
+    hidden = default_hidden_paths([home, locked], tmp_path / "no-project")
+    assert (home / ".ssh").resolve() in hidden
+    assert not any(path.is_relative_to(locked) for path in hidden)
+
+
 def test_home_directories_lists_home_entries_and_password_homes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
