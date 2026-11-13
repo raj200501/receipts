@@ -81,7 +81,8 @@ def test_plain_directory_is_copied_and_committed(
     assert git(path, "log", "--format=%an <%ae>|%cn <%ce>|%s") == (
         f"{IDENTITY_NAME} <{IDENTITY_EMAIL}>|{IDENTITY_NAME} <{IDENTITY_EMAIL}>|{BASE_MESSAGE}"
     )
-    assert git(path, "log", "--format=%aI") == FIXED_DATE.replace("Z", "+00:00")
+    # newer git prints a UTC offset as "Z" for %aI, older git as "+00:00"
+    assert git(path, "log", "--format=%aI") in {FIXED_DATE, FIXED_DATE.replace("Z", "+00:00")}
     assert git(path, "config", "user.email") == IDENTITY_EMAIL
 
 
