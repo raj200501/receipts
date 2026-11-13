@@ -204,7 +204,14 @@ def default_hidden_paths(
         candidates.append(checkout)
     found: dict[Path, None] = {}
     for path in candidates:
-        if path.exists():
+        try:
+            present = path.exists()
+        except PermissionError:
+            # This process cannot even look up the path (for example ~/.ssh under
+            # another user's private home), and the sandbox runs as this process's
+            # user, so the sandbox cannot reach it either: nothing to hide.
+            continue
+        if present:
             found[path.resolve()] = None
     return tuple(found)
 
