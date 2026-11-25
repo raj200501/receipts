@@ -3,6 +3,53 @@
 Non-blocking issues raised by `make review`, with their status. Blocking
 issues are fixed before shipping and recorded here once resolved.
 
+## Review of 1f6f6625c4bb3c92013293cf3128a84a251c1267 (2026-11-25, reviewer subagent)
+
+Verdict: BLOCK. Blocking issue B7 is open at the reviewed commit and fixed in the commit
+after the one that banks this review; see `artifacts/review/latest.json`.
+
+- **B7** (blocking, rule 3): commit 6bcce25 replaced the README's dual-use caveat on false
+  success with an inexact sentence ("Hidden checks decide false success"), with no
+  CORRECTIONS.md entry. A run counts as a false success only when the extractor finds a
+  non-negated success claim, so a report that avoids extractable claims also avoids it
+  (src/receipts/verify/verifier.py, `claims_success` and `success_reported`); the
+  py-ci-workflow and ts-ci-workflow runs show it. The fix restores the caveat with both
+  runs and adds a CORRECTIONS.md entry dated 2026-11-25.
+
+Resolved since the review of 02bc774: B5, B6, N17, and the runner part of N18, as the
+resolved list of `artifacts/review/latest.json` describes.
+
+Still open, with new evidence where noted:
+
+- **N2. STATUS.md is internally stale (new evidence).** Its date line said 2026-11-12 and its
+  fast-check table was from 922cc0d, with an older REPORT.md word count, while its Now
+  section records the 2026-11-25 pass.
+- **N13. The review files drift by design.** docs/REVIEW_LOG.md is not in `ALLOWED_DRIFT`,
+  which keeps the list that docs/BUILD_BRIEF.md section 10.1 step 8 fixes, so a review counts
+  for a commit only if that commit's log already lists the review's non-blocking issues
+  (D10). This section logs N24 to N26 before the next review.
+- **N18** (gate part), **N19** (remaining part), **N20**, **N21**, **N22**, **N23**: open,
+  as the review of 02bc774 below and `artifacts/review/latest.json` describe.
+
+New:
+
+- **N24. Documentation statements that are not exact.** (a) README.md said every number on
+  the page is re-derived "from the raw run records", which does not fit the hook latency
+  numbers (wall-time samples in `artifacts/hook/latency.json`); (b) docs/HOOK.md said
+  `tools/hook_latency.py` replays the Stop hook "exactly as Claude Code calls it", and D73 said
+  the latency is bound in docs/HOOK.md, which binds no number; (c) docs/REPORT.md section 10
+  still said gates G7 to G9 "run the same re-derivation"; (d) the outbound draft called E4 "a
+  test of the Claude Code hook"; (e) README.md headed the study design "A measurement, not an
+  anecdote" although no study has run.
+- **N25. ship_check accepts a shallow clone outside G11.** The checkout the review ran from
+  was shallow, so the history checks of G5, G6, G7, and G9 walked truncated history (only
+  `tools/prereg.py` refuses a shallow clone). The checkout now has its full history;
+  refusing a shallow clone in ship_check itself is open.
+- **N26. G5 compares earlier held-out attempts by instrument code only.** The requirement
+  texts and claim-type counts each held-out attempt used are neither logged per attempt nor
+  compared, so a change to either between attempts would pass G5. Fix before any held-out
+  scoring (the open item of D69).
+
 ## Review of 02bc774bae7d165de57fed28062a75ac045145cd (2026-11-12, reviewer subagent)
 
 Verdict: BLOCK. Blocking issues B5 and B6 are open; see `artifacts/review/latest.json`.

@@ -3,13 +3,14 @@ STATE: ACTIVE
 
 # Status
 
-Updated 2026-11-12, goal_turn 6 (crunch time: the repository is public; Raj is away and
-authorized updating `main` at each RELEASE-READY point, D49).
+Updated 2026-11-25, goal_turn 6 (polish pass: the repository is public; Raj authorized
+updating `main` at each RELEASE-READY point, D49).
 History is in docs/LOG.md.
 
 ## Gates
 
-`python tools/ship_check.py --fast` at 922cc0d (fresh clone): **8/14** (FAST, does not count).
+`python tools/ship_check.py --fast` at 1f6f662 (fresh clone, run by the reviewer from a shallow
+checkout, N25): **8/14** (FAST, does not count).
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
@@ -23,9 +24,9 @@ History is in docs/LOG.md.
 | G8 Mechanisms, judges | FAIL | artifacts/e1/runs.jsonl missing |
 | G9 Mitigation | FAIL | artifacts/e4/results.json missing |
 | G10 Claim integrity | PASS | make claimcheck and make freshness pass on README.md and docs/REPORT.md; each derived artifact present agrees with a fresh derivation from the banked inputs |
-| G11 Prereg integrity | FAIL | no confirmatory artifacts cite a preregistration |
-| G12 Review | FAIL | latest review is not a valid SHIP for HEAD: REVIEW: BLOCK |
-| G13 Documentation | PASS | README follows section 11; REPORT.md 7897 words; figures reproduce; every reference verified |
+| G11 Prereg integrity | FAIL | make prereg-verify refused the shallow clone (N25); no preregistration is frozen and no confirmatory artifact exists |
+| G12 Review | FAIL | review of 1f6f662 (2026-11-25): REVIEW: BLOCK on B7, a README caveat on false success replaced by an inexact sentence; fixed in the next commit, and a new review is due |
+| G13 Documentation | PASS | README follows section 11; REPORT.md 7981 words; figures reproduce; every reference verified |
 | G14 Hygiene | PASS | secrets clean; cash_usd = 0, caps respected; private/ untracked; files present; clean |
 
 G1 to G4, G6, G10, G13, and G14 pass. G5 waits on E0 (next: the blind claim-type labels
