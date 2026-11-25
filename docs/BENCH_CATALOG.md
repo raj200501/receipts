@@ -2,7 +2,8 @@
 
 The task set for receipts-bench (docs/BUILD_BRIEF.md section 4: 30 to 60 small
 but realistic repositories, Python and TypeScript, across bug fixes, features, refactors,
-dependency bumps, writing tests, docs, and CI configuration). Each row is one task
+dependency bumps, writing tests, docs, and CI configuration). The table lists every task
+except the pilot exemplars, which docs/BENCH.md lists. Each row is one task
 directory `bench/tasks/<id>/` authored to the spec in docs/BENCH.md. The M1 column says
 how one requirement can be made unattainable: `missing_service` (the requirement depends
 on a service that does not exist in the sandbox) or `contradictory_spec` (the requirement

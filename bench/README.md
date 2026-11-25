@@ -5,8 +5,8 @@ task ships hidden ground-truth checks, a reference solution that passes them, an
 manifest of the manipulations used in the receipts study (M1 to M5).
 
 - `tasks/<task_id>/`: one task per directory, written to the spec in
-  [docs/BENCH.md](../docs/BENCH.md); the full set is in
-  [docs/BENCH_CATALOG.md](../docs/BENCH_CATALOG.md).
+  [docs/BENCH.md](../docs/BENCH.md); the tasks other than the pilot exemplars are listed in
+  [docs/BENCH_CATALOG.md](../docs/BENCH_CATALOG.md), and the pilot tasks in the table below.
 - `prompts/pressure.txt`: the shared M3 pressure text appended to the request.
 
 Every repository here is hand-written synthetic code made for this benchmark, not a

@@ -160,8 +160,8 @@ for Claude Code, recorder hooks passed from outside the workspace do. After the 
 the snapshot records the diff against the task's base commit, reruns the visible tests, and
 only then copies in and runs the hidden checks, so they are never in the agent's workspace.
 The study sandbox also hides the checkout that stores them, and a run refuses to start
-when it does not (D67). Smoke runs made from a code snapshot before D67 did not hide it,
-and the larger-window run added under D71 did; a path audit of the smoke ledgers (`tools/audit_run_paths.py`) finds
+when it does not (D67). Every smoke run but the larger-window run added under D71 ran from
+code older than D67 and did not hide it; the D71 run did; a path audit of the smoke ledgers (`tools/audit_run_paths.py`) finds
 no command or file-tool call that reached outside the run's workspace (D68). Every command
 runs in a disposable workspace (`src/receipts/sandbox`): Docker with `--network none`, or
 bubblewrap with the host root read-only and the workspace the only writable path. Study runs
@@ -410,8 +410,8 @@ The G6 smoke study runs every benchmark task once, unmanipulated, with `ma-qwen7
 end and to supply E0's ledgers. It was never preregistered as a test and is never pooled with
 E1 or E4. The study is complete: <!--n:smoke.runs-->40<!--/n--> runs are banked, one per
 task, <!--n:smoke.language.python-->20<!--/n--> on Python tasks and
-<!--n:smoke.language.typescript-->20<!--/n--> on TypeScript tasks; one task was run again
-with a larger context window under a plan amendment (section 5.2; D71, D72). `tools/smoke_outcomes.py` computes the numbers below from the banked
+<!--n:smoke.language.typescript-->20<!--/n--> on TypeScript tasks; the py-units-refactor
+task was run again with a larger context window under a plan amendment (section 5.2; D71, D72). `tools/smoke_outcomes.py` computes the numbers below from the banked
 runs into
 [`artifacts/exploratory/smoke_outcomes.json`](../artifacts/exploratory/smoke_outcomes.json),
 labeled exploratory; the verdicts are those the instrument gave at run time, before G5.
@@ -678,8 +678,9 @@ validation for every task, the E0 tooling, the analysis scripts for the draft pr
 re-verification at banking for the confirmatory studies (D42, D47), and the gates;
 `make ci` passes on a fresh clone on Python 3.11 and 3.12 before a push. Next, in order:
 
-1. Keep G12 current (any change beyond STATUS.md, docs/LOG.md, and the review needs a new
-   SHIP review), close the open items in STATUS.md, and record a hook demo run that blocks.
+1. Obtain independent reviews: G12 fails at any commit without a SHIP review of its own
+   (STATUS.md has the latest verdict); close the open items in STATUS.md, and record a hook
+   demo run that blocks.
 2. Run the E0
    labelers, writers,
    and adjudicators, the split, and the held-out evaluation.
@@ -689,5 +690,4 @@ re-verification at banking for the confirmatory studies (D42, D47), and the gate
    frozen.
 5. Add Claude arms only on a machine with a clean plan login, under their own preregistration.
 
-Until then, G5, G7 to G9, and G11 cannot pass, and G12 holds only while its review matches
-the current commit. Every claim verdict here remains the instrument's own.
+Until then, G5, G7 to G9, and G11 cannot pass. Every claim verdict here remains the instrument's own.

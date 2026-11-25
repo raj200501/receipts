@@ -8,8 +8,8 @@ rules in `receipts.bench.priorwork`, and the reference validation in
 `receipts.bench.validate`); when this document and the code disagree, the code wins and
 this document is a bug.
 
-The tasks are listed in [docs/BENCH_CATALOG.md](BENCH_CATALOG.md): each row is
-one task, with its id, language, category, concept, and M1 method. Build catalog tasks
+The tasks other than the pilot exemplars below are listed in
+[docs/BENCH_CATALOG.md](BENCH_CATALOG.md): each row is one task, with its id, language, category, concept, and M1 method. Build catalog tasks
 exactly as listed (same id, language, category, and M1 method).
 
 Four exemplar tasks show the patterns described here. They are reserved for pilots and

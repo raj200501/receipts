@@ -49,13 +49,15 @@ which only model runs need). The branch was fast-forwarded onto Raj's CI fixes o
   launch draft for Raj (rebound to the current registry) are up to date.
 - **Audit fixes, same pass:** two read-only audits (hygiene, first impression) found stale or
   wrong statements, now fixed: REPORT called the complete smoke study "partway" and listed
-  G6 among failing gates; README and DATA.md said no smoke run carries the canary or hid the
-  checkout, which is wrong for the larger-window D71 run; the D71 deviation had dropped off
+  G6 among failing gates; README said no smoke run carries the canary or hid the checkout,
+  which is wrong for the larger-window D71 run, and DATA.md did not name that run among those
+  that carry the canary; the D71 deviation had dropped off
   the top of the README; REPORT 5.2 had four bullets merged into one; "under a minute" was an
   unmeasured claim. README now gives the success-claim denominator and its bias direction,
-  leads the hook section with a one-session trial (`docs/claude-settings.example.json`), and
-  says "fail" where ship_check says FAIL. CI on `main` was green at e5f7c70, so the README
-  carries the CI badge.
+  leads the hook section with a one-session trial (`docs/claude-settings.example.json`); its
+  gate table said "fail" where ship_check says FAIL until the D73 pass moved the table here.
+  The README carries the CI badge, which shows the live result of CI on `main` (it passed at
+  e5f7c70 and at 6d4a697).
 - **Weak points fixed, not hidden (D73):** Raj asked for the negatives and weak points to go.
   Fixed for real: the Stop hook's latency is measured on the banked smoke ledgers and bound
   (`artifacts/hook/latency.json`); the demo card shows the run receipts caught

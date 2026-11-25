@@ -38,6 +38,7 @@ Runs made from now on carry the canary in those files and in `run.json`: the led
 `run_start` event, and a top-level `canary` key in `verification.json` and `run.json`
 (DECISIONS D59). The larger-window py-units-refactor smoke run that D71 added carries it.
 The other smoke runs, made with code that predates D59 (before that decision, or from the
-e4230cc snapshot), do not; they are left byte-identical because their records and hashes
-are what the gates and the smoke summary check.
+e4230cc snapshot), do not, and neither does the early pipeline-check run under
+`artifacts/studies/pipeline-check/`; they are left byte-identical because their records and
+hashes are what the gates and the smoke summary check.
 

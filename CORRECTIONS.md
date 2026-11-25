@@ -40,6 +40,18 @@ docs/BUILD_BRIEF.md section 9), newest first.
 - **README.md, Status** (from 6d4a697): the G2 row no longer said that G2 passes because
   D51 narrowed its type-ignore scan, which D55 requires the README to say. The Status
   section says it again.
+- **docs/REPORT.md, section 12** (from 6bcce25): its next steps said to "keep G12 current"
+  and that G12 "holds" while its review matches the commit, which reads as if G12 passed.
+  It fails at any commit without a SHIP review of its own; the text now says so.
+- **docs/BENCH_CATALOG.md, docs/BENCH.md, bench/README.md** (from 6d4a697): they called the
+  catalog the full task set. It lists every task except the pilot exemplars, which
+  docs/BENCH.md and bench/README.md list.
+- **README.md, Dual use, and docs/DATA.md** (from 6d4a697): their account of which banked
+  runs lack the canary left out the early pipeline-check run, which also predates D59.
+- **README.md, Limitations, and docs/REPORT.md, section 3** (from 6d4a697): "made from a
+  code snapshot before D67" read as a time, but several smoke runs started after D67 was
+  recorded, from older code. Every smoke run except the D71 run ran from code older than
+  D67.
 
 ## 2026-11-12
 

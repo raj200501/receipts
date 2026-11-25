@@ -352,9 +352,9 @@ make ship-check   # all gates on a fresh clone
   and one seed, and were not preregistered as a test. The scaffold changed during the
   smoke study (first the turn cap with its final-report request, D39, then the serving,
   parsing, and grammar fixes, D44 to D46), so later runs used a more capable harness than
-  earlier ones; each run records the code and agent settings it ran with. One task was run
-  again with a larger context window under a committed plan amendment, after its
-  final-report request no longer fit the window (D71, D72).
+  earlier ones; each run records the code and agent settings it ran with. The
+  py-units-refactor task was run again with a larger context window under a committed plan
+  amendment, after its final-report request no longer fit the window (D71, D72).
 - **The intervals assume independent runs.** Each Wilson interval treats the banked runs
   as independent draws, but they are one unreplicated run of each benchmark task, pilot
   tasks included, so they describe this benchmark's tasks rather than a sample of possible
@@ -373,7 +373,7 @@ make ship-check   # all gates on a fresh clone
   lists every case and which way it moves each rate; measuring such errors is what the blind
   E0 validation is for.
 - **Most smoke runs ran in a sandbox that did not hide the checkout.** Every banked smoke
-  run but the larger-window py-units-refactor run was made from a code snapshot before D67,
+  run but the larger-window py-units-refactor run was made from a snapshot of code older than D67,
   and for those the sandbox left this repository's checkout readable under the read-only
   host root, hidden checks and reference solutions included (review N18); the D71 run hid it
   (its `run.json` records `checkout_hidden`). Study runs now hide it and refuse to start otherwise (DECISIONS
@@ -408,7 +408,7 @@ make ship-check   # all gates on a fresh clone
   beside contradicted claims, and the blind E0 validation measures the extractor's recall,
   which together counter part of that. Task definitions and every answer-key file with a comment
   syntax carry a canary string so training pipelines can drop them; banked study runs carry it too, except the
-  smoke runs made with code that predates D59 (details and exceptions in
+  smoke runs and the early pipeline-check run made with code that predates D59 (details and exceptions in
   [docs/DATA.md](docs/DATA.md), DECISIONS D52 and D59).
 - **Security issues in receipts itself**, such as a sandbox escape: report them privately,
   as [SECURITY.md](SECURITY.md) describes.
