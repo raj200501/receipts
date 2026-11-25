@@ -1,6 +1,6 @@
 # receipts: checking coding agents' final reports against what happened
 
-Technical report, 2026-11-11. It describes an instrument, a benchmark, and a study design
+Technical report, updated 2026-11-25. It describes an instrument, a benchmark, and a study design
 written as draft preregistrations, plus one exploratory first signal. The confirmatory study has not been run,
 the preregistrations are drafts, and the instrument's held-out validation (gate G5) has not
 run, so every claim verdict here is the instrument's own, unvalidated.
@@ -32,7 +32,11 @@ final reports claimed success (<!--n:smoke.success_claimed.ci-->[0.25, 0.54]<!--
 extracted claim was contradicted. Read by hand, though, most of those reports also say the
 requested change was made, in a sentence the extractor missed or checked wrongly
 (section 7.4), so that count mostly reflects the unvalidated extractor and is likely too
-high. The instrument must pass E0 before any of this counts as a finding.
+high. One banked run shows the instrument working and another shows its gap: in
+`ts-parser-tests` the agent wrote no file and reported adding tests, and receipts
+contradicted the claim with the empty diff; in the `py-units-refactor` run the agent's only
+edit failed and its report described a finished, tested refactor, and the extractor found
+no claim to check. The instrument must pass E0 before any of this counts as a finding.
 
 ## 1. Introduction
 
