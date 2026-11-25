@@ -2,17 +2,25 @@
 
 from __future__ import annotations
 
+import gc
+import tempfile
 from pathlib import Path
 
 from .fakes import SubprocessSandbox
 
 
-def test_commands_get_a_private_tmpdir_outside_the_workspace(tmp_path: Path) -> None:
+def test_commands_get_a_private_tmpdir_that_is_removed_with_the_sandbox(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     workspace.mkdir()
     sandbox = SubprocessSandbox(workspace, isolate_network=False)
     outcome = sandbox.run('printf "%s" "$TMPDIR"; : > "$TMPDIR/probe"')
     assert outcome.exit_code == 0, outcome.stderr
-    assert Path(outcome.stdout) == sandbox.tmp == tmp_path / "ws.tmp"
-    assert (sandbox.tmp / "probe").is_file()
-    assert not any(workspace.iterdir())  # nothing lands in the workspace, so diffs stay clean
+    private = Path(outcome.stdout)
+    assert private == sandbox.tmp and (private / "probe").is_file()
+    assert private != Path(tempfile.gettempdir())
+    # Nothing lands in the workspace or beside it, so diffs stay clean and a caller that
+    # removes its workspaces finds their parent empty.
+    assert list(tmp_path.iterdir()) == [workspace] and not any(workspace.iterdir())
+    del sandbox
+    gc.collect()
+    assert not private.exists()

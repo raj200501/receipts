@@ -18,7 +18,9 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
+import weakref
 from collections.abc import Callable
 from pathlib import Path
 
@@ -76,9 +78,12 @@ class SubprocessSandbox:
         self._workspace = workspace
         self._isolate = isolate_network and _unshare_works()
         self.commands: list[str] = []
-        # A private temporary directory beside the workspace, as a real sandbox's own /tmp,
-        # so a task's own pytest never shares or prunes the host's /tmp/pytest-of-<user>.
-        self.tmp = workspace.parent / f"{workspace.name}.tmp"
+        # A private temporary directory, as a real sandbox's own /tmp, so a task's own pytest
+        # never shares or prunes the host's /tmp/pytest-of-<user>. It lies outside the
+        # workspace and its parent (callers remove those and check they are empty) and is
+        # removed with the sandbox.
+        self.tmp = Path(tempfile.mkdtemp(prefix="receipts-fake-tmp-"))
+        weakref.finalize(self, shutil.rmtree, self.tmp, ignore_errors=True)
 
     @property
     def backend(self) -> str:
