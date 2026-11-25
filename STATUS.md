@@ -34,11 +34,23 @@ review of the code with B5 and B6 fixed (the review of 02bc774 blocked on them).
 
 ## Now
 
-Final sprint and finale, 2026-11-12 (goal_turn 6). Raj gave one more hour for the gates,
-then the finale: finalize, update `main`, remove weaknesses, show strengths. Not all
-fourteen gates were reachable: G5, G7 to G9, and G11 need E0 and the studies (days of
-local-model compute here), and G12 needs another independent review (one a day at
-CAP_SHARE 0.2).
+Polish pass, 2026-11-25 (goal_turn 6, resumed). The build stopped on 2026-11-13 to save
+usage; Raj resumed it with one hour to make the repository impressive and useful for AI-lab
+engineers and investors. The container was new: `make setup` rebuilt the virtualenv and
+bubblewrap was reinstalled (`tools/provision.sh` would also rebuild the local model server,
+which only model runs need). The branch was fast-forwarded onto Raj's CI fixes on `main`.
+
+- **README rewritten for a first read:** the opening states what receipts does and where it
+  runs, the bound smoke finding with its interval, and the false report receipts caught
+  beside the one its extractor missed; then "Why it matters", an at-a-glance table, a
+  shorter "what it is and is not", the Claude Code hook install inline, and the gates as a
+  table. Every number is still bound and re-derived; the G13 README checks pass.
+- **Package and citation metadata** (URLs, keywords, classifiers, abstract) and the
+  launch draft for Raj (rebound to the current registry) are up to date.
+
+Earlier, 2026-11-12 (final sprint and finale): not all fourteen gates were reachable; G5,
+G7 to G9, and G11 need E0 and the studies, and G12 needs another independent review (one a
+day at CAP_SHARE 0.2).
 
 - **Independent review of 02bc774: REVIEW: BLOCK** (banked in 7bbdf9c). It confirmed B1
   to B4 of the previous review fixed and every bound number equal to its own recomputation,

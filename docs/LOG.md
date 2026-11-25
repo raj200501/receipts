@@ -179,3 +179,13 @@ The offline demo replays the banked pipeline-check run; pilot runs with reports 
   G6 passes in the fast check (8/14 at 922cc0d). The amended run's report claims finished,
   tested work while its only edit failed; the extractor found no claim in it, which the
   README now reports beside the fabricated report receipts caught.
+
+### 2026-11-25 polish pass, moved from STATUS.md when it ages
+
+- Resumed on a new container after the 2026-11-13 stop: virtualenv rebuilt, bubblewrap
+  reinstalled, branch fast-forwarded onto Raj's CI fixes on `main` (credential paths the
+  runner cannot stat are skipped; the job timeout is longer; both git spellings of a UTC
+  author date are accepted).
+- README rewritten for a first read by lab engineers and investors without changing any
+  claim's substance: what receipts does, the bound finding, the caught and the missed false
+  report, why it matters, components at a glance, the hook install, and a gate table.
