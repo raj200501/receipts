@@ -563,7 +563,7 @@ fresh one: strings, counts, and decisions exactly, floats within the tolerance t
 sets, so a run banked
 after a summary, or a value typed into one, fails (D56, D65, D70). A re-derivation reuses
 only the options each artifact lists and reads inputs only at their banked paths, so a
-hand-made input cannot re-derive to itself. Gates G7 to G9 run the same re-derivation on a
+hand-made input cannot re-derive to itself. Gates G7 to G9 re-derive the study artifacts they read on a
 fresh clone, and G5 scores the held-out split again and reads the attempt log (D66, D69).
 `make reproduce` makes the same check and rebuilds the registry and figures in a temporary
 directory, failing on any difference.

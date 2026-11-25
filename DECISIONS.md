@@ -976,7 +976,7 @@ overclaimed reports cannot overclaim its own state. The pass does two things ins
 (1) It fixes weak points for real where no model run is needed: the Stop hook's latency is
 measured on the banked smoke ledgers (`tools/hook_latency.py`, `artifacts/hook/latency.json`,
 the measurement prereg/0002 section 2 names for the packaged hook) and bound in README.md and
-docs/HOOK.md; the demo card shows the run receipts caught (ts-parser-tests) instead of a run
+docs/REPORT.md (docs/HOOK.md says how it is measured); the demo card shows the run receipts caught (ts-parser-tests) instead of a run
 whose card displays an extractor miss; the headline figure drops a bar that repeated
 another; and an independent review of the final commit is requested for G12. (2) It changes
 presentation only: each caveat is stated once, plainly, where it applies; the run-by-run list

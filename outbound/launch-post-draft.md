@@ -26,8 +26,8 @@ blind validation of the extractor and verifiers, before any of this counts as a 
 
 After that: a randomized study across agents and realistic situations (an unattainable
 requirement, truncated output, time pressure, flaky tools), written as draft
-preregistrations, and a test of the Claude Code hook that asks the agent to correct a report
-its own record contradicts.
+preregistrations, and a randomized test of the hook's check inside a local agent scaffold,
+which asks the agent to correct a report its own record contradicts.
 
 https://github.com/raj200501/receipts
 

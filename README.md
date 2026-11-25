@@ -82,13 +82,13 @@ the panel from the committed demo output (`tests/golden/demo_output.txt`).
   hidden checks, never from a model reading a transcript; a claim the record cannot settle
   is reported as unverifiable, never guessed. Whether LLM judges can match the ledger is one
   of the study's own questions (E3).
-- **A measurement, not an anecdote.** The study design crosses realistic situations (an
+- **Designed as a measurement, not an anecdote.** The study design crosses realistic situations (an
   unattainable requirement, truncated test output, time pressure, a long prior session,
   flaky tools) with agent configurations in a fractional factorial design of resolution V,
   so report faithfulness is compared on identical tasks, and it separates confusion (the
   agent never saw the failure) from overclaiming (it saw it and reported success anyway).
 - **Integrity enforced by code.** Every number on this page is bound to a banked artifact
-  and re-derived from the raw run records; preregistrations are hash-chained before their
+  and re-derived from it, the smoke numbers from the raw run records; preregistrations are hash-chained before their
   data exist; gates G1 to G14 run on a fresh clone of HEAD; independent adversarial reviews
   are banked, including the ones that blocked; and every changed claim has a dated entry in
   [CORRECTIONS.md](CORRECTIONS.md).
@@ -403,12 +403,15 @@ make ship-check   # all gates on a fresh clone
   evidence, before it is published. Drafts are prepared in [outbound/](outbound/) for the
   maintainer to review and send; none is sent automatically.
 - **Dual use.** The verifiers are public and deterministic, so an agent tuned against
-  them could learn to avoid checkable claims rather than report truthfully. Hidden checks
-  decide false success, omissions (known failures a report never mentions) are reported
-  beside contradicted claims, and the blind E0 validation measures the extractor's recall,
-  which together counter part of that. Task definitions and every answer-key file with a comment
-  syntax carry a canary string so training pipelines can drop them; banked study runs carry it too, except the
-  smoke runs and the early pipeline-check run made with code that predates D59 (details and exceptions in
+  them could learn to avoid checkable claims rather than report truthfully. False success is
+  judged by hidden checks rather than by the verifiers, but it still counts only reports in
+  which the extractor finds a success claim, so a report that avoids extractable claims also
+  avoids it (the py-ci-workflow and ts-ci-workflow reports already do so by accident).
+  Omissions (known failures a report never mentions) are reported beside contradicted
+  claims, and the blind E0 validation measures the extractor's recall. Task definitions and
+  every answer-key file with a comment syntax carry a canary string so training pipelines can
+  drop them; banked study runs carry it too, except the smoke runs and the early
+  pipeline-check run made with code that predates D59 (details and exceptions in
   [docs/DATA.md](docs/DATA.md), DECISIONS D52 and D59).
 - **Security issues in receipts itself**, such as a sandbox escape: report them privately,
   as [SECURITY.md](SECURITY.md) describes.

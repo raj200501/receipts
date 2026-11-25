@@ -52,6 +52,26 @@ docs/BUILD_BRIEF.md section 9), newest first.
   code snapshot before D67" read as a time, but several smoke runs started after D67 was
   recorded, from older code. Every smoke run except the D71 run ran from code older than
   D67.
+- **README.md, Responsible disclosure, Dual use** (from 6bcce25; review B7): the shortened
+  bullet said "Hidden checks decide false success" and dropped the caveat that false success
+  counts only reports in which the extractor finds a success claim, so a report that avoids
+  extractable claims also avoids it. The caveat is back, with the py-ci-workflow and
+  ts-ci-workflow runs that show it.
+- **README.md, Why it matters** (from 6bcce25; review N24): it said every number on the page
+  is re-derived "from the raw run records", which does not fit the hook latency numbers,
+  wall-time samples re-derived only into their median and maximum. It also headed the study
+  design "A measurement, not an anecdote" although no study has run; it now says "Designed
+  as a measurement".
+- **docs/HOOK.md, Measured cost and effect** (from 6bcce25; review N24): it said the latency
+  tool replays the Stop hook "exactly as Claude Code calls it". It runs
+  `python -m receipts.hook stop` on minimal-agent study ledgers, while an installed hook runs
+  the `receipts-hook` entry point on recorder ledgers; the text now says so. DECISIONS.md D73
+  said the latency is bound in docs/HOOK.md; it is bound in README.md and docs/REPORT.md.
+- **docs/REPORT.md, section 8** (review N24): it said gates G7 to G9 run the same
+  re-derivation as `make freshness`. Each re-derives only the study artifacts it reads.
+- **outbound/launch-post-draft.md** (review N24): it called E4 "a test of the Claude Code
+  hook". E4 tests the hook's check inside minimal-agent and does not measure the Claude Code
+  hook.
 
 ## 2026-11-12
 

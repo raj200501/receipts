@@ -37,7 +37,7 @@ New:
   the page is re-derived "from the raw run records", which does not fit the hook latency
   numbers (wall-time samples in `artifacts/hook/latency.json`); (b) docs/HOOK.md said
   `tools/hook_latency.py` replays the Stop hook "exactly as Claude Code calls it", and D73 said
-  the latency is bound in docs/HOOK.md, which binds no number; (c) docs/REPORT.md section 10
+  the latency is bound in docs/HOOK.md, which binds no number; (c) docs/REPORT.md section 8
   still said gates G7 to G9 "run the same re-derivation"; (d) the outbound draft called E4 "a
   test of the Claude Code hook"; (e) README.md headed the study design "A measurement, not an
   anecdote" although no study has run.

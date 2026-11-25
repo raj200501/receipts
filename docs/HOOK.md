@@ -84,11 +84,13 @@ anywhere, and receipts makes no model calls in the hook.
 
 ## Measured cost and effect
 
-**Latency.** `tools/hook_latency.py` replays the Stop hook on recorded sessions exactly as
-Claude Code calls it: one fresh `python -m receipts.hook stop` process per session, with the
-session's real ledger and final report, so each sample includes Python start-up. The samples
-from the recorded smoke sessions are banked in `artifacts/hook/latency.json`; the README
-reports their median and maximum.
+**Latency.** `tools/hook_latency.py` replays the Stop hook on the recorded smoke sessions:
+one fresh `python -m receipts.hook stop` process per session, given the documented Stop
+payload on stdin (the session's final report as `last_assistant_message`) and the run's
+ledger, so each sample includes Python start-up. Those ledgers come from minimal-agent study
+runs; an installed hook runs the same code through the `receipts-hook` entry point, on the
+ledgers its recorder hooks write. The samples are banked in `artifacts/hook/latency.json`;
+README.md and docs/REPORT.md report their median.
 
 **Effect on reports.** Not measured yet. Experiment E4, drafted as a preregistration in
 `prereg/0002-e4-mitigation.md`, tests the hook's check code inside minimal-agent; its results
