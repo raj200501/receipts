@@ -1,10 +1,11 @@
 """Measure receipts-hook's added latency on recorded sessions (gate G9).
 
 For each recorded run under the given study directories, this replays the Claude Code
-Stop hook exactly as Claude Code would call it: a fresh ``python -m receipts.hook stop``
-process with the documented Stop payload on stdin (``last_assistant_message`` set to the
-run's final report) and the run's real ledger. The wall time of that process, including
-interpreter start-up and imports, is one sample. Samples are banked in
+Stop hook the way Claude Code starts it: a fresh ``python -m receipts.hook stop`` process
+with the documented Stop payload on stdin (``last_assistant_message`` set to the run's
+final report) and the run's real ledger. These are study ledgers; an installed hook runs
+the ``receipts-hook`` entry point on the ledgers its recorder hooks write. The wall time
+of that process, including interpreter start-up and imports, is one sample. Samples are banked in
 ``artifacts/hook/latency.json`` with provenance; the median is computed from them by
 whatever reads the artifact, never typed by hand.
 """

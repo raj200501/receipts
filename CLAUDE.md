@@ -56,7 +56,7 @@ docs/BUILD_BRIEF.md (immutable; its SHA-256 is in docs/BUILD_BRIEF.sha256).
 | `make test` | pytest with coverage |
 | `make lint` | `ruff check` and `ruff format --check` |
 | `make typecheck` | `mypy --strict` |
-| `make ci` | lint, typecheck, test, offline demo (what CI runs on 3.11 and 3.12) |
+| `make ci` | lint, typecheck, test, offline demo, secrets scan (what CI runs on 3.11 and 3.12) |
 | `make demo` | offline demo from recorded fixtures, compared with its golden output |
 | `make prereg-verify` | preregistration chain and confirmatory-artifact ancestry |
 | `make claimcheck` | every number in README.md and docs/REPORT.md is bound to an artifact |

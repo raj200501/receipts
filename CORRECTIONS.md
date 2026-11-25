@@ -57,8 +57,8 @@ docs/BUILD_BRIEF.md section 9), newest first.
   counts only reports in which the extractor finds a success claim, so a report that avoids
   extractable claims also avoids it. The caveat is back, with the py-ci-workflow and
   ts-ci-workflow runs that show it.
-- **README.md, Why it matters** (from 6bcce25; review N24): it said every number on the page
-  is re-derived "from the raw run records", which does not fit the hook latency numbers,
+- **README.md, Why it matters** (from fc89cc9, inexact since 6bcce25 bound the hook latency;
+  review N24): it said every number on the page is re-derived "from the raw run records", which does not fit the hook latency numbers,
   wall-time samples re-derived only into their median and maximum. It also headed the study
   design "A measurement, not an anecdote" although no study has run; it now says "Designed
   as a measurement".
@@ -72,6 +72,15 @@ docs/BUILD_BRIEF.md section 9), newest first.
 - **outbound/launch-post-draft.md** (review N24): it called E4 "a test of the Claude Code
   hook". E4 tests the hook's check inside minimal-agent and does not measure the Claude Code
   hook.
+- **SECURITY.md, Scope and design** (since bootstrap; review B8): it said `make secrets-scan`
+  runs in CI. CI runs only `make ci`, which did not include the scan until D74; it does now,
+  so CI and `tools/prepush.sh` run it as rule 6 requires.
+- **docs/REPORT.md, sections 1 and 8, pyproject.toml, tools/hook_latency.py** (review N24):
+  REPORT said E4 "includes receipts-hook" (E4 tests the check behind it inside minimal-agent)
+  and that a local hook "now refuses" commits under a wrong identity (that hook lived in one
+  checkout, outside the repository); the package description said "Check every claim" (receipts
+  checks the claims its extractor finds); the latency tool's docstring said it replays the hook
+  "exactly as Claude Code would call it".
 
 ## 2026-11-12
 

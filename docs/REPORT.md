@@ -19,7 +19,7 @@ supplies small, synthetic Python and TypeScript repositories written for it with
 reference solutions, and realistic manipulations (M1 to M5). The study design comprises blind
 validation of the instrument (E0), a randomized fractional factorial across agent
 configurations on identical work (E1), mechanism and judge analyses (E2, E3), and a
-mitigation study that includes receipts-hook, a Claude Code Stop hook (E4).
+mitigation study of the check behind receipts-hook, a Claude Code Stop hook (E4).
 
 The only result so far is exploratory. In <!--n:smoke.runs-->40<!--/n--> unmanipulated smoke
 runs of a local Qwen2.5-Coder-7B-Instruct agent, no run passed every hidden check
@@ -594,7 +594,8 @@ instrument code or output, and labeler and writer packets are scanned so that no
 reader; adjudication packets, which carry the writers' report text, are not scanned yet. `make budget` checks the caps against the hash-pinned brief and shows that cash spend
 is nil; `make secrets-scan` reads every tracked file and fails closed. Process failures are
 recorded too: when a fixer agent once committed the working tree under a wrong identity, the
-commit was removed before any push and a local hook now refuses such commits (docs/LOG.md).
+commit was removed before any push, and a local pre-commit hook in that checkout refused
+such commits from then on (docs/LOG.md).
 
 ## 9. Limitations and threats to validity
 
@@ -653,7 +654,7 @@ Every figure and number here is rebuilt from committed files, without network or
 git clone https://github.com/raj200501/receipts.git && cd receipts
 make setup        # uv sync --locked
 make demo         # replay recorded runs through receipts; compare with the golden output
-make ci           # lint, mypy --strict, tests, offline demo
+make ci           # lint, mypy --strict, tests, offline demo, secrets scan
 make report       # numbers registry, figures, manifest, from banked artifacts only
 make reproduce    # rebuild registry and figures in a temporary directory and diff
 make ship-check   # every gate on a fresh clone of HEAD

@@ -984,3 +984,13 @@ of instrument errors moves from README.md to docs/REPORT.md section 7, which alr
 it; and internal cross-references leave the README where they carry no deviation. No caveat,
 failing gate, or negative result is removed, and STATUS.md keeps its gate table with FAIL
 rows.
+
+**D74. `make ci` runs the secrets scan (review B8).** Recorded 2026-11-25, before the
+change. Section 9 rule 6 requires `make secrets-scan` to run in CI and in ship-check, and
+SECURITY.md has said since bootstrap that it runs in CI. It did not: the only workflow runs
+`make ci`, which ran lint, typecheck, test, and the demo, so the scan ran only in G14, and
+`tools/prepush.sh` and the D49 release procedure pushed to `main` without it. The `ci` target
+now ends with `secrets-scan`, so the workflow, `tools/prepush.sh`, and the release procedure
+all run it. This keeps D27's lean CI (the scan only reads the tracked files) and adds no
+workflow; G3 still requires `make ci` to run lint, typecheck, test, and the demo, and the
+scan does not replace G14's own run on the fresh clone.

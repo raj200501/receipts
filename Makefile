@@ -28,7 +28,7 @@ lint:
 typecheck:
 	$(RUN) mypy --strict
 
-ci: lint typecheck test demo
+ci: lint typecheck test demo secrets-scan
 
 demo:
 	$(RUN) python tools/demo.py --check

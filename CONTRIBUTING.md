@@ -8,7 +8,7 @@ changes is reproducibility and honest reporting.
 ```bash
 make setup     # uv sync with the locked dev dependencies (Python 3.11+)
 make doctor    # what this machine can run
-make ci        # lint, typecheck, test, offline demo
+make ci        # lint, typecheck, test, offline demo, secrets scan
 ```
 
 ## Rules for changes
