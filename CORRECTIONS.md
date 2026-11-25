@@ -3,6 +3,44 @@
 Every changed or withdrawn claim gets a dated entry here (rule 3 of
 docs/BUILD_BRIEF.md section 9), newest first.
 
+## 2026-11-25
+
+- **docs/REPORT.md, section 7.1** (fixed in 6d4a697): it called the smoke study "partway"
+  and said the banked runs were not a random sample of the benchmark. The study is
+  complete, with one run of every task; one task was run again under a plan amendment
+  (D71, D72).
+- **docs/REPORT.md, section 8** (fixed in 6d4a697): it listed G6 among the gates that
+  cannot pass. G6 passes.
+- **README.md, Limitations, and docs/REPORT.md, section 7.4** (fixed in 6d4a697): they
+  said the banked runs were the tasks that happened to run first. They are one unreplicated
+  run of each task.
+- **README.md, Dual use, and docs/DATA.md** (fixed in 6d4a697): they said no smoke run
+  carries the canary. The larger-window py-units-refactor run (D71) carries it in
+  `run.json`, `verification.json`, and its ledger.
+- **README.md, Limitations, and docs/REPORT.md, section 3** (fixed in 6d4a697): they said
+  every banked smoke run left this repository's checkout readable to the agent. The
+  larger-window py-units-refactor run hid it (its `run.json` records `checkout_hidden`).
+- **README.md, Quickstart** (fixed in 6d4a697): its heading promised the demo "under a
+  minute", a timing claim with no banked measurement. It is gone.
+- **README.md, "One false report caught, one missed", and the launch draft in outbound/**:
+  they said that for the larger-window py-units-refactor report "nothing was flagged".
+  receipts did flag the run: it listed the failed hidden checks the report does not admit.
+  What it missed is narrower: the extractor found no claim, so no claim was contradicted.
+- **README.md, Quickstart**: it said `make demo` prints each recorded run's report card.
+  `make demo` prints only whether the output matches the golden file; `tools/demo.py`
+  prints the cards, and the Quickstart now runs it.
+- **README.md, Use it on your own agent** (from 6d4a697): the one-session trial changed
+  into the receipts checkout and then started Claude Code there, so the trial session
+  would have run on this repository instead of the user's project. It now starts Claude
+  Code from the user's project.
+- **README.md, Integrity by construction** (from 6d4a697): it said an unbound number
+  "fails the build"; CI runs `make ci`, which does not run claimcheck, so the number fails
+  `make claimcheck` and gate G10. It also said gates G7 to G9 run the same derivation as
+  freshness; they re-derive only the study artifacts they read.
+- **README.md, Status** (from 6d4a697): the G2 row no longer said that G2 passes because
+  D51 narrowed its type-ignore scan, which D55 requires the README to say. The Status
+  section says it again.
+
 ## 2026-11-12
 
 - **README.md (opening and status), STATUS.md, and DECISIONS D71: why py-units-refactor was

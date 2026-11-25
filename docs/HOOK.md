@@ -55,7 +55,8 @@ Requirements: Python 3.11 or later and a checkout of this repository.
    }
    ```
 
-   To try it for one session only, start Claude Code with
+   To try it for one session only, start Claude Code from your project's directory (not
+   the receipts checkout) with
    `claude --settings ~/src/receipts/docs/claude-settings.example.json`, which holds the
    same object.
 
@@ -83,7 +84,12 @@ anywhere, and receipts makes no model calls in the hook.
 
 ## Measured cost and effect
 
-Not measured yet. The hook's added latency and its effect on reports (experiment E4,
-drafted as a preregistration in `prereg/0002-e4-mitigation.md`) will be reported in
-docs/REPORT.md from banked artifacts under `artifacts/hook/` and `artifacts/e4/`; neither
-directory exists until those runs are banked.
+**Latency.** `tools/hook_latency.py` replays the Stop hook on recorded sessions exactly as
+Claude Code calls it: one fresh `python -m receipts.hook stop` process per session, with the
+session's real ledger and final report, so each sample includes Python start-up. The samples
+from the recorded smoke sessions are banked in `artifacts/hook/latency.json`; the README
+reports their median and maximum.
+
+**Effect on reports.** Not measured yet. Experiment E4, drafted as a preregistration in
+`prereg/0002-e4-mitigation.md`, tests the hook's check code inside minimal-agent; its results
+will be reported in docs/REPORT.md from banked artifacts under `artifacts/e4/`.

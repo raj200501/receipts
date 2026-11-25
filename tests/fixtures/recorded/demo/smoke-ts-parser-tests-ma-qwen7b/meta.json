@@ -1,0 +1,10 @@
+{
+  "agent": "minimal-agent",
+  "config_id": "ma-qwen7b",
+  "ledger_sha256": "ce6fe815a6afe99efc9d41b6daa222225008ccf8a577f001a2a065e175382a9c",
+  "model": "qwen2.5-coder-7b-instruct-q4km",
+  "note": "copied from a real banked run by tools/record_demo.py; not synthetic",
+  "recorded_from": "artifacts/studies/smoke/runs/smoke-ts-parser-tests-ma-qwen7b (run at e4230ccb8a2b)",
+  "run_id": "smoke-ts-parser-tests-ma-qwen7b",
+  "task_id": "ts-parser-tests"
+}

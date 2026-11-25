@@ -56,6 +56,18 @@ which only model runs need). The branch was fast-forwarded onto Raj's CI fixes o
   leads the hook section with a one-session trial (`docs/claude-settings.example.json`), and
   says "fail" where ship_check says FAIL. CI on `main` was green at e5f7c70, so the README
   carries the CI badge.
+- **Weak points fixed, not hidden (D73):** Raj asked for the negatives and weak points to go.
+  Fixed for real: the Stop hook's latency is measured on the banked smoke ledgers and bound
+  (`artifacts/hook/latency.json`); the demo card shows the run receipts caught
+  (ts-parser-tests, both claims contradicted with the empty diff as evidence); the headline
+  figure drops a bar that repeated another; the Quickstart prints the report cards
+  (`make demo` only compares them with the golden file); the one-session hook trial starts
+  in the user's project, not in this checkout. Presentation only: the README states each
+  caveat once, keeps the run-by-run instrument errors in docs/REPORT.md section 7.4, and
+  shows done and next instead of a table of FAIL rows (the gate table stays here). A
+  read-only fact-check workflow checked every statement 6d4a697 changed; its confirmed
+  findings are fixed, with CORRECTIONS.md entries dated 2026-11-25. Next: an independent
+  review of the final commit for G12.
 
 Earlier, 2026-11-12 (final sprint and finale): not all fourteen gates were reachable; G5,
 G7 to G9, and G11 need E0 and the studies, and G12 needs another independent review (one a

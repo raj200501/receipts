@@ -125,7 +125,9 @@ def test_report_derives_smoke_numbers_and_the_headline_figure(tmp_path: Path) ->
     assert numbers["smoke.false_success.ci"]["value"].startswith("[")
     assert "docs/figures/smoke_outcomes.svg" in manifest["figures"]
     svg = (tmp_path / "docs/figures/smoke_outcomes.svg").read_text(encoding="utf-8")
-    assert "False success" in svg and "prefers-color-scheme: dark" in svg
+    assert "Report claims success" in svg and "prefers-color-scheme: dark" in svg
+    # With no task done, false success equals claimed success, so it gets no bar of its own.
+    assert "False success" not in svg
 
 
 def test_text_panel_wraps_and_colors_verdicts() -> None:
@@ -143,16 +145,30 @@ def test_text_panel_wraps_and_colors_verdicts() -> None:
 
 
 def test_demo_report_card_is_cut_from_the_golden_demo_output(tmp_path: Path) -> None:
-    from receipts.report.spec import DEMO_GOLDEN, demo_report_card
+    from receipts.report.spec import DEMO_GOLDEN, DEMO_RUN, demo_report_card
 
     assert demo_report_card(tmp_path) is None
     golden = tmp_path / DEMO_GOLDEN
     golden.parent.mkdir(parents=True)
     golden.write_text(
-        "header\n=== pilot-py-bizdays | agent\n    recorded from somewhere\nFinal report:\n"
+        f"header\n{DEMO_RUN} | agent\n    recorded from somewhere\nFinal report:\n"
         "  [SUPPORTED   ] tests_pass: synthetic.\nSummary: done\n\n=== next | agent\n",
         encoding="utf-8",
     )
     svg = demo_report_card(tmp_path)
     assert svg is not None and "recorded from" not in svg and "Summary: done" in svg
     assert "next" not in svg
+
+
+def test_demo_report_card_counts_the_omissions_it_does_not_show() -> None:
+    from receipts.report.spec import OMISSION, cap_omissions
+
+    section = ["=== run | agent", "  [CONTRADICTED] tests_added: x", "      evidence"]
+    section += [f"{OMISSION} hidden check c{i} (R1) failed" for i in range(5)]
+    section += ["Summary: done"]
+    capped = cap_omissions(section, shown=2)
+    assert capped[:5] == section[:5]
+    assert capped[5] == f"{OMISSION} 3 more failed hidden checks that the report does not admit"
+    assert capped[6:] == ["Summary: done"]
+    short = [*section[:4], "Summary: done"]
+    assert cap_omissions(short, shown=2) == short

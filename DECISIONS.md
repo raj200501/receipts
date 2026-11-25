@@ -965,3 +965,22 @@ outside an amendment, and the banked failure log shows the replaced run's three 
 attempts. (5) G6 also requires `smoke_runs.json` to be exactly the rows banking derives
 from the committed runs, the failure log it summarizes to be append-only, and no banked
 smoke file to change in any commit, merge, type, or mode (D62).
+
+**D73. "Get rid of the negatives and weak points" is read as real fixes plus presentation,
+not as removing disclosures.** Recorded 2026-11-25, before acting. Raj asked for the
+repository's negatives and weak points to go, so that AI-lab engineers and investors like
+the main branch. Read literally, that would delete the exploratory labels, the failing
+gates, the known instrument errors, and the missed-report example, which rules 3, 4, and 13
+forbid, and which would mislead the very readers it is for: a tool that checks agents for
+overclaimed reports cannot overclaim its own state. The pass does two things instead.
+(1) It fixes weak points for real where no model run is needed: the Stop hook's latency is
+measured on the banked smoke ledgers (`tools/hook_latency.py`, `artifacts/hook/latency.json`,
+the measurement prereg/0002 section 2 names for the packaged hook) and bound in README.md and
+docs/HOOK.md; the demo card shows the run receipts caught (ts-parser-tests) instead of a run
+whose card displays an extractor miss; the headline figure drops a bar that repeated
+another; and an independent review of the final commit is requested for G12. (2) It changes
+presentation only: each caveat is stated once, plainly, where it applies; the run-by-run list
+of instrument errors moves from README.md to docs/REPORT.md section 7, which already holds
+it; and internal cross-references leave the README where they carry no deviation. No caveat,
+failing gate, or negative result is removed, and STATUS.md keeps its gate table with FAIL
+rows.

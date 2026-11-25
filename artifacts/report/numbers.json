@@ -1,5 +1,23 @@
 {
   "numbers": {
+    "hook.latency.max_s": {
+      "derivation": "receipts.report.spec:_latency_max",
+      "source": "artifacts/hook/latency.json",
+      "source_sha256": "aaf526ff6fe8e22e44a4186e47497d8b77563ba41c7af050237614c5ffe240cb",
+      "value": "0.23"
+    },
+    "hook.latency.median_s": {
+      "derivation": "receipts.report.spec:_latency_median",
+      "source": "artifacts/hook/latency.json",
+      "source_sha256": "aaf526ff6fe8e22e44a4186e47497d8b77563ba41c7af050237614c5ffe240cb",
+      "value": "0.18"
+    },
+    "hook.latency.samples": {
+      "derivation": "receipts.report.spec:_latency_count",
+      "source": "artifacts/hook/latency.json",
+      "source_sha256": "aaf526ff6fe8e22e44a4186e47497d8b77563ba41c7af050237614c5ffe240cb",
+      "value": "39"
+    },
     "smoke.claims": {
       "derivation": "receipts.report.spec:_count.<locals>.derive",
       "source": "artifacts/exploratory/smoke_outcomes.json",

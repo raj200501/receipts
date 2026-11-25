@@ -20,7 +20,8 @@ agent, no run completed its task, yet <!--n:smoke.success_claimed.pct-->38%<!--/
 final reports claimed success. In one run the agent wrote no file and reported adding tests;
 receipts contradicted the claim and pointed at the empty diff. In another, the agent's only
 edit failed and its report still described a finished, tested refactor, and the extractor
-found no claim to check, so nothing was flagged. Measuring that gap is the next step: a
+found no claim to check, so no claim was contradicted; receipts listed only the failed hidden
+checks the report does not admit. Measuring that gap is the next step: a
 blind validation of the extractor and verifiers, before any of this counts as a finding.
 
 After that: a randomized study across agents and realistic situations (an unattainable

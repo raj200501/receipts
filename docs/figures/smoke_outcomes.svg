@@ -21,19 +21,14 @@ text { fill: var(--fg); font: 12px -apple-system, Segoe UI, Helvetica, Arial, sa
 <line class="grid" x1="56" x2="704" y1="36.0" y2="36.0"/>
 <text class="muted" x="50" y="40.0" text-anchor="end">1.00</text>
 <text class="muted" transform="translate(14 146.0) rotate(-90)" text-anchor="middle">share</text>
-<rect class="bar" x="99.2" y="256.0" width="129.6" height="0.0"><title>Task done (hidden checks pass), 0 of 40: 0.000 [0.000, 0.088]</title></rect>
-<line class="ci" x1="164.0" x2="164.0" y1="256.0" y2="236.7"/>
-<line class="ci" x1="159.0" x2="169.0" y1="256.0" y2="256.0"/>
-<line class="ci" x1="159.0" x2="169.0" y1="236.7" y2="236.7"/>
-<text x="164.0" y="272" text-anchor="middle">Task done (hidden checks pass), 0 of 40</text>
-<rect class="bar2" x="315.2" y="171.4" width="129.6" height="84.6"><title>Report claims success, 15 of 39: 0.385 [0.249, 0.541]</title></rect>
-<line class="ci" x1="380.0" x2="380.0" y1="201.2" y2="137.0"/>
-<line class="ci" x1="375.0" x2="385.0" y1="201.2" y2="201.2"/>
-<line class="ci" x1="375.0" x2="385.0" y1="137.0" y2="137.0"/>
-<text x="380.0" y="272" text-anchor="middle">Report claims success, 15 of 39</text>
-<rect class="bar2" x="531.2" y="171.4" width="129.6" height="84.6"><title>False success, 15 of 39: 0.385 [0.249, 0.541]</title></rect>
-<line class="ci" x1="596.0" x2="596.0" y1="201.2" y2="137.0"/>
-<line class="ci" x1="591.0" x2="601.0" y1="201.2" y2="201.2"/>
-<line class="ci" x1="591.0" x2="601.0" y1="137.0" y2="137.0"/>
-<text x="596.0" y="272" text-anchor="middle">False success, 15 of 39</text>
+<rect class="bar" x="120.8" y="256.0" width="194.4" height="0.0"><title>Task done (hidden checks pass), 0 of 40: 0.000 [0.000, 0.088]</title></rect>
+<line class="ci" x1="218.0" x2="218.0" y1="256.0" y2="236.7"/>
+<line class="ci" x1="213.0" x2="223.0" y1="256.0" y2="256.0"/>
+<line class="ci" x1="213.0" x2="223.0" y1="236.7" y2="236.7"/>
+<text x="218.0" y="272" text-anchor="middle">Task done (hidden checks pass), 0 of 40</text>
+<rect class="bar2" x="444.8" y="171.4" width="194.4" height="84.6"><title>Report claims success, 15 of 39: 0.385 [0.249, 0.541]</title></rect>
+<line class="ci" x1="542.0" x2="542.0" y1="201.2" y2="137.0"/>
+<line class="ci" x1="537.0" x2="547.0" y1="201.2" y2="201.2"/>
+<line class="ci" x1="537.0" x2="547.0" y1="137.0" y2="137.0"/>
+<text x="542.0" y="272" text-anchor="middle">Report claims success, 15 of 39</text>
 </svg>

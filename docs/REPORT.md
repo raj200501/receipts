@@ -214,10 +214,10 @@ session on its own errors.
 
 ![make demo: one recorded run, checked claim by claim](figures/demo_report_card.svg)
 
-*Figure 1.* A report card cut by `make report` from the committed `make demo` output. "all
-existing tests passed" is supported by the rerun of the visible suite after the agent's last
-edit; the run is still a false success, because every hidden check of the requested behavior
-failed and the report admits none of them.
+*Figure 1.* A report card cut by `make report` from the committed `make demo` output: the
+`ts-parser-tests` smoke run (section 7.2). Both claims in the report's one sentence about the
+work are contradicted, each with its ledger evidence, and the failed hidden checks the report does
+not admit follow them.
 
 ## 4. receipts-bench
 
@@ -386,8 +386,9 @@ paired within tasks (D42). The primary outcome Z1 is a contradicted claim in the
 user finally receives; each mitigation is compared with control, with Holm-Bonferroni across
 the contrasts. This deviates from the brief, which asks for the hook's effect inside real
 tools: E4 measures the same check code inside minimal-agent (prereg/0002-e4-mitigation.md
-section 2). The Claude Code hook is packaged; its latency will be measured by replaying
-recorded sessions (`tools/hook_latency.py`), and no latency artifact is banked yet.
+section 2). The Claude Code hook is packaged, and replaying the recorded smoke sessions
+(`tools/hook_latency.py`) gives a median of <!--n:hook.latency.median_s-->0.18<!--/n--> s per
+stop, Python start-up included (`artifacts/hook/latency.json`).
 
 ### 6.6 Preregistration chain and confirmatory rules
 
@@ -458,7 +459,7 @@ The informative row is the last. In
 <!--n:smoke.false_success_without_contradicted_claim.n-->15<!--/n--> false successes
 (<!--n:smoke.false_success_without_contradicted_claim.ci-->[0.42, 0.85]<!--/n-->), no
 extracted claim was contradicted: every statement receipts extracted was labeled supported,
-though not every one was true (section 7.4), and the run was still a false success. Figure 1
+though not every one was true (section 7.4), and the run was still a false success. The bizdays smoke run in the `make demo` output
 shows the shape: "all existing tests passed" is true of the visible suite after the agent's
 last edit, but every hidden check of the requested behavior failed and the report mentions
 none of them; its first sentence is itself a completion claim the extractor missed. Several
@@ -490,7 +491,7 @@ reports show errors in more than one direction:
 
 - **Missed completion statements in false-success reports.** "The toc and toc_write
   functions have been successfully added to mdkit" yields no feature claim, and neither
-  does the first sentence of the report in Figure 1 ("The bizdays tool has been updated to
+  does the first sentence of the bizdays report ("The bizdays tool has been updated to
   support multiple calendars and a new command 'between' ..."); the `py-atomic-store`,
   `py-money-round`, `ts-paginate` ("The cursor-based pagination functionality has been
   successfully added"), and `ts-route-match` ("The router has been updated to correctly
@@ -578,9 +579,10 @@ could pass while its property was false.
 
 **Review, decisions, corrections.** Only the reviewer (a `reviewer` subagent, or a headless run
 when allowed) writes `artifacts/review/latest.json`; `make review` accepts SHIP only with no
-blocking issue and only for the reviewed commit. The latest review, by the `reviewer` subagent,
-is banked in `artifacts/review/latest.json`, with its non-blocking issues in
-docs/REVIEW_LOG.md; it blocked, and G12 passes only on a SHIP for the commit under review.
+blocking issue and only for the reviewed commit. The review of 2026-11-12 blocked on gate holes
+(B5, B6), since fixed, with its non-blocking issues in docs/REVIEW_LOG.md;
+the latest verdict is in `artifacts/review/latest.json`, and G12 passes only on a SHIP for
+the commit under review.
 Earlier subagent reviews and their fixes are recorded in docs/LOG.md and CORRECTIONS.md. DECISIONS.md records each interpretation,
 substitution, and deviation with its reason, before acting unless an entry says it was
 recorded late; CORRECTIONS.md takes a dated entry for every changed or withdrawn claim, and
@@ -674,18 +676,18 @@ the claude-code driver (never run), the analysis library, receipts-hook, the wra
 the `receipts` command line, receipts-bench with reference
 validation for every task, the E0 tooling, the analysis scripts for the draft preregistrations,
 re-verification at banking for the confirmatory studies (D42, D47), and the gates;
-`make ci` passes on a fresh clone on Python 3.11 and 3.12 before a push
-([README.md](../README.md), [STATUS.md](../STATUS.md)). Next, in order:
+`make ci` passes on a fresh clone on Python 3.11 and 3.12 before a push. Next, in order:
 
-1. Obtain an independent review of the B5 and B6 fixes that returns SHIP (G12), close the
-   open items in STATUS.md, and record a hook demo run that blocks on its live ledger.
+1. Keep G12 current (any change beyond STATUS.md, docs/LOG.md, and the review needs a new
+   SHIP review), close the open items in STATUS.md, and record a hook demo run that blocks.
 2. Run the E0
    labelers, writers,
    and adjudicators, the split, and the held-out evaluation.
 3. Run the pilot and the power run, write the plans, fill the TO FIX BEFORE FREEZE fields,
    obtain a review, and freeze the E1, E3, and E4 preregistrations.
 4. Run E1 from the freeze snapshot, then E2 and E3 on its data, then E4 once the instrument is
-   frozen, and bank the hook latency samples.
+   frozen.
 5. Add Claude arms only on a machine with a clean plan login, under their own preregistration.
 
-Until then, G5, G7 to G9, G11, and G12 cannot pass. Every claim verdict here remains the instrument's own.
+Until then, G5, G7 to G9, and G11 cannot pass, and G12 holds only while its review matches
+the current commit. Every claim verdict here remains the instrument's own.
