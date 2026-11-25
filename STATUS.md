@@ -9,7 +9,7 @@ History is in docs/LOG.md.
 
 ## Gates
 
-`python tools/ship_check.py --fast` at 1650c79 (fresh clone with full history, run by the
+`python tools/ship_check.py --fast` at cec6701 (fresh clone with full history, run by the
 reviewer): **8/14** (FAST, does not count).
 
 | Gate | Result | Evidence |
@@ -25,14 +25,15 @@ reviewer): **8/14** (FAST, does not count).
 | G9 Mitigation | FAIL | artifacts/e4/results.json missing |
 | G10 Claim integrity | PASS | make claimcheck and make freshness pass on README.md and docs/REPORT.md; each derived artifact present agrees with a fresh derivation from the banked inputs |
 | G11 Prereg integrity | FAIL | no preregistration is frozen and no confirmatory artifact exists (prereg-verify: frozen 0, drafts 3) |
-| G12 Review | FAIL | review of 1650c79 (2026-11-25): REVIEW: BLOCK on B8, `make secrets-scan` not run in CI; fixed in the next commit (D74), and a new review is due |
-| G13 Documentation | PASS | README follows section 11; REPORT.md 7983 words; figures reproduce; every reference verified |
+| G12 Review | FAIL | review of cec6701 (2026-11-25): REVIEW: SHIP, no blocking issue, but it raised new non-blocking N27 and N28, so it counts only once they are logged (D10), and logging them needs a review of the commit that logs them |
+| G13 Documentation | PASS | README follows section 11; REPORT.md 7992 words; figures reproduce; every reference verified |
 | G14 Hygiene | PASS | secrets clean; cash_usd = 0, caps respected; private/ untracked; files present; clean |
 
 G1 to G4, G6, G10, G13, and G14 pass. G5 waits on E0 (next: the blind claim-type labels
 of the smoke reports); G7 to G9 and G11 wait on the studies; G12 waits on an independent
-review that returns SHIP for the current commit (the reviews of 1f6f662 and 1650c79 blocked
-on B7 and B8, both fixed).
+review that returns SHIP for the current commit and raises no issue the review log lacks
+(the reviews of 1f6f662 and 1650c79 blocked on B7 and B8, both fixed; the review of cec6701
+returned SHIP with new non-blocking N27 and N28).
 
 ## Now
 
@@ -46,7 +47,7 @@ which only model runs need). The branch was fast-forwarded onto Raj's CI fixes o
   runs, the bound smoke finding with its interval, and the false report receipts caught
   beside the one its extractor missed; then "Why it matters", an at-a-glance table, a
   shorter "what it is and is not", the Claude Code hook install inline, and the gates as a
-  table. Every number is still bound and re-derived; the G13 README checks pass.
+  table (the D73 pass later moved that table here and left the README done and next). Every number is still bound and re-derived; the G13 README checks pass.
 - **Package and citation metadata** (URLs, keywords, classifiers, abstract) and the
   launch draft for Raj (rebound to the current registry) are up to date.
 - **Audit fixes, same pass:** two read-only audits (hygiene, first impression) found stale or

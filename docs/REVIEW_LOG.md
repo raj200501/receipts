@@ -3,6 +3,37 @@
 Non-blocking issues raised by `make review`, with their status. Blocking
 issues are fixed before shipping and recorded here once resolved.
 
+## Review of cec67015e9575c32ec394bee9b0657767b17ff59 (2026-11-25, reviewer subagent)
+
+Verdict: SHIP, with no blocking issue; B8 is fixed. It raised two new non-blocking issues,
+so under D10 it counts for no commit until they are listed here, and listing them changes
+this file, which is outside `ALLOWED_DRIFT`: G12 needs a review of the commit that logs
+them.
+
+Resolved since the review of 1650c79: B8, N24 (b), (d), (f), (g), and (h), and the G12,
+N18, G11, and Environment parts of N2.
+
+Still open, with new evidence where noted: N2 (STATUS.md's REPORT.md word count and its
+"gates as a table"; no decision says how D20's review cap treats subagent reviews), N13,
+N18 to N23, N24 (docs/BENCH.md "checks every claim"; docs/REPORT.md's list of the files
+CORRECTIONS.md corrects; D27's ten-minute CI timeout against the 25 minutes in ci.yml; the CI
+step name; the "CI installs 22" skip message in tests/bench/test_validate.py), N25, and N26.
+
+New:
+
+- **N27. The pilot validation test lets a task's own pytest share the host's /tmp.** The
+  fake sandbox in tests/bench/fakes.py runs commands with no TMPDIR, so a task's pytest
+  shares `/tmp/pytest-of-<user>` with the outer test run, and pytest removes old session
+  directories there before it prints its summary. On this machine that stalled a timed
+  command until it was killed ("exit -9 (timed out); no test summary recognized") in
+  `test_pilot_task_validates[pilot-py-bizdays]`, in the reviewer's run and in the Python 3.11
+  prepush of 1650c79. No gate can pass falsely because of it; GitHub CI is not affected.
+- **N28. No check ties a demo fixture to the banked run it names.** The demo report card is
+  cut from `tests/golden/demo_output.txt`, which `tools/demo.py` writes from the fixtures
+  under `tests/fixtures/recorded/demo/`. Each fixture's ledger equals its banked run today,
+  but no test or gate compares them, although README.md, docs/REPORT.md, and `tools/report.py`
+  say the figures come from banked artifacts only.
+
 ## Review of 1650c79ff38425e249b9fae523230307ee7c0ebf (2026-11-25, reviewer subagent)
 
 Verdict: BLOCK. Blocking issue B8 is open at the reviewed commit and fixed in the commit
