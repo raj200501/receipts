@@ -3,6 +3,25 @@
 Non-blocking issues raised by `make review`, with their status. Blocking
 issues are fixed before shipping and recorded here once resolved.
 
+## Review of faf22c51878296371a052c36b8966cbcf2255750 (2026-11-25, reviewer subagent)
+
+Verdict: BLOCK on B9; every non-blocking issue it raises was already listed here. The main
+session stopped the reviewer agent after the review file was written, once the prepush of
+faf22c5 had failed, so its closing message never arrived; the file is complete and ends with
+its verdict line. faf22c5 was never pushed.
+
+- **B9** (blocking, result): the N27 fix made the fake sandbox create a `<workspace>.tmp`
+  directory beside each workspace, in the validator's work root, so
+  `tests/bench/test_validate.py::test_workspaces_are_removed_by_default` failed and `make
+  test`, `make ci`, G1, and G3 failed on a fresh clone (both prepush legs: 1 failed, 4549
+  passed), while STATUS.md, README.md, and docs/REPORT.md reported them passing. The fix makes
+  the private directory with `tempfile.mkdtemp`, outside the workspace and its parent, and
+  removes it with the sandbox; tests/bench/test_fakes.py checks that the work root stays
+  empty.
+
+Resolved since the review of cec6701: N27 apart from B9, N2's remaining parts, and the N24
+items logged under that review.
+
 ## Review of cec67015e9575c32ec394bee9b0657767b17ff59 (2026-11-25, reviewer subagent)
 
 Verdict: SHIP, with no blocking issue; B8 is fixed. It raised two new non-blocking issues,

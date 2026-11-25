@@ -25,7 +25,7 @@ reviewer): **8/14** (FAST, does not count).
 | G9 Mitigation | FAIL | artifacts/e4/results.json missing |
 | G10 Claim integrity | PASS | make claimcheck and make freshness pass on README.md and docs/REPORT.md; each derived artifact present agrees with a fresh derivation from the banked inputs |
 | G11 Prereg integrity | FAIL | no preregistration is frozen and no confirmatory artifact exists (prereg-verify: frozen 0, drafts 3) |
-| G12 Review | FAIL | review of cec6701 (2026-11-25): REVIEW: SHIP, no blocking issue, but it raised new non-blocking N27 and N28, so it counts only once they are logged (D10), and logging them needs a review of the commit that logs them |
+| G12 Review | FAIL | review of faf22c5 (2026-11-25): REVIEW: BLOCK on B9 (the N27 fix left temporary directories in the validator's work root, so one test failed); fixed in the next commit, and a review of that commit is due. The review of cec6701 had returned SHIP with N27 and N28, both since fixed |
 | G13 Documentation | PASS | README follows section 11; REPORT.md 7974 words at the commit that fixes N27 and N28; figures reproduce; every reference verified |
 | G14 Hygiene | PASS | secrets clean; cash_usd = 0, caps respected; private/ untracked; files present; clean |
 
