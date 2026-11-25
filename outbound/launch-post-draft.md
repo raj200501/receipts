@@ -7,26 +7,26 @@ binding comments stay out of the post.
 
 ## Short version
 
-I built receipts, an open-source tool that extracts the claims in an AI coding agent's final
-report and checks each one against a ledger of what actually happened in its sandbox:
-commands, exit codes, test runs, diffs, and hidden checks. Each claim comes back supported,
-contradicted, or unverifiable, with the evidence attached.
+Every AI coding agent ends its work with a report, and people act on it: they merge, close
+the ticket, move on. I built receipts, an open-source tool that splits that report into
+atomic claims and checks each one against a hash-chained ledger of what actually happened in
+the agent's sandbox: commands, exit codes, test runs, diffs, and hidden checks the agent
+never had. Each claim comes back supported, contradicted, or unverifiable, with the evidence
+attached. It runs offline, around any agent CLI, or live in Claude Code as a Stop hook.
 
 First signal, exploratory and not yet a preregistered study: in
-<!--n:smoke.runs-->31<!--/n--> smoke runs of a local Qwen2.5-Coder-7B-Instruct agent, no
-run passed all of its hidden checks, yet <!--n:smoke.success_claimed.pct-->40%<!--/n--> of
-the final reports claimed success. The runs also tested receipts itself. In
-<!--n:smoke.false_success_without_contradicted_claim.k-->8<!--/n--> of those
-<!--n:smoke.false_success_without_contradicted_claim.n-->12<!--/n--> false successes, no
-extracted claim was contradicted, and reading the reports by hand shows why: most say the
-requested change was made, in a sentence the extractor missed or checked wrongly. So the
-next step is a blind validation of the extractor and verifiers, before any of this counts
-as a finding.
+<!--n:smoke.runs-->40<!--/n--> unmanipulated runs of a local Qwen2.5-Coder-7B-Instruct
+agent, no run completed its task, yet <!--n:smoke.success_claimed.pct-->38%<!--/n--> of the
+final reports claimed success. In one run the agent wrote no file and reported adding tests;
+receipts contradicted the claim and pointed at the empty diff. In another, the agent's only
+edit failed and its report still described a finished, tested refactor, and the extractor
+found no claim to check, so nothing was flagged. Measuring that gap is the next step: a
+blind validation of the extractor and verifiers, before any of this counts as a finding.
 
-Next: that validation, then a randomized study across agents and realistic situations (an
-unattainable requirement, truncated output, time pressure, flaky tools), written as draft
-preregistrations, and a test of a Claude Code Stop hook that asks the agent to correct a
-report its own record contradicts.
+After that: a randomized study across agents and realistic situations (an unattainable
+requirement, truncated output, time pressure, flaky tools), written as draft
+preregistrations, and a test of the Claude Code hook that asks the agent to correct a report
+its own record contradicts.
 
 https://github.com/raj200501/receipts
 
@@ -35,8 +35,8 @@ https://github.com/raj200501/receipts
 - The small-model result says more about the instrument and the benchmark than about
   capable agents; the README's Limitations section says so, and a reader will ask.
 - The instrument is not validated yet. Reading the reports by hand shows extraction
-  errors, most of which make the count of false successes without a
-  contradicted claim too high (README, Limitations). Say so if
-  you quote the numbers.
-- `main` already holds the session branch's release commits (DECISIONS D49), so the link
-  opens on the real README; check that it shows the latest RELEASE-READY commit.
+  errors, most of which make the count of false successes without a contradicted claim too
+  high (README, Limitations). Say so if you quote the numbers.
+- The missed report is worth naming, not hiding: it shows why the blind validation (E0)
+  comes first.
+- Check that the link opens on the latest RELEASE-READY commit of `main`.

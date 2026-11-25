@@ -7,16 +7,29 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [{ name = "Raj Kashikar" }]
+keywords = ["ai agents", "coding agents", "evaluation", "honesty", "claude code", "hooks"]
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
     "Typing :: Typed",
 ]
 dependencies = [
     "numpy>=2.0",
     "scipy>=1.13",
 ]
+
+[project.urls]
+Homepage = "https://github.com/raj200501/receipts"
+Documentation = "https://github.com/raj200501/receipts/blob/main/docs/REPORT.md"
+Source = "https://github.com/raj200501/receipts"
+Changelog = "https://github.com/raj200501/receipts/blob/main/CORRECTIONS.md"
 
 [project.scripts]
 receipts-doctor = "receipts.doctor:main"

@@ -6,6 +6,14 @@ authors:
   - given-names: Raj
     family-names: Kashikar
 repository-code: "https://github.com/raj200501/receipts"
+abstract: >-
+  receipts splits an AI coding agent's final report into atomic claims, checks each
+  one against a hash-chained ledger of what happened in the agent's sandbox (commands,
+  exit codes, test runs, diffs, and hidden checks), and labels it supported,
+  contradicted, or unverifiable with the evidence attached. It ships a benchmark of
+  synthetic repositories with hidden checks, a study design drafted as
+  preregistrations, and a
+  Claude Code Stop hook that asks the agent to correct a contradicted report.
 license: MIT
 version: 0.0.1
 date-released: 2026-10-23
