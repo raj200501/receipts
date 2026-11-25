@@ -25,15 +25,17 @@ reviewer): **8/14** (FAST, does not count).
 | G9 Mitigation | FAIL | artifacts/e4/results.json missing |
 | G10 Claim integrity | PASS | make claimcheck and make freshness pass on README.md and docs/REPORT.md; each derived artifact present agrees with a fresh derivation from the banked inputs |
 | G11 Prereg integrity | FAIL | no preregistration is frozen and no confirmatory artifact exists (prereg-verify: frozen 0, drafts 3) |
-| G12 Review | FAIL | review of faf22c5 (2026-11-25): REVIEW: BLOCK on B9 (the N27 fix left temporary directories in the validator's work root, so one test failed); fixed in the next commit, and a review of that commit is due. The review of cec6701 had returned SHIP with N27 and N28, both since fixed |
+| G12 Review | PASS | review of 73702ee (2026-11-25, reviewer subagent): REVIEW: SHIP, 0 blocking, 13 non-blocking, every one already in docs/REVIEW_LOG.md; `tools/review.py --validate-only` accepts it for HEAD, which differs from 73702ee only in `artifacts/review/`, STATUS.md, and docs/LOG.md |
 | G13 Documentation | PASS | README follows section 11; REPORT.md 7974 words at the commit that fixes N27 and N28; figures reproduce; every reference verified |
 | G14 Hygiene | PASS | secrets clean; cash_usd = 0, caps respected; private/ untracked; files present; clean |
 
-G1 to G4, G6, G10, G13, and G14 pass. G5 waits on E0 (next: the blind claim-type labels
-of the smoke reports); G7 to G9 and G11 wait on the studies; G12 waits on an independent
-review that returns SHIP for the current commit and raises no issue the review log lacks
-(the reviews of 1f6f662 and 1650c79 blocked on B7 and B8, both fixed; the review of cec6701
-returned SHIP with new non-blocking N27 and N28).
+G1 to G4, G6, G10, G12, G13, and G14 pass. G5 waits on E0 (next: the blind claim-type
+labels of the smoke reports); G7 to G9 and G11 wait on the studies. G12 passes on the review
+of 73702ee, which returned SHIP with every non-blocking issue already logged. It took five
+reviews on 2026-11-25: 1f6f662, 1650c79, and faf22c5 blocked on B7, B8, and B9, each fixed in
+the next commit, and the SHIP of cec6701 raised N27 and N28, logged and then fixed (N28's
+meta.json part is still open). Any change outside `artifacts/review/`, STATUS.md, and
+docs/LOG.md needs a new review before G12 passes again.
 
 ## Now
 
@@ -115,7 +117,10 @@ cap of one review run a day applies to headless runs once the billing guard clea
    follows docs/CLAIM_TYPES.md, and the replies file becomes immutable; then the pilot,
    power run, freezing 0001 to 0003, and E1 and E4 from the freeze-commit snapshot (G7 to
    G9, G11).
-3. An independent review that returns SHIP for the current commit (G12).
+3. Keep G12: any change beyond `artifacts/review/`, STATUS.md, and docs/LOG.md needs a new
+   SHIP review. The open non-blocking items ride the next code change: N3 (README says
+   `tools/prepush.sh` runs once for each Python; it runs once, on 3.11 unless `PY` is set,
+   and is run twice), N28's meta.json part, N2, N13, and N18 to N26.
 
 ## Environment (`make doctor`, 2026-10-23)
 
@@ -152,6 +157,12 @@ local-model calls are in the usage ledger; no Claude model has been a study subj
    where `claude` is logged in to your Max plan and
    `env | grep -E '^(ANTHROPIC_|CLAUDE_CODE_USE_)'` prints nothing; Claude arms then get
    their own preregistration before their data exists.
+
+2. **Two settings to confirm.** (a) D20's daily cap of one review run is read as covering
+   headless review runs only (D75); this session ran five `reviewer` subagent reviews on
+   2026-11-25, one per fixed commit. Say if subagent reviews should count against it. (b)
+   SECURITY.md points to private vulnerability reporting; confirm it is enabled in the
+   repository settings.
 
 ## Blocked
 

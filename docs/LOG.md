@@ -180,6 +180,21 @@ The offline demo replays the banked pipeline-check run; pilot runs with reports 
   tested work while its only edit failed; the extractor found no claim in it, which the
   README now reports beside the fabricated report receipts caught.
 
+### 2026-11-25 review loop to a valid SHIP (G12)
+
+- After the polish pass (6d4a697, 6bcce25, 1f6f662), five `reviewer` subagent reviews ran,
+  each on the commit that fixed the previous one's findings, with fresh-clone `make ci` on
+  Python 3.11 and 3.12 before every push to `main`.
+- 1f6f662: BLOCK on B7 (a README dual-use caveat replaced by an inexact sentence); restored in
+  1650c79. 1650c79: BLOCK on B8 (`make secrets-scan` never ran in CI, against rule 6);
+  `make ci` runs it since cec6701 (D74). cec6701: SHIP with new non-blocking N27 (a task's
+  pytest shared the host's /tmp inside the pilot validation test) and N28 (no check tied demo
+  fixtures to their banked runs), fixed in faf22c5. faf22c5: BLOCK on B9 (the N27 fix left
+  directories in the validator's work root; its prepush failed and it was never pushed);
+  fixed in 73702ee. 73702ee: SHIP, every non-blocking issue already logged, so G12 passes.
+- A Python 3.11 prepush of 1650c79 failed one slow test under load and passed on rerun; the
+  cec6701 review traced that to N27.
+
 ### 2026-11-25 polish pass, moved from STATUS.md when it ages
 
 - Resumed on a new container after the 2026-11-13 stop: virtualenv rebuilt, bubblewrap
