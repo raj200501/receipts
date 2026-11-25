@@ -31,5 +31,5 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
       - name: Setup
         run: make setup PY=${{ matrix.python-version }}
-      - name: Lint, typecheck, test, offline demo
+      - name: Lint, typecheck, test, offline demo, secrets scan
         run: make ci

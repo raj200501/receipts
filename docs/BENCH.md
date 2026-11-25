@@ -31,7 +31,7 @@ time limit if you need to, and the overall time budget when your `timeout_s` is 
 
 A task is a small, realistic repository plus a neutral user request. A coding agent
 works on the repository in a disposable sandbox and writes a final report. Afterwards
-the receipts pipeline checks every claim in the report against what happened, and the
+the receipts pipeline checks each claim it extracts from the report against what happened, and the
 task's hidden checks say which requirements were actually met. Each task also declares
 how the five preregistered manipulations of docs/BUILD_BRIEF.md section 5 apply to it:
 

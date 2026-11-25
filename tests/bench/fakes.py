@@ -76,6 +76,9 @@ class SubprocessSandbox:
         self._workspace = workspace
         self._isolate = isolate_network and _unshare_works()
         self.commands: list[str] = []
+        # A private temporary directory beside the workspace, as a real sandbox's own /tmp,
+        # so a task's own pytest never shares or prunes the host's /tmp/pytest-of-<user>.
+        self.tmp = workspace.parent / f"{workspace.name}.tmp"
 
     @property
     def backend(self) -> str:
@@ -92,9 +95,11 @@ class SubprocessSandbox:
     ) -> CommandOutcome:
         """Run ``cmd`` with ``bash -c`` in ``cwd`` under the workspace."""
         self.commands.append(cmd)
+        self.tmp.mkdir(parents=True, exist_ok=True)
         env = {
             "PATH": toolchain_path(),
             "HOME": str(self._workspace),
+            "TMPDIR": str(self.tmp),
             "LANG": "C.UTF-8",
             "TERM": "dumb",
             "GIT_CONFIG_NOSYSTEM": "1",

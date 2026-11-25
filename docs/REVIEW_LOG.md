@@ -34,6 +34,12 @@ New:
   but no test or gate compares them, although README.md, docs/REPORT.md, and `tools/report.py`
   say the figures come from banked artifacts only.
 
+Fixed in the commit after the one that banks this review: N27 (the fake sandbox gives each
+command a private TMPDIR beside the workspace; tests/bench/test_fakes.py), N28
+(tests/repo_tools/test_record_demo.py compares every demo fixture's ledger with its banked
+run and its recorded SHA-256), the N24 items above (with CORRECTIONS.md entries; the CI step
+name now names the scan), and the N2 decision on D20 and subagent reviews (D75).
+
 ## Review of 1650c79ff38425e249b9fae523230307ee7c0ebf (2026-11-25, reviewer subagent)
 
 Verdict: BLOCK. Blocking issue B8 is open at the reviewed commit and fixed in the commit

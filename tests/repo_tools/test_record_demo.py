@@ -77,3 +77,17 @@ def test_main_records_every_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(record_demo.record, "__defaults__", (tmp_path / "fixtures", tmp_path))
     assert record_demo.main([str(first), str(second)]) == 0
     assert sorted(p.name for p in (tmp_path / "fixtures").iterdir()) == ["r1", "r2"]
+
+
+def test_every_demo_fixture_is_its_banked_run_unchanged() -> None:
+    """The demo card is cut from the demo output, so each fixture must be its banked run."""
+    fixtures = record_demo.FIXTURES
+    runs = sorted(p for p in fixtures.iterdir() if (p / "ledger.jsonl").is_file())
+    assert runs
+    for run in runs:
+        meta = json.loads((run / "meta.json").read_text(encoding="utf-8"))
+        source = meta["recorded_from"].split(" (run at ")[0]
+        banked = record_demo.ROOT / source / "ledger.jsonl"
+        data = (run / "ledger.jsonl").read_bytes()
+        assert hashlib.sha256(data).hexdigest() == meta["ledger_sha256"], run.name
+        assert banked.read_bytes() == data, run.name

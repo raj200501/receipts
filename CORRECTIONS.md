@@ -81,6 +81,11 @@ docs/BUILD_BRIEF.md section 9), newest first.
   checkout, outside the repository); the package description said "Check every claim" (receipts
   checks the claims its extractor finds); the latency tool's docstring said it replays the hook
   "exactly as Claude Code would call it".
+- **docs/BENCH.md, docs/REPORT.md section 8, tests/bench/test_validate.py** (review N24):
+  BENCH.md said the pipeline "checks every claim in the report" (it checks the claims it
+  extracts); REPORT listed the files CORRECTIONS.md corrects, and the list had fallen behind
+  (each entry names its file instead); a skip message said "CI installs 22", but the workflow
+  installs no Node.
 
 ## 2026-11-12
 

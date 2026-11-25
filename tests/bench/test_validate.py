@@ -809,7 +809,7 @@ def test_task_validation_bookkeeping() -> None:
 def test_pilot_task_validates(tmp_path: Path, name: str) -> None:
     version = node_version()
     if name.startswith("pilot-ts-") and (version is None or version < (22, 6)):
-        pytest.skip(f"TypeScript tasks need Node 22.6 or later (found {version}); CI installs 22")
+        pytest.skip(f"TypeScript tasks need Node 22.6 or later (found {version})")
     task_dir = ROOT / "bench" / "tasks" / name
     before = tree_sha256(task_dir)
     result = validate_path(task_dir, factory(), work_root=tmp_path / "work")

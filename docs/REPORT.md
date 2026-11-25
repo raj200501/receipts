@@ -586,8 +586,7 @@ the commit under review.
 Earlier subagent reviews and their fixes are recorded in docs/LOG.md and CORRECTIONS.md. DECISIONS.md records each interpretation,
 substitution, and deviation with its reason, before acting unless an entry says it was
 recorded late; CORRECTIONS.md takes a dated entry for every changed or withdrawn claim, and
-its entries so far correct earlier wording in this report, README.md, docs/HOOK.md,
-artifacts/README.md, docs/DATA.md, docs/E0_PROTOCOL.md, and STATUS.md.
+each entry names the file and section it corrects.
 
 **Blind protocols, budget, secrets.** E0 writers, adjudicators, and labelers get packets with no
 instrument code or output, and labeler and writer packets are scanned so that none can void its

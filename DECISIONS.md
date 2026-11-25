@@ -994,3 +994,13 @@ now ends with `secrets-scan`, so the workflow, `tools/prepush.sh`, and the relea
 all run it. This keeps D27's lean CI (the scan only reads the tracked files) and adds no
 workflow; G3 still requires `make ci` to run lint, typecheck, test, and the demo, and the
 scan does not replace G14's own run on the fresh clone.
+
+**D75. Two records brought up to date (review N24, N2).** Recorded 2026-11-25. (1) D27's
+CI job timeout of ten minutes became 25 minutes in Raj's commit 9d3be9a on `main`, after the
+full suite took about twelve minutes on GitHub's runners; `.github/workflows/ci.yml` is the
+current value. (2) D20's daily cap of one review run counts headless review runs, which the
+`claude_*` caps meter once the billing guard clears (D4). A `reviewer` subagent runs inside
+the main session, which no cap in code meters. On 2026-11-25, finishing the repository at
+Raj's request, this session ran one subagent review per fixed commit (1f6f662, 1650c79,
+cec6701, and the commit that logs N27 and N28), each only after the previous review's
+findings were fixed, so no two reviews looked at the same code.
