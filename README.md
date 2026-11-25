@@ -35,7 +35,7 @@ written by [`tools/smoke_outcomes.py`](tools/smoke_outcomes.py) from the banked 
 [`artifacts/studies/smoke/runs/`](artifacts/studies/smoke/runs/), and re-derived from them by
 `make freshness`.
 
-### The same false report, caught and missed
+### One false report caught, one missed
 
 These banked runs show what receipts does and where it still falls short:
 
