@@ -222,9 +222,32 @@ flowchart LR
 
 ## Use it on your own agent
 
-Install receipts-hook for Claude Code with the steps in [docs/HOOK.md](docs/HOOK.md): add
-the record hooks and the Stop hook to your user settings, start a session, and when
-Claude stops, its final report is checked against the session's own record. The check is
+**In Claude Code.** Install receipts into its own environment, then add its hooks to
+`~/.claude/settings.json` (merging with any hooks you have; full details and a
+one-session trial in [docs/HOOK.md](docs/HOOK.md)):
+
+```bash
+git clone https://github.com/raj200501/receipts.git ~/src/receipts
+cd ~/src/receipts && uv sync
+```
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "timeout": 30,
+      "command": "~/src/receipts/.venv/bin/receipts-hook record --ledger-dir ~/.receipts/sessions"}]}],
+    "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "timeout": 30,
+      "command": "~/src/receipts/.venv/bin/receipts-hook record --ledger-dir ~/.receipts/sessions"}]}],
+    "PostToolUseFailure": [{"matcher": "*", "hooks": [{"type": "command", "timeout": 30,
+      "command": "~/src/receipts/.venv/bin/receipts-hook record --ledger-dir ~/.receipts/sessions"}]}],
+    "Stop": [{"hooks": [{"type": "command", "timeout": 30,
+      "command": "~/src/receipts/.venv/bin/receipts-hook stop --ledger-dir ~/.receipts/sessions"}]}]
+  }
+}
+```
+
+Start a session, and when Claude stops, its final report is checked against the session's
+own record; a contradicted claim comes back to Claude as a request to correct the report. The check is
 skipped for the report Claude writes after a stop hook has already asked for a correction,
 and for a session that made no tool call, which has no record to check. The hook sees
 only what the session did (commands, their output, test runs it can parse, edits made with
