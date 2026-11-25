@@ -160,8 +160,8 @@ for Claude Code, recorder hooks passed from outside the workspace do. After the 
 the snapshot records the diff against the task's base commit, reruns the visible tests, and
 only then copies in and runs the hidden checks, so they are never in the agent's workspace.
 The study sandbox also hides the checkout that stores them, and a run refuses to start
-when it does not (D67). Runs made from a code snapshot, every banked smoke run among them,
-did not hide it before D67; a path audit of their ledgers (`tools/audit_run_paths.py`) finds
+when it does not (D67). Smoke runs made from a code snapshot before D67 did not hide it,
+and the larger-window run added under D71 did; a path audit of the smoke ledgers (`tools/audit_run_paths.py`) finds
 no command or file-tool call that reached outside the run's workspace (D68). Every command
 runs in a disposable workspace (`src/receipts/sandbox`): Docker with `--network none`, or
 bubblewrap with the host root read-only and the workspace the only writable path. Study runs
@@ -277,13 +277,14 @@ nothing about what a report should claim (rule 14).
 - **Turn cap with one final-report request (D39).** Runs looped on a failed `edit` until the
   cap and ended without a report. At the cap the harness now sends one neutral request for
   the final report and accepts only `finish`, as scaffolds commonly do; `completed` stays
-  true only for runs that finished on their own. - **Per-run server slots (D44).** Requests
-  landed on slots holding another run's conversation, forcing the whole context to be read
-  again; each worker now keeps its own slot. This changes speed only. - **Tolerant JSON
-  parsing with specific errors (D45).** Runs re-sent a `write` with an escape that strict
-  JSON rejects, told only that no action was found. Unknown escapes are now read literally,
-  and parse errors give line and column. - **Grammar-constrained actions (D46).** Unescaped
-  quotes and replies cut off at the token limit still broke actions, so requests now carry
+  true only for runs that finished on their own.
+- **Per-run server slots (D44).** Requests landed on slots holding another run's
+  conversation, forcing the whole context to be read again; each worker now keeps its own
+  slot. This changes speed only.
+- **Tolerant JSON parsing with specific errors (D45).** Runs re-sent a `write` with an
+  escape that strict JSON rejects, told only that no action was found. Unknown escapes are
+  now read literally, and parse errors give line and column.
+- **Grammar-constrained actions (D46).** Unescaped quotes and replies cut off at the token limit still broke actions, so requests now carry
   the action schema as a decoding grammar, and the limit was raised. This fixes the form of
   a reply, never its content.
 
@@ -406,10 +407,10 @@ exploratory. At HEAD nothing is frozen.
 The G6 smoke study runs every benchmark task once, unmanipulated, with `ma-qwen7b`
 (Qwen2.5-Coder-7B-Instruct in minimal-agent) and one seed, to show that each task runs end to
 end and to supply E0's ledgers. It was never preregistered as a test and is never pooled with
-E1 or E4. The study is partway: <!--n:smoke.runs-->40<!--/n--> runs are banked,
-<!--n:smoke.language.python-->20<!--/n--> on Python tasks and
-<!--n:smoke.language.typescript-->20<!--/n--> on TypeScript tasks, so they are not a random
-sample of the benchmark. `tools/smoke_outcomes.py` computes the numbers below from the banked
+E1 or E4. The study is complete: <!--n:smoke.runs-->40<!--/n--> runs are banked, one per
+task, <!--n:smoke.language.python-->20<!--/n--> on Python tasks and
+<!--n:smoke.language.typescript-->20<!--/n--> on TypeScript tasks; one task was run again
+with a larger context window under a plan amendment (section 5.2; D71, D72). `tools/smoke_outcomes.py` computes the numbers below from the banked
 runs into
 [`artifacts/exploratory/smoke_outcomes.json`](../artifacts/exploratory/smoke_outcomes.json),
 labeled exploratory; the verdicts are those the instrument gave at run time, before G5.
@@ -483,7 +484,7 @@ that the visible tests pass, with the failures left unmentioned.
 They show no effect of any manipulation, no difference between models, and nothing about
 Claude or frontier agents: there is no manipulation, one model, one seed, and no comparison.
 The Wilson intervals treat runs as independent and say nothing about variation across tasks.
-The banked runs are the tasks that happened to run first, not a random sample, and the
+The banked runs are one unreplicated run of each task, and the
 scaffold changed during the study (section 5.2). The verdicts are the unvalidated instrument's, and the banked
 reports show errors in more than one direction:
 
@@ -676,9 +677,8 @@ re-verification at banking for the confirmatory studies (D42, D47), and the gate
 `make ci` passes on a fresh clone on Python 3.11 and 3.12 before a push
 ([README.md](../README.md), [STATUS.md](../STATUS.md)). Next, in order:
 
-1. Review the integrated pre-freeze work independently (re-verification at banking, the E1
-   and E4 rows, E3 sampling, the gate changes), close its open items (STATUS.md), and record
-   a hook demo run that blocks on its live ledger.
+1. Obtain an independent review of the B5 and B6 fixes that returns SHIP (G12), close the
+   open items in STATUS.md, and record a hook demo run that blocks on its live ledger.
 2. Run the E0
    labelers, writers,
    and adjudicators, the split, and the held-out evaluation.
@@ -688,4 +688,4 @@ re-verification at banking for the confirmatory studies (D42, D47), and the gate
    frozen, and bank the hook latency samples.
 5. Add Claude arms only on a machine with a clean plan login, under their own preregistration.
 
-Until then, G5, G6, G7 to G9, G11, and G12 cannot pass. Every claim verdict here remains the instrument's own.
+Until then, G5, G7 to G9, G11, and G12 cannot pass. Every claim verdict here remains the instrument's own.

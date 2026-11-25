@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "timeout": 30,
+      "command": "~/src/receipts/.venv/bin/receipts-hook record --ledger-dir ~/.receipts/sessions"}]}],
+    "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "timeout": 30,
+      "command": "~/src/receipts/.venv/bin/receipts-hook record --ledger-dir ~/.receipts/sessions"}]}],
+    "PostToolUseFailure": [{"matcher": "*", "hooks": [{"type": "command", "timeout": 30,
+      "command": "~/src/receipts/.venv/bin/receipts-hook record --ledger-dir ~/.receipts/sessions"}]}],
+    "Stop": [{"hooks": [{"type": "command", "timeout": 30,
+      "command": "~/src/receipts/.venv/bin/receipts-hook stop --ledger-dir ~/.receipts/sessions"}]}]
+  }
+}

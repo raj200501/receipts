@@ -36,7 +36,8 @@ The banked study runs under `artifacts/studies/` also name hidden checks and quo
 output (the ledger's hidden-check events and the verdict evidence in `verification.json`).
 Runs made from now on carry the canary in those files and in `run.json`: the ledger's
 `run_start` event, and a top-level `canary` key in `verification.json` and `run.json`
-(DECISIONS D59). The smoke runs banked before that, and those still running from the
-e4230cc snapshot, do not; they are left byte-identical because their records and hashes
+(DECISIONS D59). The larger-window py-units-refactor smoke run that D71 added carries it.
+The other smoke runs, made with code that predates D59 (before that decision, or from the
+e4230cc snapshot), do not; they are left byte-identical because their records and hashes
 are what the gates and the smoke summary check.
 

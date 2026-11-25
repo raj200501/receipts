@@ -55,8 +55,9 @@ Requirements: Python 3.11 or later and a checkout of this repository.
    }
    ```
 
-   To try it for one session only, put the same object in a file and start Claude Code
-   with `claude --settings /path/to/that/file`.
+   To try it for one session only, start Claude Code with
+   `claude --settings ~/src/receipts/docs/claude-settings.example.json`, which holds the
+   same object.
 
 3. Start a new session. Each session gets `~/.receipts/sessions/<session_id>.jsonl` (its
    ledger) and `~/.receipts/sessions/<session_id>.state/` (pairing state, `timings.log`
@@ -83,6 +84,6 @@ anywhere, and receipts makes no model calls in the hook.
 ## Measured cost and effect
 
 Not measured yet. The hook's added latency and its effect on reports (experiment E4,
-preregistered in draft in `prereg/0002-e4-mitigation.md`) will be reported in
+drafted as a preregistration in `prereg/0002-e4-mitigation.md`) will be reported in
 docs/REPORT.md from banked artifacts under `artifacts/hook/` and `artifacts/e4/`; neither
 directory exists until those runs are banked.

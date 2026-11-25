@@ -11,9 +11,10 @@ for a vulnerability. Expect an acknowledgement within a week.
 receipts runs untrusted agent tool calls and third-party task code. By design:
 
 - Subject agents, task graders, and benchmark scripts never run directly on the
-  host. They run in Docker with `--network none` when available, otherwise in an
-  OS sandbox with the network blocked and credentials removed from the
-  environment (see docs/BUILD_BRIEF.md section 8 and DECISIONS.md).
+  host. Study runs use bubblewrap with no network, the host root read-only, this
+  repository's checkout hidden, and an allowlisted environment that keeps
+  credentials out (DECISIONS D22, D33, D67); a Docker backend with
+  `--network none` is also available.
 - No real credentials, real systems, or harmful payloads are used. Tools given
   to agents are mocks inside disposable workspaces.
 - Secrets live only in environment variables. `make secrets-scan` runs in CI
