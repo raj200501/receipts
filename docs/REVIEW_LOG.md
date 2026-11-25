@@ -3,6 +3,30 @@
 Non-blocking issues raised by `make review`, with their status. Blocking
 issues are fixed before shipping and recorded here once resolved.
 
+## Review of 1650c79ff38425e249b9fae523230307ee7c0ebf (2026-11-25, reviewer subagent)
+
+Verdict: BLOCK. Blocking issue B8 is open at the reviewed commit and fixed in the commit
+after the one that banks this review; see `artifacts/review/latest.json`. Every
+non-blocking issue it raises was already listed here.
+
+- **B8** (blocking, rule 6): `make secrets-scan` never ran in CI, although section 9 rule 6
+  and CLAUDE.md require it and SECURITY.md said it did. The only workflow runs `make ci`,
+  which ran lint, typecheck, test, and demo, and no test scans the repository's tracked
+  files, so the scan ran only in ship-check G14; `tools/prepush.sh` and the D49 release
+  procedure pushed without it. The fix puts the scan in `make ci` (D74), so CI and
+  `tools/prepush.sh` both run it.
+
+Resolved since the review of 1f6f662: B7, N24 (a), (c), and (e) with the HOOK.md, D73, and
+launch-draft parts of (b) and (d), the checkout part of N25 (full history), and parts of N2.
+
+Still open, with new evidence where noted: N2 (STATUS.md still said G12 waits on a review of
+the B5 and B6 fixes, called N18 fixed, cited the shallow clone for G11, had an old word count,
+listed a model server this container lacks, and read D20's review cap as applying to
+subagent reviews), N13, N18 (gate part), N19 (remaining part), N20, N21, N22, N23, N24 (the
+`tools/hook_latency.py` docstring, docs/REPORT.md on E4 and on the local commit hook,
+pyproject.toml's "Check every claim", and the commit a CORRECTIONS.md entry credits), N25
+(code part), and N26.
+
 ## Review of 1f6f6625c4bb3c92013293cf3128a84a251c1267 (2026-11-25, reviewer subagent)
 
 Verdict: BLOCK. Blocking issue B7 is open at the reviewed commit and fixed in the commit

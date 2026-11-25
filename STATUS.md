@@ -9,8 +9,8 @@ History is in docs/LOG.md.
 
 ## Gates
 
-`python tools/ship_check.py --fast` at 1f6f662 (fresh clone, run by the reviewer from a shallow
-checkout, N25): **8/14** (FAST, does not count).
+`python tools/ship_check.py --fast` at 1650c79 (fresh clone with full history, run by the
+reviewer): **8/14** (FAST, does not count).
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
@@ -24,14 +24,15 @@ checkout, N25): **8/14** (FAST, does not count).
 | G8 Mechanisms, judges | FAIL | artifacts/e1/runs.jsonl missing |
 | G9 Mitigation | FAIL | artifacts/e4/results.json missing |
 | G10 Claim integrity | PASS | make claimcheck and make freshness pass on README.md and docs/REPORT.md; each derived artifact present agrees with a fresh derivation from the banked inputs |
-| G11 Prereg integrity | FAIL | make prereg-verify refused the shallow clone (N25); no preregistration is frozen and no confirmatory artifact exists |
-| G12 Review | FAIL | review of 1f6f662 (2026-11-25): REVIEW: BLOCK on B7, a README caveat on false success replaced by an inexact sentence; fixed in the next commit, and a new review is due |
-| G13 Documentation | PASS | README follows section 11; REPORT.md 7981 words; figures reproduce; every reference verified |
+| G11 Prereg integrity | FAIL | no preregistration is frozen and no confirmatory artifact exists (prereg-verify: frozen 0, drafts 3) |
+| G12 Review | FAIL | review of 1650c79 (2026-11-25): REVIEW: BLOCK on B8, `make secrets-scan` not run in CI; fixed in the next commit (D74), and a new review is due |
+| G13 Documentation | PASS | README follows section 11; REPORT.md 7983 words; figures reproduce; every reference verified |
 | G14 Hygiene | PASS | secrets clean; cash_usd = 0, caps respected; private/ untracked; files present; clean |
 
 G1 to G4, G6, G10, G13, and G14 pass. G5 waits on E0 (next: the blind claim-type labels
 of the smoke reports); G7 to G9 and G11 wait on the studies; G12 waits on an independent
-review of the code with B5 and B6 fixed (the review of 02bc774 blocked on them).
+review that returns SHIP for the current commit (the reviews of 1f6f662 and 1650c79 blocked
+on B7 and B8, both fixed).
 
 ## Now
 
@@ -73,8 +74,8 @@ which only model runs need). The branch was fast-forwarded onto Raj's CI fixes o
   review of the final commit for G12.
 
 Earlier, 2026-11-12 (final sprint and finale): not all fourteen gates were reachable; G5,
-G7 to G9, and G11 need E0 and the studies, and G12 needs another independent review (one a
-day at CAP_SHARE 0.2).
+G7 to G9, and G11 need E0 and the studies, and G12 needs another independent review (D20's
+cap of one review run a day applies to headless runs once the billing guard clears).
 
 - **Independent review of 02bc774: REVIEW: BLOCK** (banked in 7bbdf9c). It confirmed B1
   to B4 of the previous review fixed and every bound number equal to its own recomputation,
@@ -84,8 +85,8 @@ day at CAP_SHARE 0.2).
   inputs only, E3 re-scored from the banked replies, floats within 1e-5; D65, D70) and
   **B6** (G5 scores the held-out split again on the clone and reads the attempt log,
   comparing attempts by the instrument each scored; D66, D69). Non-blocking N17 and N19
-  (document errors) are corrected with CORRECTIONS entries, and **N18** is fixed: study
-  runs hide the checkout from the sandbox and refuse to start otherwise, snapshots are
+  (document errors) are corrected with CORRECTIONS entries, and the runner part of **N18** is
+  fixed (the gates do not yet require it for E1 and E4): study runs hide the checkout from the sandbox and refuse to start otherwise, snapshots are
   checked against their commit, and a path audit (`tools/audit_run_paths.py`) checks a
   run's ledger before banking (D67, D68).
 - **Smoke study: complete, G6 passes.** All 40 tasks have a banked, path-audited smoke run
@@ -113,7 +114,7 @@ day at CAP_SHARE 0.2).
    follows docs/CLAIM_TYPES.md, and the replies file becomes immutable; then the pilot,
    power run, freezing 0001 to 0003, and E1 and E4 from the freeze-commit snapshot (G7 to
    G9, G11).
-3. The next independent review when the daily cap allows (G12).
+3. An independent review that returns SHIP for the current commit (G12).
 
 ## Environment (`make doctor`, 2026-10-23)
 
@@ -122,7 +123,8 @@ day at CAP_SHARE 0.2).
 - Python 3.11 and 3.12 (venv on 3.11); uv 0.11.32; git 2.43; node 22, npm 10
 - Sandbox: bubblewrap 0.9.0 works (installed from apt); Docker daemon starts with
   `dockerd --iptables=false` and `docker run --network none` works; `unshare -rn` works (D22)
-- Local models: llama-cpp-python 0.3.36 server in /opt/receipts-llm; pinned GGUF files
+- Local models (2026-10-23; the 2026-11-25 container has none until `tools/provision.sh`
+  rebuilds them): llama-cpp-python 0.3.36 server in /opt/receipts-llm; pinned GGUF files
   Qwen2.5-Coder-7B-Instruct q4_k_m and Granite 3.3 8B Instruct Q4_K_M, hash-verified (D23);
   throughput banked in `artifacts/env/local_throughput_qwen2.5-coder-7b-instruct-q4km.json`
 - claude 2.1.309 installed but unusable: billing guard tripped by `ANTHROPIC_BASE_URL`,
