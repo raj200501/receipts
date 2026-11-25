@@ -9,8 +9,8 @@ History is in docs/LOG.md.
 
 ## Gates
 
-`python tools/ship_check.py --fast` at cec6701 (fresh clone with full history, run by the
-reviewer): **8/14** (FAST, does not count).
+`python tools/ship_check.py --fast` at 5612c93 (fresh clone with full history): **9/14** (FAST,
+does not count).
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
@@ -26,7 +26,7 @@ reviewer): **8/14** (FAST, does not count).
 | G10 Claim integrity | PASS | make claimcheck and make freshness pass on README.md and docs/REPORT.md; each derived artifact present agrees with a fresh derivation from the banked inputs |
 | G11 Prereg integrity | FAIL | no preregistration is frozen and no confirmatory artifact exists (prereg-verify: frozen 0, drafts 3) |
 | G12 Review | PASS | review of 73702ee (2026-11-25, reviewer subagent): REVIEW: SHIP, 0 blocking, 13 non-blocking, every one already in docs/REVIEW_LOG.md; `tools/review.py --validate-only` accepts it for HEAD, which differs from 73702ee only in `artifacts/review/`, STATUS.md, and docs/LOG.md |
-| G13 Documentation | PASS | README follows section 11; REPORT.md 7974 words at the commit that fixes N27 and N28; figures reproduce; every reference verified |
+| G13 Documentation | PASS | README follows section 11; REPORT.md 7974 words; figures reproduce; every reference verified |
 | G14 Hygiene | PASS | secrets clean; cash_usd = 0, caps respected; private/ untracked; files present; clean |
 
 G1 to G4, G6, G10, G12, G13, and G14 pass. G5 waits on E0 (next: the blind claim-type
